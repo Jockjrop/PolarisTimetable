@@ -1,0 +1,115 @@
+{
+  "success": false,
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": null,
+    "version_source": "unknown",
+    "runtime_skill_dir": null,
+    "recorded_at": null,
+    "read_status": "missing",
+    "reason": "orchestration-summary.json missing skillProvenance"
+  },
+  "operatingMode": "free-explore",
+  "renderBlockingErrorCount": 5,
+  "softWarningCount": 11,
+  "renderBlockingErrors": [
+    "[mobile-navigation-consistency] pages/today-overview.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] pages/weekly-schedule.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] pages/pdf-import.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] pages/settings.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] mobile pages with global nav must keep the same data-nav-key item order, positioning, height, and structural geometry. pages/today-overview.html: today|schedule|settings::flow::auto::tag=a::item=nav-item.nav-item--active|nav-item::icon=::nowrap=false::grid=none::max=false::full=false/false; pages/weekly-schedule.html: today|schedule|settings::flow::auto::tag=a::item=nav-tab::icon=::nowrap=false::grid=none::max=false::full=false/false; pages/pdf-import.html: today|schedule|settings::flow::auto::tag=a::item=nav-item::icon=::nowrap=false::grid=none::max=false::full=false/false; pages/settings.html: today|schedule|settings::flow::auto::tag=a::item=nav-item::icon=icon:missing::nowrap=false::grid=none::max=false::full=false/false. Use data-dom-id only for click wiring. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments."
+  ],
+  "softWarnings": [
+    "[orchestration-summary] orchestration-summary.json is missing skillProvenance.name/version/version_source. Version provenance will be reported as observed_unknown by external evaluators.",
+    "[mobile-navigation-consistency] 2 mobile page(s) do not expose a 3+ item data-nav-key nav cluster while sibling pages do. This is acceptable for detail/reward/modal pages only when planned explicitly.",
+    "[html-quality] colors_and_type.css: free-explore brand CSS must use one primary hue only; forbidden secondary/accent brand variables found (--text-secondary). Use --state-success/warning/error/info only for semantic states.",
+    "[html-quality] colors_and_type.css: ordinary/static shadow tokens must keep every shadow alpha <= 0.05; deeper shadows are allowed only for floating-layer tokens such as modal/popover/dropdown/drawer/overlay (--shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04)).",
+    "[html-quality] course-detail.html: hardcoded colors are forbidden outside <style id=\"theme-vars\">. Use brand CSS variables from the token reference.",
+    "[html-quality] course-detail.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] parse-confirm.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] pdf-import.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] settings.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] today-overview.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] weekly-schedule.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states."
+  ],
+  "repairPlanHints": [
+    {
+      "errorClass": "mobile-navigation-consistency",
+      "owner": "main-agent",
+      "repairScope": "all-pages-with-mobile-nav",
+      "strategy": "run_repair_mobile_navigation_once",
+      "affectedFiles": [
+        "pages/today-overview.html"
+      ],
+      "repairReportPath": "mobile-nav-repair-report.json",
+      "repairAlreadyAttempted": false,
+      "allowSourceRead": "no-full-html-read",
+      "maxValidationRuns": 3
+    },
+    {
+      "errorClass": "mobile-navigation-consistency",
+      "owner": "main-agent",
+      "repairScope": "all-pages-with-mobile-nav",
+      "strategy": "run_repair_mobile_navigation_once",
+      "affectedFiles": [
+        "pages/weekly-schedule.html"
+      ],
+      "repairReportPath": "mobile-nav-repair-report.json",
+      "repairAlreadyAttempted": false,
+      "allowSourceRead": "no-full-html-read",
+      "maxValidationRuns": 3
+    },
+    {
+      "errorClass": "mobile-navigation-consistency",
+      "owner": "main-agent",
+      "repairScope": "all-pages-with-mobile-nav",
+      "strategy": "run_repair_mobile_navigation_once",
+      "affectedFiles": [
+        "pages/pdf-import.html"
+      ],
+      "repairReportPath": "mobile-nav-repair-report.json",
+      "repairAlreadyAttempted": false,
+      "allowSourceRead": "no-full-html-read",
+      "maxValidationRuns": 3
+    },
+    {
+      "errorClass": "mobile-navigation-consistency",
+      "owner": "main-agent",
+      "repairScope": "all-pages-with-mobile-nav",
+      "strategy": "run_repair_mobile_navigation_once",
+      "affectedFiles": [
+        "pages/settings.html"
+      ],
+      "repairReportPath": "mobile-nav-repair-report.json",
+      "repairAlreadyAttempted": false,
+      "allowSourceRead": "no-full-html-read",
+      "maxValidationRuns": 3
+    }
+  ],
+  "errorCount": 5,
+  "warningCount": 11,
+  "errors": [
+    "[mobile-navigation-consistency] pages/today-overview.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] pages/weekly-schedule.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] pages/pdf-import.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] pages/settings.html: mobile nav labels must include whitespace-nowrap/truncate so Chinese tab labels do not wrap. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments.",
+    "[mobile-navigation-consistency] mobile pages with global nav must keep the same data-nav-key item order, positioning, height, and structural geometry. pages/today-overview.html: today|schedule|settings::flow::auto::tag=a::item=nav-item.nav-item--active|nav-item::icon=::nowrap=false::grid=none::max=false::full=false/false; pages/weekly-schedule.html: today|schedule|settings::flow::auto::tag=a::item=nav-tab::icon=::nowrap=false::grid=none::max=false::full=false/false; pages/pdf-import.html: today|schedule|settings::flow::auto::tag=a::item=nav-item::icon=::nowrap=false::grid=none::max=false::full=false/false; pages/settings.html: today|schedule|settings::flow::auto::tag=a::item=nav-item::icon=icon:missing::nowrap=false::grid=none::max=false::full=false/false. Use data-dom-id only for click wiring. Repair: rebuild the Page Packet with Mobile Navigation Contract and copy canonicalNavHtml. If this is post-validation repair, run repair-mobile-navigation.mjs once; do not patch individual span/data-dom-id/class fragments."
+  ],
+  "warnings": [
+    "[orchestration-summary] orchestration-summary.json is missing skillProvenance.name/version/version_source. Version provenance will be reported as observed_unknown by external evaluators.",
+    "[mobile-navigation-consistency] 2 mobile page(s) do not expose a 3+ item data-nav-key nav cluster while sibling pages do. This is acceptable for detail/reward/modal pages only when planned explicitly.",
+    "[html-quality] colors_and_type.css: free-explore brand CSS must use one primary hue only; forbidden secondary/accent brand variables found (--text-secondary). Use --state-success/warning/error/info only for semantic states.",
+    "[html-quality] colors_and_type.css: ordinary/static shadow tokens must keep every shadow alpha <= 0.05; deeper shadows are allowed only for floating-layer tokens such as modal/popover/dropdown/drawer/overlay (--shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04)).",
+    "[html-quality] course-detail.html: hardcoded colors are forbidden outside <style id=\"theme-vars\">. Use brand CSS variables from the token reference.",
+    "[html-quality] course-detail.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] parse-confirm.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] pdf-import.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] settings.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] today-overview.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states.",
+    "[html-quality] weekly-schedule.html: free-explore pages must not use secondary/accent brand variables. Use the single primary hue, neutral tints, or --state-success/warning/error/info for real semantic states."
+  ],
+  "designDir": "d:\\Polaris课程表\\polaris-ui-design-draft",
+  "expectedPages": 6,
+  "requireInteractions": null,
+  "checkedAt": "2026-07-16T14:54:05.407Z"
+}

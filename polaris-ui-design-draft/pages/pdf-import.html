@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>导入课表 - Polaris课程表</title>
+    <style id="theme-vars">
+/* ============================================
+   Polaris 课程表 — Brand Design Tokens
+   ============================================ */
+
+:root {
+  /* — Primary Brand — */
+  --color-brand: #2563EB;
+  --color-brand-hover: #1D4ED8;
+  --color-brand-light: #DBEAFE;
+  --color-brand-subtle: #EFF6FF;
+
+  /* — Semantic State Colors — */
+  --state-success: #059669;
+  --state-success-bg: #ECFDF5;
+  --state-warning: #D97706;
+  --state-warning-bg: #FFFBEB;
+  --state-error: #DC2626;
+  --state-error-bg: #FEF2F2;
+  --state-info: #2563EB;
+  --state-info-bg: #EFF6FF;
+
+  /* — Course Palette (by weekday) — */
+  --course-mon: #2563EB;
+  --course-mon-bg: #EAF2FF;
+  --course-tue: #E8645A;
+  --course-tue-bg: #FFEDEE;
+  --course-wed: #0D9488;
+  --course-wed-bg: #EAF8F1;
+  --course-thu: #7C3AED;
+  --course-thu-bg: #F1EAFE;
+  --course-fri: #D97706;
+  --course-fri-bg: #FFF3D9;
+  --course-sat: #EC4899;
+  --course-sat-bg: #FDF2F8;
+
+  /* — Surfaces — */
+  --surface-page: #F6F7FB;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-overlay: rgba(15, 23, 42, 0.5);
+
+  /* — Semantic Aliases (for fill-html-head.mjs) — */
+  --text-background: #F6F7FB;
+  --text-foreground: #172033;
+  --text-card: #FFFFFF;
+  --text-border: #D9DFEA;
+  --text-muted: #98A2B3;
+  --text-primary: #172033;
+  --text-secondary: #667085;
+  --text-tertiary: #98A2B3;
+  --text-inverse: #FFFFFF;
+  --text-brand: #2563EB;
+
+  /* — Borders — */
+  --border-default: #D9DFEA;
+  --border-subtle: #E5E7EB;
+  --border-brand: #2563EB;
+
+  /* — Typography — */
+  --font-family: 'Inter', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-base: 15px;
+  --font-size-lg: 17px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* — Radius — */
+  --radius-sm: 6px;
+  --radius-small: 6px;
+  --text-radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-medium: 10px;
+  --text-radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-large: 14px;
+  --text-radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* — Spacing — */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 40px;
+
+  /* — Shadow — */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+
+  /* — Bottom Nav Height — */
+  --nav-height: 64px;
+  --status-bar-height: 44px;
+
+  /* — Schedule Grid — */
+  --schedule-time-col: 48px;
+  --schedule-day-col: 68px;
+  --schedule-row-height: 56px;
+  --schedule-gap: 2px;
+}
+
+/* — Typography Utility Classes — */
+.text-xs { font-size: var(--font-size-xs); line-height: var(--line-height-tight); }
+.text-sm { font-size: var(--font-size-sm); line-height: var(--line-height-normal); }
+.text-base { font-size: var(--font-size-base); line-height: var(--line-height-normal); }
+.text-lg { font-size: var(--font-size-lg); line-height: var(--line-height-normal); }
+.text-xl { font-size: var(--font-size-xl); line-height: var(--line-height-tight); }
+.text-2xl { font-size: var(--font-size-2xl); line-height: var(--line-height-tight); }
+.text-3xl { font-size: var(--font-size-3xl); line-height: var(--line-height-tight); }
+
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-brand { color: var(--text-brand); }
+
+/* — Color Utility Classes — */
+.bg-brand { background-color: var(--color-brand); }
+.bg-brand-light { background-color: var(--color-brand-light); }
+.bg-brand-subtle { background-color: var(--color-brand-subtle); }
+.bg-page { background-color: var(--surface-page); }
+.bg-card { background-color: var(--surface-card); }
+
+/* — Radius Utility Classes — */
+.rounded-sm { border-radius: var(--radius-sm); }
+.rounded-md { border-radius: var(--radius-md); }
+.rounded-lg { border-radius: var(--radius-lg); }
+.rounded-xl { border-radius: var(--radius-xl); }
+.rounded-full { border-radius: var(--radius-full); }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--text-background);
+    --color-foreground: var(--text-foreground);
+    --color-card: var(--text-card);
+    --color-primary: var(--text-primary);
+    --color-secondary: var(--text-secondary);
+    --color-muted: var(--text-muted);
+    --color-border: var(--text-border);
+    --radius-sm: var(--text-radius-sm);
+    --radius-md: var(--text-radius-md);
+    --radius-lg: var(--text-radius-lg);
+  }
+  @layer base {
+    body { background: var(--text-background); color: var(--text-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--text-background); }
+      .text-background { color: var(--text-background); }
+      .border-background { border-color: var(--text-background); }
+      .ring-background { --tw-ring-color: var(--text-background); }
+      .bg-foreground { background-color: var(--text-foreground); }
+      .text-foreground { color: var(--text-foreground); }
+      .border-foreground { border-color: var(--text-foreground); }
+      .ring-foreground { --tw-ring-color: var(--text-foreground); }
+      .bg-card { background-color: var(--text-card); }
+      .text-card { color: var(--text-card); }
+      .border-card { border-color: var(--text-card); }
+      .ring-card { --tw-ring-color: var(--text-card); }
+      .bg-primary { background-color: var(--text-primary); }
+      .text-primary { color: var(--text-primary); }
+      .border-primary { border-color: var(--text-primary); }
+      .ring-primary { --tw-ring-color: var(--text-primary); }
+      .bg-secondary { background-color: var(--text-secondary); }
+      .text-secondary { color: var(--text-secondary); }
+      .border-secondary { border-color: var(--text-secondary); }
+      .ring-secondary { --tw-ring-color: var(--text-secondary); }
+      .bg-muted { background-color: var(--text-muted); }
+      .text-muted { color: var(--text-muted); }
+      .border-muted { border-color: var(--text-muted); }
+      .ring-muted { --tw-ring-color: var(--text-muted); }
+      .bg-border { background-color: var(--text-border); }
+      .text-border { color: var(--text-border); }
+      .border-border { border-color: var(--text-border); }
+      .ring-border { --tw-ring-color: var(--text-border); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+
+  <!-- Frosted-glass Top Bar -->
+  <header class="top-bar">
+    <a class="top-bar-back" href="javascript:void(0)" aria-label="返回">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </a>
+    <h1 class="top-bar-title">导入课表</h1>
+  </header>
+
+  <!-- Main Content -->
+  <main class="page-content">
+
+    <!-- Upload Card -->
+    <div class="upload-card" role="button" tabindex="0" aria-label="选择 PDF 课表文件">
+      <div class="upload-card-inner">
+        <!-- Refined PDF Illustration Icon -->
+        <div class="upload-icon-wrap">
+          <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+            <!-- Document body with subtle gradient fill -->
+            <defs>
+              <linearGradient id="pdfDocGrad" x1="14" y1="6" x2="42" y2="50" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#DBEAFE"/>
+                <stop offset="100%" stop-color="#EFF6FF"/>
+              </linearGradient>
+              <linearGradient id="pdfBadgeGrad" x1="20" y1="36" x2="36" y2="48" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#2563EB"/>
+                <stop offset="100%" stop-color="#1D4ED8"/>
+              </linearGradient>
+            </defs>
+            <!-- Shadow -->
+            <rect x="15" y="9" width="28" height="38" rx="3" fill="rgba(37,99,235,0.08)"/>
+            <!-- Main doc shape -->
+            <path d="M14 8h16l10 10v30a3 3 0 0 1-3 3H14a3 3 0 0 1-3-3V11a3 3 0 0 1 3-3z" fill="url(#pdfDocGrad)" stroke="#2563EB" stroke-width="1.2" stroke-linejoin="round"/>
+            <!-- Folded corner -->
+            <path d="M30 8v10h10" fill="#C7D8F7" stroke="#2563EB" stroke-width="1.2" stroke-linejoin="round"/>
+            <!-- Text lines on doc -->
+            <line x1="18" y1="26" x2="30" y2="26" stroke="#93B4F5" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="18" y1="31" x2="34" y2="31" stroke="#93B4F5" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="18" y1="36" x2="26" y2="36" stroke="#93B4F5" stroke-width="1.5" stroke-linecap="round"/>
+            <!-- PDF badge -->
+            <rect x="16" y="38" width="24" height="14" rx="3" fill="url(#pdfBadgeGrad)"/>
+            <text x="28" y="48" text-anchor="middle" font-family="Inter, sans-serif" font-size="8" font-weight="700" fill="#FFFFFF" letter-spacing="0.08em">PDF</text>
+          </svg>
+        </div>
+        <p class="upload-title">选择 PDF 课表文件</p>
+        <p class="upload-subtitle">支持文字型教务系统 PDF 课表</p>
+      </div>
+    </div>
+
+    <!-- Support Note -->
+    <div class="support-note">
+      <svg class="support-note-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="7" fill="var(--color-brand)" opacity="0.07"/>
+        <circle cx="8" cy="8" r="7" stroke="var(--color-brand)" stroke-width="1" opacity="0.3"/>
+        <path d="M8 7v4" stroke="var(--color-brand)" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/>
+        <circle cx="8" cy="5" r="0.75" fill="var(--color-brand)" opacity="0.6"/>
+      </svg>
+      <span class="support-note-text">目前仅支持文字型 PDF。扫描版 PDF 暂不支持。</span>
+    </div>
+
+    <!-- Recent Imports -->
+    <section class="recent-section">
+      <h2 class="section-heading">最近导入</h2>
+      <div class="recent-list">
+
+        <!-- Card 1 -->
+        <div class="recent-card">
+          <div class="recent-card-icon-wrap">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <rect x="2" y="1" width="10" height="14" rx="1.5" fill="var(--color-brand)" opacity="0.1" stroke="var(--color-brand)" stroke-width="1" stroke-linejoin="round"/>
+              <path d="M12 1v4h4" fill="var(--color-brand)" opacity="0.08" stroke="var(--color-brand)" stroke-width="1" stroke-linejoin="round"/>
+              <text x="9" y="11.5" text-anchor="middle" font-family="Inter, sans-serif" font-size="5" font-weight="700" fill="var(--color-brand)" opacity="0.7">PDF</text>
+            </svg>
+          </div>
+          <div class="recent-card-info">
+            <p class="recent-card-name">苏国强(2025-2026-2)课表.pdf</p>
+            <p class="recent-card-meta">2026年7月10日导入 · 识别12门课</p>
+          </div>
+          <span class="recent-card-badge">已导入</span>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="recent-card">
+          <div class="recent-card-icon-wrap">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <rect x="2" y="1" width="10" height="14" rx="1.5" fill="var(--color-brand)" opacity="0.1" stroke="var(--color-brand)" stroke-width="1" stroke-linejoin="round"/>
+              <path d="M12 1v4h4" fill="var(--color-brand)" opacity="0.08" stroke="var(--color-brand)" stroke-width="1" stroke-linejoin="round"/>
+              <text x="9" y="11.5" text-anchor="middle" font-family="Inter, sans-serif" font-size="5" font-weight="700" fill="var(--color-brand)" opacity="0.7">PDF</text>
+            </svg>
+          </div>
+          <div class="recent-card-info">
+            <p class="recent-card-name">2025-2026-1课表.pdf</p>
+            <p class="recent-card-meta">2026年2月15日导入 · 识别10门课</p>
+          </div>
+          <span class="recent-card-badge">已导入</span>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Parsing Progress -->
+    <section class="progress-section">
+      <h2 class="section-heading">正在解析...</h2>
+
+      <div class="progress-steps">
+        <!-- Step 1: Complete -->
+        <div class="step-item">
+          <div class="step-connector step-connector-done"></div>
+          <div class="step-indicator step-done">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <polyline points="2.5 6 5 8.5 9.5 3.5" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="step-label step-label-done">读取文件</span>
+        </div>
+
+        <!-- Step 2: Complete -->
+        <div class="step-item">
+          <div class="step-connector step-connector-done"></div>
+          <div class="step-indicator step-done">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <polyline points="2.5 6 5 8.5 9.5 3.5" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="step-label step-label-done">提取文字</span>
+        </div>
+
+        <!-- Step 3: In Progress -->
+        <div class="step-item">
+          <div class="step-connector step-connector-active"></div>
+          <div class="step-indicator step-active">
+            <svg class="spinner" width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="7" r="5.5" stroke="rgba(255,255,255,0.25)" stroke-width="1.6"/>
+              <path d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="step-label step-label-active">识别表格</span>
+        </div>
+
+        <!-- Step 4: Pending -->
+        <div class="step-item">
+          <div class="step-connector step-connector-pending"></div>
+          <div class="step-indicator step-pending">
+            <span class="step-pending-num">4</span>
+          </div>
+          <span class="step-label step-label-pending">生成课程</span>
+        </div>
+      </div>
+
+      <!-- Disabled Parse Button -->
+      <div data-dom-id="btn-start-parse">
+        <button class="parse-btn parse-btn-disabled" disabled>开始解析</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Frosted-glass Bottom Nav -->
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <a class="nav-item" href="javascript:void(0)" data-nav-key="today" data-active="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">课表</span>
+      </a>
+      <a class="nav-item" href="javascript:void(0)" data-nav-key="schedule" data-active="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">学习</span>
+      </a>
+      <a class="nav-item" href="javascript:void(0)" data-nav-key="settings" data-active="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">我的</span>
+      </a>
+    </div>
+  </nav>
+
+  <style>
+    /* ===== Base Reset & Body ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-family);
+      font-size: var(--font-size-base);
+      color: var(--text-primary);
+      background: var(--surface-page);
+      min-height: 100vh;
+      max-width: 375px;
+      margin: 0 auto;
+      padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 12px);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== Frosted-glass Top Bar ===== */
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 var(--space-lg);
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(217, 223, 234, 0.5);
+    }
+    .top-bar-back {
+      position: absolute;
+      left: var(--space-md);
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: background-color 0.15s ease;
+    }
+    .top-bar-back:active {
+      background: rgba(0, 0, 0, 0.04);
+    }
+    .top-bar-title {
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+
+    /* ===== Page Content ===== */
+    .page-content {
+      padding: var(--space-2xl) var(--space-lg);
+    }
+
+    /* ===== Upload Card ===== */
+    .upload-card {
+      background: var(--surface-card);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-elevated);
+      cursor: pointer;
+      transition: box-shadow 0.2s ease, transform 0.15s ease;
+      overflow: hidden;
+    }
+    .upload-card:active {
+      transform: scale(0.985);
+      box-shadow: var(--shadow-card);
+    }
+    .upload-card-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-3xl) var(--space-2xl);
+      /* Subtle gradient background */
+      background: linear-gradient(160deg, #F0F4FF 0%, #F8FAFF 40%, #FFFFFF 100%);
+      border-radius: var(--radius-xl);
+      min-height: 200px;
+    }
+    .upload-icon-wrap {
+      width: 72px;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: var(--space-lg);
+    }
+    .upload-title {
+      font-size: 16px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-sm);
+    }
+    .upload-subtitle {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+    }
+
+    /* ===== Support Note ===== */
+    .support-note {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-sm);
+      padding: var(--space-lg) 0 var(--space-sm);
+    }
+    .support-note-icon {
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .support-note-text {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+      line-height: var(--line-height-normal);
+    }
+
+    /* ===== Section Headings ===== */
+    .section-heading {
+      font-size: var(--font-size-base);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-md);
+      letter-spacing: -0.01em;
+    }
+
+    /* ===== Recent Imports ===== */
+    .recent-section {
+      margin-top: var(--space-2xl);
+    }
+    .recent-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+    .recent-card {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      background: var(--surface-card);
+      border-radius: var(--radius-lg);
+      padding: var(--space-lg);
+      box-shadow: var(--shadow-card);
+      transition: box-shadow 0.2s ease, transform 0.15s ease;
+      cursor: pointer;
+    }
+    .recent-card:active {
+      transform: scale(0.985);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+    .recent-card-icon-wrap {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-brand-subtle);
+      border-radius: var(--radius-md);
+    }
+    .recent-card-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .recent-card-name {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .recent-card-meta {
+      font-size: var(--font-size-xs);
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+    .recent-card-badge {
+      flex-shrink: 0;
+      margin-left: var(--space-sm);
+      background: var(--state-success-bg);
+      color: var(--state-success);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      border-radius: var(--radius-full);
+      padding: 3px 10px;
+      white-space: nowrap;
+    }
+
+    /* ===== Progress Section ===== */
+    .progress-section {
+      margin-top: var(--space-2xl);
+      background: var(--surface-card);
+      border-radius: var(--radius-xl);
+      padding: var(--space-2xl);
+      box-shadow: var(--shadow-card);
+    }
+    .progress-steps {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      position: relative;
+      margin-bottom: var(--space-2xl);
+    }
+
+    /* Connecting lines between steps */
+    .step-connector {
+      position: absolute;
+      top: 14px;
+      height: 2px;
+      border-radius: 1px;
+    }
+    /* Connector from step 1 to step 2 */
+    .step-item:nth-child(1) .step-connector {
+      left: 28px;
+      right: calc(25% + 14px);
+    }
+    /* Connector from step 2 to step 3 */
+    .step-item:nth-child(2) .step-connector {
+      left: calc(25% + 14px);
+      right: calc(50% + 14px);
+    }
+    /* Connector from step 3 to step 4 */
+    .step-item:nth-child(3) .step-connector {
+      left: calc(50% + 14px);
+      right: calc(75% + 14px);
+    }
+    .step-connector-done {
+      background: var(--state-success);
+    }
+    .step-connector-active {
+      background: linear-gradient(to right, var(--color-brand) 60%, var(--border-subtle) 100%);
+    }
+    .step-connector-pending {
+      background: var(--border-subtle);
+    }
+
+    .step-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Step indicators */
+    .step-indicator {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: var(--space-sm);
+    }
+    .step-done {
+      background: var(--state-success);
+    }
+    .step-active {
+      background: var(--color-brand);
+    }
+    .step-pending {
+      background: var(--surface-page);
+      border: 1.5px solid var(--border-subtle);
+    }
+    .step-pending-num {
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-tertiary);
+    }
+
+    /* Step labels */
+    .step-label {
+      font-size: var(--font-size-xs);
+      text-align: center;
+      white-space: nowrap;
+    }
+    .step-label-done {
+      color: var(--state-success);
+    }
+    .step-label-active {
+      color: var(--text-primary);
+      font-weight: var(--font-weight-medium);
+    }
+    .step-label-pending {
+      color: var(--text-tertiary);
+    }
+
+    /* Spinner animation */
+    @keyframes smooth-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: smooth-spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    /* Parse button */
+    .parse-btn {
+      display: block;
+      width: 100%;
+      height: 48px;
+      border-radius: var(--radius-lg);
+      border: none;
+      font-size: var(--font-size-base);
+      font-weight: var(--font-weight-semibold);
+      font-family: var(--font-family);
+      cursor: pointer;
+      transition: opacity 0.15s ease, background-color 0.15s ease;
+    }
+    .parse-btn-disabled {
+      background: var(--color-brand);
+      color: var(--text-inverse);
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ===== Frosted-glass Bottom Nav ===== */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 375px;
+      z-index: 50;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid rgba(217, 223, 234, 0.5);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .bottom-nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      height: var(--nav-height);
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      flex: 1;
+      padding: 8px 0;
+      color: var(--text-tertiary);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+    .nav-item span {
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

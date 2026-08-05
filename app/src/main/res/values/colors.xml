@@ -1,0 +1,14 @@
+<resources>
+    <color name="brand">#2563EB</color>
+    <color name="brand_dark">#1D4ED8</color>
+    <color name="page_bg">#F6F7FB</color>
+    <color name="panel">#FFFFFF</color>
+    <color name="line">#D9DFEA</color>
+    <color name="text_main">#172033</color>
+    <color name="text_muted">#667085</color>
+    <color name="course_1">#EAF2FF</color>
+    <color name="course_2">#EAF8F1</color>
+    <color name="course_3">#FFF3D9</color>
+    <color name="course_4">#F1EAFE</color>
+    <color name="course_5">#FFEDEE</color>
+</resources>

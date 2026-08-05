@@ -1,0 +1,1907 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Polaris课程表桌面预览</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --soft: #edf6ff;
+      --line: rgba(86, 112, 148, .15);
+      --paper: rgba(255, 255, 255, .72);
+      --paper-strong: rgba(255, 255, 255, .88);
+      --blue: #4aa3ff;
+      --blue-deep: #2279df;
+      --cyan: #2fc8d3;
+      --green: #32c98c;
+      --orange: #ffad4f;
+      --pink: #f06c9b;
+      --violet: #8e7bf2;
+      --shadow: 0 22px 58px rgba(39, 78, 122, .18);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 12%, rgba(74, 163, 255, .20), transparent 32%),
+        radial-gradient(circle at 82% 18%, rgba(47, 200, 211, .18), transparent 30%),
+        linear-gradient(145deg, #f4f9ff 0%, #e2f0ff 48%, #d8f4fb 100%);
+    }
+
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .page {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .stage {
+      width: min(1240px, 100%);
+      display: grid;
+      gap: 16px;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .toolbar h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .toolbar p {
+      margin: 6px 0 0;
+      color: #5d6b80;
+      font-size: 14px;
+    }
+
+    .maintenance-note {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(240, 108, 155, .15);
+      color: #ae315f;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .switcher {
+      display: inline-flex;
+      gap: 5px;
+      padding: 5px;
+      border: 1px solid rgba(113, 136, 167, .25);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .68);
+      backdrop-filter: blur(16px);
+    }
+
+    .switcher button {
+      height: 34px;
+      border: 0;
+      border-radius: 8px;
+      padding: 0 14px;
+      background: transparent;
+      color: #546378;
+      font-weight: 700;
+    }
+
+    .switcher button.active {
+      background: #172033;
+      color: #fff;
+      box-shadow: 0 10px 20px rgba(23, 32, 51, .18);
+    }
+
+    .device {
+      margin: 0 auto;
+      padding: 12px;
+      background: #111827;
+      border-radius: 34px;
+      box-shadow: 0 30px 82px rgba(15, 23, 42, .28);
+      transition: width .2s ease, height .2s ease, border-radius .2s ease;
+    }
+
+    .device.phone { width: 430px; height: 860px; }
+    .device.tablet { width: 1024px; height: 730px; border-radius: 28px; }
+    .device.desktop { width: min(1180px, 100%); height: 760px; border-radius: 24px; padding: 10px; }
+
+    .screen {
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 25px;
+      background:
+        radial-gradient(circle at 20% 4%, rgba(74, 163, 255, .22), transparent 36%),
+        radial-gradient(circle at 90% 10%, rgba(47, 200, 211, .18), transparent 33%),
+        linear-gradient(180deg, #f8fbff 0%, #edf6ff 50%, #ddf3fb 100%);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .device.desktop .screen { border-radius: 18px; }
+
+    .screen.dark {
+      color: #eef4ff;
+      background:
+        radial-gradient(circle at 20% 4%, rgba(74, 163, 255, .10), transparent 36%),
+        radial-gradient(circle at 90% 10%, rgba(47, 200, 211, .08), transparent 33%),
+        linear-gradient(180deg, #111a29 0%, #0d1422 100%);
+    }
+
+    .screen.dark .top {
+      background: rgba(24, 34, 53, .78);
+      border-bottom: 1px solid rgba(255, 255, 255, .08);
+    }
+
+    .screen.dark .status,
+    .screen.dark .toolbar h1,
+    .screen.dark .profile-card strong,
+    .screen.dark .profile-head strong,
+    .screen.dark .settings-page h2,
+    .screen.dark .setting-back,
+    .screen.dark .time-head,
+    .screen.dark .time-label b,
+    .screen.dark .day-head.today {
+      color: #eef4ff;
+    }
+
+    .screen.dark .hero p,
+    .screen.dark .profile-card span,
+    .screen.dark .profile-head span,
+    .screen.dark .time-label span,
+    .screen.dark .day-head,
+    .screen.dark .option-group > span,
+    .screen.dark .modal p {
+      color: #9aa8be;
+    }
+
+    .screen.dark .profile-card,
+    .screen.dark .modal,
+    .screen.dark .detail-cell,
+    .screen.dark .editor-form input,
+    .screen.dark .settings-card,
+    .screen.dark .action-panel,
+    .screen.dark .icon,
+    .screen.dark .settings-choice button,
+    .screen.dark .stepper button,
+    .screen.dark .stepper strong {
+      background: rgba(24, 34, 53, .92);
+      color: #eef4ff;
+      border-color: rgba(255, 255, 255, .10);
+    }
+
+    .screen.dark .settings-choice button.active,
+    .screen.dark .modal-action {
+      background: #eef4ff;
+      color: #111a29;
+    }
+
+    .screen.dark .bottom {
+      background: rgba(17, 26, 41, .88);
+      border-color: rgba(255, 255, 255, .10);
+    }
+
+    .screen.dark .bottom .active { color: #eef4ff; }
+    .screen.dark .grid-line { background: rgba(142, 158, 185, .22); }
+
+    .screen.dark .board-wrap,
+    .screen.dark .my-page,
+    .screen.dark .settings-page,
+    .screen.dark .settings-fixed,
+    .screen.dark .modal-backdrop.fullscreen {
+      background-color: #0d1422;
+    }
+
+    .top {
+      flex: none;
+      padding: 12px 16px 4px;
+    }
+
+    .status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 20px;
+      color: #202938;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .device.desktop .status { display: none; }
+
+    .hero {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .brand-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .eyebrow, .state-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: rgba(23, 32, 51, .08);
+      color: #344054;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .state-pill.success { background: rgba(50, 201, 140, .14); color: #117b51; }
+    .state-pill.error { background: rgba(240, 108, 155, .15); color: #ae315f; }
+    .state-pill.empty { background: rgba(255, 173, 79, .18); color: #9b5d08; }
+    .state-pill.loading { background: rgba(74, 163, 255, .16); color: #1e6fc7; }
+
+    .hero p {
+      margin: 8px 0 0;
+      color: #58667a;
+      font-size: 14px;
+    }
+
+    .actions {
+      position: relative;
+      display: grid;
+      justify-items: end;
+    }
+
+    .action-panel {
+      position: fixed;
+      top: 82px;
+      right: max(18px, calc((100vw - 430px) / 2 + 18px));
+      z-index: 5;
+      display: none;
+      grid-template-columns: repeat(4, 52px);
+      gap: 8px;
+      padding: 10px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, .86);
+      box-shadow: 0 18px 36px rgba(70, 91, 124, .16);
+      backdrop-filter: blur(18px);
+    }
+
+    .actions.open .action-panel { display: grid; }
+
+    .actions.open #actionToggle {
+      transform: rotate(90deg) scale(.94);
+    }
+
+    .icon {
+      width: 52px;
+      height: 42px;
+      border: 0;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .74);
+      box-shadow: 0 8px 18px rgba(70, 91, 124, .10);
+      color: #111827;
+      font-size: 20px;
+      font-weight: 800;
+      transition: transform .18s ease;
+    }
+
+    #actionToggle {
+      width: 38px;
+      height: 38px;
+    }
+
+    .panel, .settings-panel, .empty-state, .flow-card {
+      border: 1px solid rgba(255, 255, 255, .62);
+      background: var(--paper);
+      box-shadow: 0 10px 24px rgba(74, 91, 119, .08);
+      backdrop-filter: blur(16px);
+    }
+
+    .main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+      padding: 2px 12px 74px;
+    }
+
+    .device.tablet .main, .device.desktop .main {
+      grid-template-columns: 240px minmax(0, 1fr);
+      padding-right: 16px;
+    }
+
+    .side {
+      min-height: 0;
+      display: none;
+      gap: 10px;
+      grid-template-rows: auto 1fr;
+    }
+
+    .device.phone .side {
+      display: grid;
+      grid-template-rows: auto;
+    }
+
+    .device.phone .flow-card,
+    .device.phone .settings-panel {
+      display: none;
+    }
+
+    .device.tablet .side, .device.desktop .side { display: grid; }
+
+    .flow-card, .settings-panel {
+      border-radius: 20px;
+      padding: 14px;
+    }
+
+    .flow-card h3, .settings-panel h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .flow-row, .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      color: #536177;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(86, 112, 148, .10);
+    }
+
+    .flow-row:last-child, .setting-row:last-child { border-bottom: 0; }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      flex: none;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+
+    .content {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr;
+    }
+
+    .board-wrap {
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding: 0 0 22px;
+      border-radius: 22px;
+      touch-action: pan-y;
+    }
+
+    .week-slider {
+      display: flex;
+      width: 200%;
+      animation-duration: .26s;
+      animation-timing-function: ease-out;
+    }
+
+    .week-slider .board {
+      flex: 0 0 50%;
+    }
+
+    .week-slider.next { animation-name: weekNext; }
+    .week-slider.prev { animation-name: weekPrev; transform: translateX(-50%); }
+
+    @keyframes weekNext {
+      from { transform: translateX(0); }
+      to { transform: translateX(-50%); }
+    }
+
+    @keyframes weekPrev {
+      from { transform: translateX(-50%); }
+      to { transform: translateX(0); }
+    }
+
+    .board {
+      position: relative;
+      width: 100%;
+      height: calc(58px + 76px * 11);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, .42);
+      border: 1px solid rgba(255, 255, 255, .56);
+      box-shadow: inset 0 1px rgba(255, 255, 255, .72);
+    }
+
+    .time-head, .day-head, .time-label, .grid-line, .col-line, .course {
+      position: absolute;
+    }
+
+    .time-head {
+      left: 0;
+      top: 0;
+      display: grid;
+      place-items: center;
+      color: #536177;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .day-head {
+      top: 0;
+      display: grid;
+      place-items: center;
+      color: #5d687a;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .day-head.today { color: #172033; }
+
+    .day-head b, .day-head small {
+      display: block;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .day-head small {
+      margin-top: 5px;
+      font-size: 10px;
+      color: #98a2b3;
+    }
+
+    .time-label {
+      left: 0;
+      padding-top: 8px;
+      text-align: center;
+      color: #4c5a70;
+    }
+
+    .time-label b {
+      display: block;
+      font-size: 19px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .time-label span {
+      display: block;
+      margin-top: 7px;
+      white-space: pre-line;
+      font-size: 10px;
+      line-height: 1.18;
+      color: #778299;
+    }
+
+    .grid-line {
+      height: 1px;
+      background: var(--line);
+    }
+
+    .col-line {
+      top: 0;
+      width: 1px;
+      background: rgba(86, 112, 148, .09);
+    }
+
+    .course {
+      border: 0;
+      border-radius: 11px;
+      padding: 7px 5px;
+      color: #fff;
+      overflow: hidden;
+      text-align: left;
+      box-shadow: 0 12px 20px rgba(35, 56, 92, .16);
+    }
+
+    .course strong {
+      display: block;
+      font-size: var(--course-title-size, 11px);
+      line-height: 1.2;
+    }
+
+    .course span {
+      display: block;
+      margin-top: 6px;
+      font-size: var(--course-meta-size, 9px);
+      line-height: 1.24;
+      font-weight: 700;
+      opacity: .96;
+    }
+
+    .course.muted-course {
+      opacity: .28;
+      filter: saturate(.55);
+    }
+
+    .empty-state {
+      display: none;
+      place-items: center;
+      min-height: 360px;
+      border-radius: 22px;
+      text-align: center;
+      padding: 28px;
+    }
+
+    .empty-state.show { display: grid; }
+
+    .empty-state h3 {
+      margin: 12px 0 6px;
+      font-size: 20px;
+    }
+
+    .empty-state p {
+      margin: 0;
+      color: #667085;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .empty-illustration {
+      width: 78px;
+      height: 78px;
+      border-radius: 24px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(160deg, rgba(74, 163, 255, .16), rgba(47, 200, 211, .22));
+      color: #2279df;
+      font-size: 34px;
+      font-weight: 900;
+    }
+
+    .my-page {
+      display: none;
+      min-height: 0;
+      overflow: auto;
+      padding: 4px 0 90px;
+    }
+
+    .my-page.show { display: block; }
+
+    .settings-page {
+      display: none;
+      position: relative;
+      min-height: 100%;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .settings-page.show { display: block; }
+
+    .setting-back {
+      width: 48px;
+      height: 54px;
+      border: 0;
+      background: transparent;
+      text-align: center;
+      color: #172033;
+      font-size: 28px;
+      font-weight: 900;
+    }
+
+    .settings-fixed {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      height: 70px;
+      background: #eaf3fb;
+    }
+
+    .settings-scroll {
+      height: 100%;
+      overflow: auto;
+      padding: 70px 0 90px;
+    }
+
+    .settings-page h2 {
+      margin: 8px 0 16px;
+      color: #172033;
+      font-size: 24px;
+    }
+
+    .option-group {
+      margin-bottom: 14px;
+    }
+
+    .option-group > span {
+      display: block;
+      margin-bottom: 8px;
+      color: #667085;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .stepper {
+      display: grid;
+      grid-template-columns: 54px 1fr 54px;
+      gap: 8px;
+    }
+
+    .stepper button, .stepper strong {
+      height: 42px;
+      border: 0;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, .78);
+      color: #172033;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .save-row {
+      width: 100%;
+      height: 46px;
+      border: 0;
+      border-radius: 14px;
+      background: #172033;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .profile-card {
+      width: 100%;
+      display: block;
+      border: 1px solid rgba(255, 255, 255, .62);
+      margin-bottom: 10px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, .72);
+      box-shadow: 0 10px 24px rgba(74, 91, 119, .08);
+      text-align: left;
+    }
+
+    .profile-head {
+      display: grid;
+      justify-items: center;
+      padding: 16px 0 20px;
+      text-align: center;
+    }
+
+    .avatar {
+      width: 66px;
+      height: 66px;
+      display: grid;
+      place-items: center;
+      border-radius: 24px;
+      background: #172033;
+      color: #fff;
+      font-size: 28px;
+      font-weight: 900;
+      box-shadow: 0 18px 30px rgba(23, 32, 51, .18);
+    }
+
+    .profile-head strong {
+      margin-top: 10px;
+      font-size: 20px;
+      color: #172033;
+    }
+
+    .profile-head span {
+      margin-top: 4px;
+      color: #667085;
+      font-size: 13px;
+    }
+
+    .profile-card strong {
+      display: block;
+      font-size: 17px;
+      color: #172033;
+    }
+
+    .profile-card span {
+      display: block;
+      margin-top: 6px;
+      color: #667085;
+      font-size: 13px;
+    }
+
+    .settings-card {
+      border-radius: 18px;
+      padding: 8px;
+      background: rgba(242, 240, 250, .86);
+      box-shadow: 0 10px 24px rgba(74, 91, 119, .06);
+    }
+
+    .setting-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 0;
+      margin: 0;
+      border-radius: 0;
+      box-shadow: none;
+      background: transparent;
+      min-height: 58px;
+    }
+
+    .setting-line strong {
+      display: block;
+      flex: 1;
+    }
+
+    .setting-line span {
+      display: block;
+      flex: 0 0 44%;
+      margin: 0;
+      text-align: right;
+      font-size: 15px;
+    }
+
+    .setting-switch .switch-track {
+      position: relative;
+      flex: 0 0 52px;
+      width: 52px;
+      height: 30px;
+      border-radius: 999px;
+      background: #d8dde6;
+      box-shadow: inset 0 0 0 1px rgba(23, 32, 51, .08);
+    }
+
+    .setting-switch .switch-track::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 3px 8px rgba(23, 32, 51, .20);
+      transition: transform .18s ease;
+    }
+
+    .setting-switch.on .switch-track {
+      background: #3e8bff;
+    }
+
+    .setting-switch.on .switch-track::after {
+      transform: translateX(22px);
+    }
+
+    .screen.dark .setting-switch .switch-track {
+      background: #252b36;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+    }
+
+    .screen.dark .setting-switch.on .switch-track {
+      background: #3e8bff;
+    }
+
+    .bottom {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 70px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      align-items: center;
+      background: rgba(246, 250, 255, .76);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid rgba(255, 255, 255, .55);
+    }
+
+    .bottom button {
+      height: 52px;
+      border: 0;
+      background: transparent;
+      color: #7a8496;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .bottom small {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .bottom .active { color: #172033; }
+
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 82px;
+      transform: translateX(-50%);
+      max-width: 86%;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(23, 32, 51, .88);
+      color: #fff;
+      text-align: center;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+      z-index: 8;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, -6px);
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      display: none;
+      place-items: end center;
+      padding: 16px;
+      background: rgba(20, 31, 49, .28);
+      z-index: 10;
+    }
+
+    .modal-backdrop.show { display: grid; }
+
+    .modal-backdrop.fullscreen {
+      align-items: stretch;
+      justify-items: stretch;
+      padding: 0;
+      background: #f8fbff;
+    }
+
+    .modal {
+      width: min(560px, 100%);
+      max-height: 82%;
+      overflow: auto;
+      border-radius: 24px;
+      padding: 18px;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: var(--shadow);
+    }
+
+    .modal-backdrop.fullscreen .modal {
+      width: 100%;
+      max-width: none;
+      min-height: 100%;
+      max-height: none;
+      border-radius: 0;
+      box-shadow: none;
+      padding-top: 42px;
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .modal h3 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .modal p {
+      margin: 7px 0 0;
+      color: #5e6a7e;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .close {
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 11px;
+      background: rgba(23, 32, 51, .08);
+      color: #172033;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .detail-cell, .raw-box {
+      border-radius: 14px;
+      padding: 10px;
+      background: rgba(238, 246, 255, .78);
+    }
+
+    .detail-cell span, .raw-box span {
+      display: block;
+      color: #728095;
+      font-size: 12px;
+    }
+
+    .detail-cell strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 14px;
+    }
+
+    .settings-choice {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .settings-choice button {
+      height: 38px;
+      border: 0;
+      border-radius: 12px;
+      background: rgba(23, 32, 51, .08);
+      color: #344054;
+      font-weight: 800;
+    }
+
+    .settings-choice button.active {
+      background: #172033;
+      color: #fff;
+    }
+
+    .raw-box {
+      margin-top: 8px;
+      color: #344054;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .editor-form {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .editor-form input {
+      height: 42px;
+      border: 0;
+      border-radius: 12px;
+      padding: 0 12px;
+      background: rgba(238, 246, 255, .9);
+      color: #172033;
+      font-weight: 700;
+    }
+
+    .modal-action {
+      height: 44px;
+      border: 0;
+      border-radius: 14px;
+      margin-top: 12px;
+      background: #172033;
+      color: #fff;
+      font-weight: 900;
+    }
+
+    .progress {
+      height: 8px;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(74, 163, 255, .16);
+    }
+
+    .progress i {
+      display: block;
+      height: 100%;
+      width: 40%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      animation: loading 1s infinite alternate ease-in-out;
+    }
+
+    @keyframes loading {
+      from { transform: translateX(-20%); }
+      to { transform: translateX(155%); }
+    }
+
+    .course.blue { background: linear-gradient(160deg, #55a6ff, #2f82e5); }
+    .course.cyan { background: linear-gradient(160deg, #35cfda, #1aa9b4); }
+    .course.green { background: linear-gradient(160deg, #43d59b, #23ad75); }
+    .course.orange { background: linear-gradient(160deg, #ffc06a, #ec9432); }
+    .course.pink { background: linear-gradient(160deg, #f47daa, #df4f83); }
+    .course.violet { background: linear-gradient(160deg, #aa94f7, #8067e7); }
+
+    @media (max-width: 760px) {
+      .page { padding: 14px; place-items: start center; }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+      .toolbar h1 { font-size: 21px; }
+      .switcher { width: 100%; }
+      .switcher button { flex: 1; padding: 0 8px; }
+      .device.phone { width: min(430px, 100vw - 28px); height: 820px; }
+      .device.tablet, .device.desktop { width: min(1024px, 100vw - 28px); height: 680px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="stage">
+      <div class="toolbar">
+        <div>
+          <h1>Polaris课程表桌面预览</h1>
+          <p>离线 HTML 预览稿，用于观察 Android 原生界面的视觉方向和导入流程。</p>
+          <span class="maintenance-note">已停止维护，仅作历史参考；Android 界面改动不再同步</span>
+        </div>
+        <div class="switcher" aria-label="预览设备模式">
+          <button class="active" data-mode="phone">手机</button>
+          <button data-mode="tablet">平板</button>
+          <button data-mode="desktop">桌面</button>
+        </div>
+      </div>
+
+      <div id="device" class="device phone">
+        <div class="screen">
+          <header class="top">
+            <div class="status"><span>08:18</span><span>5G · 86%</span></div>
+            <div class="hero">
+              <div>
+                <div class="brand-row">
+                  <span class="eyebrow" id="weekBadge">Polaris Week 18</span>
+                  <span class="state-pill success" id="statePill">解析成功</span>
+                </div>
+                <p id="heroMeta">2026/7/1 周三 · 长安校区西区</p>
+              </div>
+              <div class="actions" id="actions">
+                <button class="icon" id="actionToggle" title="展开操作">⋯</button>
+                <div class="action-panel" id="actionPanel">
+                  <button class="icon" id="exportBtn" title="导入 PDF">P</button>
+                  <button class="icon" id="linkImportBtn" title="链接导入">链</button>
+                  <button class="icon" id="importBtn" title="添加课程">+</button>
+                  <button class="icon" id="shareBtn" title="分享">↗</button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main class="main">
+            <aside class="side">
+              <section class="flow-card">
+                <h3>PDF 导入流程</h3>
+                <div class="flow-row"><span>选择 PDF</span><i class="dot"></i></div>
+                <div class="flow-row"><span>提取文本</span><i class="dot"></i></div>
+                <div class="flow-row"><span>生成课程</span><i class="dot"></i></div>
+              </section>
+              <section class="settings-panel">
+                <h3>设置预览</h3>
+                <div class="setting-row"><span>清爽蓝主题</span><strong>开</strong></div>
+                <div class="setting-row"><span>周末显示</span><strong>开</strong></div>
+                <div class="setting-row"><span>课程提醒</span><strong>课前 10 分钟</strong></div>
+                <div class="setting-row"><span>单双周标记</span><strong>显示</strong></div>
+              </section>
+            </aside>
+
+            <section class="content">
+              <div class="board-wrap" id="boardWrap">
+                <div id="board" class="board"></div>
+                <div id="emptyState" class="empty-state">
+                  <div>
+                    <div class="empty-illustration">＋</div>
+                    <h3>还没有课程</h3>
+                    <p>点击导入 PDF，可以预览从教务系统课表解析到周课表的完整流程。</p>
+                  </div>
+                </div>
+              </div>
+              <div class="my-page" id="myPage">
+                <div class="profile-head">
+                  <div class="avatar">管</div>
+                  <strong>管理员</strong>
+                  <span id="profileMeta">2025级 · Polaris大学</span>
+                </div>
+                <button class="profile-card" id="scheduleSettings"><strong>课表设置</strong><span id="scheduleSettingsMeta">默认课表 · 20周 · 11节</span></button>
+                <button class="profile-card" id="globalSettings"><strong>全局设置</strong><span>课表切换 · 背景 · 深色模式</span></button>
+                <button class="profile-card" id="securitySettings"><strong>安全设置</strong><span>管理员模式 · 无需账号登录</span></button>
+              </div>
+              <div class="settings-page" id="settingsPage"></div>
+            </section>
+          </main>
+
+          <nav class="bottom">
+            <button class="active" data-nav="schedule">课表<small>Schedule</small></button>
+            <button data-nav="me">我的<small>Me</small></button>
+          </nav>
+
+          <div id="toast" class="toast"></div>
+          <div id="modalBackdrop" class="modal-backdrop">
+            <div class="modal" id="modal"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const days = ["一", "二", "三", "四", "五", "六", "日"];
+    const times = [
+      "08:00\n08:50", "08:55\n09:45", "10:15\n11:05", "11:10\n12:00",
+      "14:30\n15:20", "15:25\n16:15", "16:35\n17:25", "17:30\n18:20",
+      "18:30\n19:20", "19:30\n20:20", "20:25\n21:15"
+    ];
+
+    const mockCourses = [
+      { name: "计算机组成原理", weekday: 1, start: 1, end: 2, weeks: "1-18周", room: "B332", teacher: "苏国强", color: "blue", rawText: "周一第1-2节 计算机组成原理 B332 苏国强 1-18周", confidence: 0.96 },
+      { name: "数字信号处理B", weekday: 1, start: 3, end: 4, weeks: "1-18周", room: "B332", teacher: "李明", color: "cyan", rawText: "周一第3-4节 数字信号处理B B332 李明 1-18周", confidence: 0.93 },
+      { name: "大学英语CIV", weekday: 2, start: 3, end: 4, weeks: "1-16周", room: "A601", teacher: "王璐", color: "green", rawText: "周二第3-4节 大学英语CIV A601 王璐 1-16周", confidence: 0.91 },
+      { name: "大学体育IV模块", weekday: 2, start: 7, end: 8, weeks: "1-16周", room: "操场", teacher: "赵扬", color: "orange", rawText: "周二第7-8节 大学体育IV模块 操场 赵扬 1-16周", confidence: 0.84 },
+      { name: "单片机原理及应用B", weekday: 3, start: 1, end: 2, weeks: "双周", room: "B332", teacher: "周宁", color: "violet", rawText: "周三第1-2节 单片机原理及应用B B332 周宁 双周", confidence: 0.88 },
+      { name: "嵌入式系统原理与应用B", weekday: 3, start: 3, end: 4, weeks: "双周", room: "B332", teacher: "周宁", color: "pink", rawText: "周三第3-4节 嵌入式系统原理与应用B B332 周宁 双周", confidence: 0.86 },
+      { name: "习近平新时代中国特色社会主义思想概论", weekday: 4, start: 1, end: 2, weeks: "1-18周", room: "B332", teacher: "陈敏", color: "orange", rawText: "周四第1-2节 习近平新时代中国特色社会主义思想概论 B332 陈敏 1-18周", confidence: 0.92 },
+      { name: "计算机组成原理", weekday: 4, start: 3, end: 4, weeks: "1-18周", room: "B332", teacher: "苏国强", color: "blue", rawText: "周四第3-4节 计算机组成原理 B332 苏国强 1-18周", confidence: 0.95 },
+      { name: "嵌入式系统实践", weekday: 4, start: 9, end: 10, weeks: "项目周", room: "实验楼 402", teacher: "周宁", color: "pink", rawText: "周四第9-10节 嵌入式系统实践 实验楼402 周宁 项目周", confidence: 0.78 },
+      { name: "通信原理C", weekday: 5, start: 1, end: 2, weeks: "1-18周", room: "B332", teacher: "刘洋", color: "green", rawText: "周五第1-2节 通信原理C B332 刘洋 1-18周", confidence: 0.94 },
+      { name: "单片机原理及应用B", weekday: 5, start: 5, end: 6, weeks: "1-18周", room: "B332", teacher: "周宁", color: "violet", rawText: "周五第5-6节 单片机原理及应用B B332 周宁 1-18周", confidence: 0.9 },
+      { name: "数字信号处理B", weekday: 6, start: 1, end: 2, weeks: "1-18周", room: "B332", teacher: "李明", color: "cyan", rawText: "周六第1-2节 数字信号处理B B332 李明 1-18周", confidence: 0.89 },
+      { name: "自习", weekday: 7, start: 7, end: 8, weeks: "1-18周", room: "图书馆", teacher: "", color: "blue", rawText: "周日第7-8节 自习 图书馆 1-18周", confidence: 0.82 }
+    ];
+
+    let state = {
+      mode: "phone",
+      week: 18,
+      displayDays: 7,
+      selectedDay: 3,
+      courses: [],
+      parseState: "success",
+      activeNav: "schedule",
+      profileMeta: "2025级 · Polaris大学",
+      scheduleName: "默认课表",
+      classTimes: "08:00 开始",
+      firstWeekDay: "2026/3/3",
+      sectionCount: 11,
+      semesterWeeks: 20,
+      showSaturday: true,
+      showSunday: true,
+      showOutOfWeekCourses: false,
+      backgroundName: "清爽蓝",
+      backgroundImageUrl: "",
+      backgroundImageName: "",
+      darkMode: "跟随系统"
+    };
+
+    function layoutMetrics() {
+      const wide = state.mode === "tablet" || state.mode === "desktop";
+      const wrap = document.getElementById("boardWrap");
+      const available = wrap ? wrap.clientWidth : 390;
+      const time = wide ? 54 : 40;
+      return {
+        time,
+        day: Math.max(wide ? 72 : 38, (available - time) / state.displayDays),
+        row: wide ? 84 : 76,
+        header: wide ? 62 : 58
+      };
+    }
+
+    function courseFontSizes() {
+      if (state.displayDays <= 5) return { title: 13, meta: 11 };
+      if (state.displayDays === 6) return { title: 12, meta: 10 };
+      return { title: 11, meta: 9 };
+    }
+
+    function toast(text) {
+      const node = document.getElementById("toast");
+      node.textContent = text;
+      node.classList.add("show");
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => node.classList.remove("show"), 1900);
+    }
+
+    function setParseState(next) {
+      state.parseState = next;
+      const pill = document.getElementById("statePill");
+      pill.className = "state-pill " + next;
+      const labels = { success: "解析成功", error: "解析失败", empty: "空课表", loading: "解析中" };
+      pill.textContent = labels[next];
+    }
+
+    function isCourseInWeek(course) {
+      const weeks = course.weeks || "";
+      if (weeks.includes("项目")) return true;
+      if (weeks.includes("双") && state.week % 2 !== 0) return false;
+      if (weeks.includes("单") && state.week % 2 === 0) return false;
+      const range = weeks.match(/(\d+)\s*-\s*(\d+)/);
+      if (range) {
+        const start = Number(range[1]);
+        const end = Number(range[2]);
+        return state.week >= start && state.week <= end;
+      }
+      return true;
+    }
+
+    function visibleCourses() {
+      const shownDays = visibleDayNumbers();
+      return state.courses.filter(course => {
+        if (!shownDays.includes(course.weekday)) return false;
+        if (isCourseInWeek(course)) return true;
+        return state.showOutOfWeekCourses && !hasCurrentWeekOverlap(course);
+      });
+    }
+
+    function visibleDayNumbers() {
+      const result = [1, 2, 3, 4, 5];
+      if (state.showSaturday) result.push(6);
+      if (state.showSunday) result.push(7);
+      state.displayDays = result.length;
+      return result;
+    }
+
+    function hasCurrentWeekOverlap(candidate) {
+      return state.courses.some(course => {
+        if (course === candidate || !isCourseInWeek(course) || course.weekday !== candidate.weekday) return false;
+        return course.start <= candidate.end && course.end >= candidate.start;
+      });
+    }
+
+    function visibleDays() {
+      return visibleDayNumbers().map(day => days[day - 1]);
+    }
+
+    function firstWeekDate() {
+      const parts = state.firstWeekDay.split("/").map(Number);
+      if (parts.length === 3 && parts.every(Boolean)) return new Date(parts[0], parts[1] - 1, parts[2]);
+      return new Date(2026, 2, 3);
+    }
+
+    function headerDate(actualDay) {
+      const date = firstWeekDate();
+      date.setDate(date.getDate() + (state.week - 1) * 7 + actualDay - 1);
+      return date.getDate();
+    }
+
+    function setDisplayDays(count) {
+      state.displayDays = Math.max(1, Math.min(days.length, count));
+      render();
+      toast("已显示 " + state.displayDays + " 天");
+    }
+
+    function weekDateText() {
+      const date = firstWeekDate();
+      date.setDate(date.getDate() + (state.week - 1) * 7);
+      return date.getFullYear() + "/" + (date.getMonth() + 1) + "/" + date.getDate() + " 周三 · 长安校区西区";
+    }
+
+    function changeWeek(delta) {
+      const wrap = document.getElementById("boardWrap");
+      const previous = document.getElementById("board").cloneNode(true);
+      state.week = Math.max(1, Math.min(20, state.week + delta));
+      render();
+      animateBoard(delta, previous);
+    }
+
+    function animateBoard(delta, previous) {
+      const wrap = document.getElementById("boardWrap");
+      const current = document.getElementById("board");
+      if (!wrap || !previous || !current) return;
+      const slider = document.createElement("div");
+      slider.className = "week-slider " + (delta > 0 ? "next" : "prev");
+      if (delta > 0) {
+        slider.appendChild(previous);
+        slider.appendChild(current.cloneNode(true));
+      } else {
+        slider.appendChild(current.cloneNode(true));
+        slider.appendChild(previous);
+      }
+      current.replaceWith(slider);
+      setTimeout(() => {
+        slider.replaceWith(delta > 0 ? slider.children[1] : slider.children[0]);
+      }, 260);
+    }
+
+    function renderBoard() {
+      const board = document.getElementById("board");
+      const empty = document.getElementById("emptyState");
+      const wrap = document.getElementById("boardWrap");
+      wrap.style.backgroundImage = state.backgroundImageUrl ? "url(" + state.backgroundImageUrl + ")" : "";
+      wrap.style.backgroundSize = "cover";
+      wrap.style.backgroundPosition = "center";
+      const m = layoutMetrics();
+      const courses = visibleCourses();
+      const hasCourses = courses.length > 0 && state.parseState !== "empty";
+      board.style.display = "block";
+      empty.classList.toggle("show", !hasCourses);
+
+      const shownDays = visibleDays();
+      const shownDayNumbers = visibleDayNumbers();
+      const font = courseFontSizes();
+      board.style.width = "100%";
+      board.style.height = (m.header + m.row * state.sectionCount) + "px";
+      board.style.setProperty("--course-title-size", font.title + "px");
+      board.style.setProperty("--course-meta-size", font.meta + "px");
+      board.innerHTML = '<div class="time-head" style="width:' + m.time + 'px;height:' + m.header + 'px">时间</div>';
+
+      shownDays.forEach((day, index) => {
+        const actualDay = shownDayNumbers[index];
+        const head = document.createElement("div");
+        head.className = "day-head" + (actualDay === state.selectedDay ? " today" : "");
+        head.style.left = (m.time + m.day * index) + "px";
+        head.style.width = m.day + "px";
+        head.style.height = m.header + "px";
+        head.innerHTML = "<b>周" + day + "</b><small>" + headerDate(actualDay) + "</small>";
+        board.appendChild(head);
+
+        const col = document.createElement("div");
+        col.className = "col-line";
+        col.style.left = (m.time + m.day * index) + "px";
+        col.style.height = (m.header + m.row * state.sectionCount) + "px";
+        board.appendChild(col);
+      });
+
+      Array.from({ length: state.sectionCount }, (_, index) => times[index] || "").forEach((time, index) => {
+        const top = m.header + m.row * index;
+        const label = document.createElement("div");
+        label.className = "time-label";
+        label.style.top = top + "px";
+        label.style.width = m.time + "px";
+        label.style.height = m.row + "px";
+        label.innerHTML = "<b>" + (index + 1) + "</b><span>" + time + "</span>";
+        board.appendChild(label);
+
+        const line = document.createElement("div");
+        line.className = "grid-line";
+        line.style.left = m.time + "px";
+        line.style.top = top + "px";
+        line.style.width = (m.day * shownDays.length) + "px";
+        board.appendChild(line);
+      });
+
+      courses.forEach(course => {
+        const column = shownDayNumbers.indexOf(course.weekday);
+        if (column < 0) return;
+        const item = document.createElement("button");
+        item.className = "course " + colorClass(course.name);
+        if (state.showOutOfWeekCourses && !isCourseInWeek(course)) item.classList.add("muted-course");
+        item.style.left = (m.time + m.day * column + 4) + "px";
+        item.style.top = (m.header + m.row * (course.start - 1) + 4) + "px";
+        item.style.width = (m.day - 8) + "px";
+        item.style.height = (m.row * (course.end - course.start + 1) - 8) + "px";
+        const teacher = course.teacher ? "<br>" + course.teacher : "";
+        item.innerHTML = "<strong>" + course.name + "</strong><span>@" + course.room + teacher + "</span>";
+        item.addEventListener("click", () => showCourseDetail(course));
+        item.addEventListener("contextmenu", event => {
+          event.preventDefault();
+          showCourseEditor(course);
+        });
+        board.appendChild(item);
+      });
+    }
+
+    function colorClass(name) {
+      const classes = ["blue", "cyan", "green", "orange", "pink", "violet"];
+      let hash = 0;
+      for (const char of name || "") hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+      return classes[hash % classes.length];
+    }
+
+    function renderHeader() {
+      document.getElementById("weekBadge").textContent = "Polaris Week " + state.week;
+      document.getElementById("heroMeta").textContent = weekDateText();
+    }
+
+    function render() {
+      applyTheme();
+      renderHeader();
+      renderBoard();
+      renderNavigation();
+    }
+
+    function applyTheme() {
+      const screen = document.querySelector(".screen");
+      const dark = state.darkMode === "深色" ||
+        (state.darkMode === "跟随系统" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      screen.classList.toggle("dark", dark);
+    }
+
+    function renderNavigation() {
+      const schedule = state.activeNav === "schedule";
+      const settings = state.activeNav === "settings";
+      document.getElementById("boardWrap").style.display = schedule ? "block" : "none";
+      document.getElementById("myPage").classList.toggle("show", state.activeNav === "me");
+      document.getElementById("settingsPage").classList.toggle("show", settings);
+      document.querySelector(".top").style.display = schedule ? "block" : "none";
+      document.querySelector(".bottom").style.display = settings ? "none" : "grid";
+      document.getElementById("profileMeta").textContent = state.profileMeta;
+      document.getElementById("scheduleSettingsMeta").textContent = state.scheduleName + " · " + state.semesterWeeks + "周 · " + state.sectionCount + "节";
+      document.getElementById("weekBadge").textContent = schedule ? "Polaris Week " + state.week : "我的";
+      document.getElementById("heroMeta").textContent = schedule ? weekDateText() : "课程与偏好";
+    }
+
+    function showModal(html) {
+      document.getElementById("modal").innerHTML = html;
+      document.getElementById("modalBackdrop").classList.remove("fullscreen");
+      document.getElementById("modalBackdrop").classList.add("show");
+      document.querySelector("#modal .close").addEventListener("click", closeModal);
+    }
+
+    function closeModal() {
+      document.getElementById("modalBackdrop").classList.remove("show");
+      document.getElementById("modalBackdrop").classList.remove("fullscreen");
+    }
+
+    function showCourseDetail(course) {
+      showModal(
+        '<div class="modal-head"><div><h3>' + course.name + '</h3><p>课程详情</p></div><button class="close">×</button></div>' +
+        '<div class="detail-grid">' +
+        '<div class="detail-cell"><span>时间</span><strong>周' + days[course.weekday - 1] + ' · ' + course.start + '-' + course.end + '节</strong></div>' +
+        '<div class="detail-cell"><span>周次</span><strong>' + course.weeks + '</strong></div>' +
+        '<div class="detail-cell"><span>地点</span><strong>' + course.room + '</strong></div>' +
+        '<div class="detail-cell"><span>教师</span><strong>' + course.teacher + '</strong></div>' +
+        '</div><button class="modal-action" id="editCourseBtn">编辑课程</button>'
+      );
+      document.getElementById("editCourseBtn").addEventListener("click", () => showCourseEditor(course));
+    }
+
+    function showCourseEditor(course) {
+      const editing = !!course;
+      const target = course || { name: "", teacher: "", room: "", weekday: 1, start: 1, end: 2, weeks: "1-20周", color: "blue", confidence: 1 };
+      showModal(
+        '<div class="modal-head"><div><h3>' + (editing ? '编辑课程' : '添加课程') + '</h3><p>课程名称和时间为必填</p></div><button class="close">×</button></div>' +
+        '<div class="editor-form">' +
+        '<input id="editName" placeholder="课程名称（必要）" value="' + target.name + '">' +
+        '<input id="editTeacher" placeholder="教师" value="' + (target.teacher || '') + '">' +
+        '<input id="editRoom" placeholder="地点" value="' + (target.room || '') + '">' +
+        '<input id="editDay" placeholder="星期 1-7（必要）" value="' + target.weekday + '">' +
+        '<input id="editStart" placeholder="开始节次（必要）" value="' + target.start + '">' +
+        '<input id="editEnd" placeholder="结束节次（必要）" value="' + target.end + '">' +
+        '<input id="editWeeks" placeholder="周数" value="' + (target.weeks || '1-20周') + '">' +
+        '<div class="settings-choice"><button data-week-value="1-20周">所有周</button><button data-week-value="单周">单周</button><button data-week-value="双周">双周</button></div>' +
+        '<button class="modal-action" id="saveCourseBtn">确认</button>' +
+        '</div>'
+      );
+      document.getElementById("modalBackdrop").classList.add("fullscreen");
+      document.querySelectorAll("[data-week-value]").forEach(button => {
+        button.addEventListener("click", () => document.getElementById("editWeeks").value = button.dataset.weekValue);
+      });
+      document.getElementById("saveCourseBtn").addEventListener("click", () => {
+        const name = document.getElementById("editName").value.trim();
+        const weekday = Math.max(1, Math.min(7, Number(document.getElementById("editDay").value || 1)));
+        const start = Math.max(1, Math.min(11, Number(document.getElementById("editStart").value || 1)));
+        const end = Math.max(start, Math.min(11, Number(document.getElementById("editEnd").value || start)));
+        if (!name) {
+          toast("请填写课程名称");
+          return;
+        }
+        const next = {
+          name,
+          weekday,
+          start,
+          end,
+          weeks: document.getElementById("editWeeks").value.trim() || "1-20周",
+          room: document.getElementById("editRoom").value.trim(),
+          teacher: document.getElementById("editTeacher").value.trim(),
+          color: target.color || "blue",
+          confidence: 1,
+          rawText: ""
+        };
+        if (editing) {
+          const index = state.courses.indexOf(course);
+          if (index >= 0) state.courses[index] = next;
+        } else {
+          state.courses.push(next);
+        }
+        closeModal();
+        state.activeNav = "schedule";
+        render();
+      });
+    }
+
+    function showSettings() {
+      showModal(
+        '<div class="modal-head"><div><h3>设置页预览</h3><p>这里展示后续可迁移到 Android 原生设置页的视觉和信息结构。</p></div><button class="close">×</button></div>' +
+        '<div class="detail-grid">' +
+        '<div class="detail-cell"><span>主题</span><strong>清爽蓝</strong></div>' +
+        '<div class="detail-cell"><span>默认视图</span><strong>周课表</strong></div>' +
+        '<div class="detail-cell"><span>显示天数</span><strong id="displayDaysText">' + state.displayDays + ' 天</strong></div>' +
+        '<div class="detail-cell"><span>课前提醒</span><strong>10 分钟</strong></div>' +
+        '</div>' +
+        '<div class="settings-choice">' +
+        '<button data-days="5">5天</button><button data-days="6">6天</button><button data-days="7">7天</button>' +
+        '</div>'
+      );
+      document.querySelectorAll("[data-days]").forEach(button => {
+        button.classList.toggle("active", Number(button.dataset.days) === state.displayDays);
+        button.addEventListener("click", () => {
+          setDisplayDays(Number(button.dataset.days));
+          document.getElementById("displayDaysText").textContent = state.displayDays + " 天";
+          document.querySelectorAll("[data-days]").forEach(item => {
+            item.classList.toggle("active", Number(item.dataset.days) === state.displayDays);
+          });
+        });
+      });
+    }
+
+    let settingWidgetId = 0;
+    let pendingSettingBindings = [];
+
+    function openSettingsPage(title, body) {
+      const page = document.getElementById("settingsPage");
+      page.innerHTML = '<div class="settings-fixed"><button class="setting-back" id="settingsBack">‹</button><h2>' + title + '</h2></div>' +
+        '<div class="settings-scroll">' + body + '</div>';
+      state.activeNav = "settings";
+      render();
+      document.getElementById("settingsBack").addEventListener("click", () => {
+        state.activeNav = "me";
+        render();
+      });
+      pendingSettingBindings.forEach(bind => bind());
+      pendingSettingBindings = [];
+    }
+
+    function optionGroup(label, values, current, onChange) {
+      const id = "opt" + (++settingWidgetId);
+      pendingSettingBindings.push(() => {
+        document.querySelectorAll('[data-option-group="' + id + '"]').forEach(button => {
+          button.addEventListener("click", () => {
+            onChange(button.dataset.value);
+            document.querySelectorAll('[data-option-group="' + id + '"]').forEach(item => item.classList.remove("active"));
+            button.classList.add("active");
+          });
+        });
+      });
+      return '<div class="option-group"><span>' + label + '</span><div class="settings-choice">' +
+        values.map(value => '<button class="' + (value === current ? 'active' : '') + '" data-option-group="' + id + '" data-value="' + value + '">' + value + '</button>').join("") +
+        '</div></div>';
+    }
+
+    function stepper(label, current, min, max, onChange) {
+      const id = "step" + (++settingWidgetId);
+      pendingSettingBindings.push(() => {
+        let value = Math.max(min, Math.min(max, current));
+        const text = document.getElementById(id + "Value");
+        document.getElementById(id + "Minus").addEventListener("click", () => {
+          value = Math.max(min, value - 1);
+          text.textContent = value;
+          onChange(value);
+        });
+        document.getElementById(id + "Plus").addEventListener("click", () => {
+          value = Math.min(max, value + 1);
+          text.textContent = value;
+          onChange(value);
+        });
+      });
+      return '<div class="option-group"><span>' + label + '</span><div class="stepper">' +
+        '<button id="' + id + 'Minus">−</button><strong id="' + id + 'Value">' + current + '</strong><button id="' + id + 'Plus">+</button>' +
+        '</div></div>';
+    }
+
+    function todayString() {
+      const date = new Date();
+      return date.getFullYear() + "/" + (date.getMonth() + 1) + "/" + date.getDate();
+    }
+
+    function settingsSection(title, rows) {
+      return '<div class="option-group"><span>' + title + '</span><div class="settings-card">' + rows + '</div></div>';
+    }
+
+    function settingLine(id, label, value) {
+      return '<button class="profile-card setting-line" id="' + id + '"><strong>' + label + '</strong><span>' + value + '</span></button>';
+    }
+
+    function settingSwitch(id, label, checked) {
+      return '<button class="profile-card setting-line setting-switch ' + (checked ? 'on' : '') + '" id="' + id + '">' +
+        '<strong>' + label + '</strong><i class="switch-track"></i></button>';
+    }
+
+    function bindSwitch(id, onSave, refresh) {
+      document.getElementById(id).addEventListener("click", () => {
+        onSave();
+        render();
+      });
+    }
+
+    function bindChoice(id, title, values, current, onSave, refresh) {
+      document.getElementById(id).addEventListener("click", () => {
+        showModal('<div class="modal-head"><div><h3>' + title + '</h3><p>选择后立即应用</p></div><button class="close">×</button></div>' +
+          '<div class="settings-choice">' + values.map(value => '<button class="' + (value === current ? 'active' : '') + '" data-pick="' + value + '">' + value + '</button>').join("") + '</div>');
+        document.querySelectorAll("[data-pick]").forEach(button => {
+          button.addEventListener("click", () => {
+            onSave(button.dataset.pick);
+            closeModal();
+            render();
+            if (state.activeNav === "settings") (refresh || showScheduleSettings)();
+          });
+        });
+      });
+    }
+
+    function bindNumber(id, title, min, max, current, onSave, refresh) {
+      document.getElementById(id).addEventListener("click", () => {
+        let value = current;
+        showModal('<div class="modal-head"><div><h3>' + title + '</h3><p>通过加减调整</p></div><button class="close">×</button></div>' +
+          '<div class="stepper"><button id="numMinus">−</button><strong id="numValue">' + value + '</strong><button id="numPlus">+</button></div>' +
+          '<button class="modal-action" id="numSave">保存</button>');
+        document.getElementById("numMinus").addEventListener("click", () => {
+          value = Math.max(min, value - 1);
+          document.getElementById("numValue").textContent = value;
+        });
+        document.getElementById("numPlus").addEventListener("click", () => {
+          value = Math.min(max, value + 1);
+          document.getElementById("numValue").textContent = value;
+        });
+        document.getElementById("numSave").addEventListener("click", () => {
+          onSave(value);
+          closeModal();
+          render();
+          if (state.activeNav === "settings") (refresh || showScheduleSettings)();
+        });
+      });
+    }
+
+    function bindDate(id, title, current, onSave, refresh) {
+      document.getElementById(id).addEventListener("click", () => {
+        const value = (current || "").split("/").map((part, index) => index === 0 ? part : part.padStart(2, "0")).join("-");
+        showModal('<div class="modal-head"><div><h3>' + title + '</h3><p>点击日历选择日期</p></div><button class="close">×</button></div>' +
+          '<div class="editor-form"><input id="datePick" type="date" value="' + value + '"><button class="modal-action" id="dateSave">保存</button></div>');
+        document.getElementById("dateSave").addEventListener("click", () => {
+          const next = document.getElementById("datePick").value;
+          if (next) onSave(next.replace(/-/g, "/"));
+          closeModal();
+          render();
+          if (state.activeNav === "settings") (refresh || showScheduleSettings)();
+        });
+      });
+    }
+
+    function bindTime(id, title, current, onSave, refresh) {
+      document.getElementById(id).addEventListener("click", () => {
+        const match = (current || "").match(/(\d{1,2})[:：](\d{1,2})/);
+        const value = match ? match[1].padStart(2, "0") + ":" + match[2].padStart(2, "0") : "08:00";
+        showModal('<div class="modal-head"><div><h3>' + title + '</h3><p>滚轮选择任意时间</p></div><button class="close">×</button></div>' +
+          '<div class="editor-form"><input id="timePick" type="time" value="' + value + '"><button class="modal-action" id="timeSave">保存</button></div>');
+        document.getElementById("timeSave").addEventListener("click", () => {
+          onSave(document.getElementById("timePick").value + "开始");
+          closeModal();
+          render();
+          if (state.activeNav === "settings") (refresh || showScheduleSettings)();
+        });
+      });
+    }
+
+    function showScheduleSettings() {
+      openSettingsPage("课表设置",
+        settingLine("setName", "课表名称", state.scheduleName) +
+        settingsSection("课表数据",
+          settingLine("setTimes", "上课时间", state.classTimes) +
+          settingLine("setFirstDay", "第一周的第一天", state.firstWeekDay) +
+          settingLine("setWeek", "当前周", "第 " + state.week + " 周") +
+          settingLine("setSections", "一天课程节数", state.sectionCount + " 节") +
+          settingLine("setWeeks", "学期周数", state.semesterWeeks + " 周") +
+          settingLine("manageCourses", "管理已添加课程", state.courses.length + " 门")
+        ) +
+        settingsSection("课表外观",
+          settingSwitch("setSaturday", "显示周六", state.showSaturday) +
+          settingSwitch("setSunday", "显示周日", state.showSunday) +
+          settingSwitch("setOutWeek", "显示非本周课程", state.showOutOfWeekCourses) +
+          settingLine("setHeight", "课程格子高度", "默认") +
+          settingLine("setRadius", "格子圆角半径", "9 dp")
+        )
+      );
+      bindChoice("setName", "课表名称", ["默认课表", "本学期", "导入课表"], state.scheduleName, value => state.scheduleName = value);
+      bindTime("setTimes", "上课时间", state.classTimes, value => state.classTimes = value);
+      bindDate("setFirstDay", "第一周的第一天", state.firstWeekDay, value => state.firstWeekDay = value);
+      bindNumber("setWeek", "当前周", 1, state.semesterWeeks, state.week, value => state.week = value);
+      bindNumber("setSections", "一天课程节数", 1, 20, state.sectionCount, value => state.sectionCount = value);
+      bindNumber("setWeeks", "学期周数", 1, 20, state.semesterWeeks, value => state.semesterWeeks = value);
+      bindSwitch("setSaturday", () => state.showSaturday = !state.showSaturday);
+      bindSwitch("setSunday", () => state.showSunday = !state.showSunday);
+      document.getElementById("manageCourses").addEventListener("click", () => toast("长按课程块即可编辑"));
+      bindSwitch("setOutWeek", () => state.showOutOfWeekCourses = !state.showOutOfWeekCourses);
+      document.getElementById("setHeight").addEventListener("click", () => toast("后续会接入高度调节"));
+      document.getElementById("setRadius").addEventListener("click", () => toast("后续会接入圆角调节"));
+    }
+
+    function showGlobalSettings() {
+      openSettingsPage("全局设置",
+        settingsSection("课表",
+          settingLine("setCurrentSchedule", "当前课表", state.scheduleName) +
+          settingLine("setBackgroundImage", "课程表背景", state.backgroundImageName || "未设置")
+        ) +
+        settingsSection("显示",
+          settingLine("setDarkMode", "深色模式", state.darkMode)
+        ) +
+        '<input type="file" accept="image/*" id="bgFile" style="display:none">'
+      );
+      document.getElementById("setCurrentSchedule").addEventListener("click", () => toast("当前仅启用一张课表"));
+      document.getElementById("setBackgroundImage").addEventListener("click", () => {
+        showModal('<div class="modal-head"><div><h3>课程表背景</h3><p>从系统相册导入并铺满课表区域</p></div><button class="close">×</button></div>' +
+          '<div class="settings-choice"><button id="chooseBg">从系统相册选择</button><button id="clearBg">清除背景</button></div>');
+        document.getElementById("chooseBg").addEventListener("click", () => {
+          closeModal();
+          document.getElementById("bgFile").click();
+        });
+        document.getElementById("clearBg").addEventListener("click", () => {
+          state.backgroundImageUrl = "";
+          state.backgroundImageName = "";
+          closeModal();
+          render();
+          showGlobalSettings();
+        });
+      });
+      document.getElementById("bgFile").addEventListener("change", event => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        state.backgroundImageUrl = URL.createObjectURL(file);
+        state.backgroundImageName = file.name;
+        render();
+        showGlobalSettings();
+      });
+      bindChoice("setDarkMode", "深色模式", ["跟随系统", "浅色", "深色"], state.darkMode, value => state.darkMode = value, showGlobalSettings);
+    }
+
+    function showSecuritySettings() {
+      openSettingsPage("安全设置",
+        settingsSection("账号",
+          settingLine("setProfile", "年级和学校", state.profileMeta) +
+          settingLine("setLogin", "登录方式", "管理员 · 无需账号登录") +
+          settingLine("setLocalData", "本机数据", "课程保存在本机")
+        )
+      );
+      bindChoice("setProfile", "年级和学校", ["2025级 · Polaris大学", "2024级 · Polaris大学", "管理员"], state.profileMeta, value => state.profileMeta = value, showSecuritySettings);
+      document.getElementById("setLogin").addEventListener("click", () => toast("现阶段管理员无需账号登录"));
+      document.getElementById("setLocalData").addEventListener("click", () => toast("课程保存在本机"));
+    }
+
+    function startSimulatedImport() {
+      if (state.courses.length > 0) {
+        showModal('<div class="modal-head"><div><h3>覆盖当前课表？</h3><p>当前课表已有课程，继续导入会用 PDF 识别结果覆盖当前课程。</p></div><button class="close">×</button></div>' +
+          '<button class="modal-action" id="confirmImportOverwrite">确认覆盖</button>' +
+          '<button class="modal-action" id="cancelImportOverwrite" style="background:rgba(23,32,51,.08);color:#344054;">取消</button>');
+        document.getElementById("confirmImportOverwrite").addEventListener("click", simulateImport);
+        document.getElementById("cancelImportOverwrite").addEventListener("click", closeModal);
+        return;
+      }
+      simulateImport();
+    }
+
+    function simulateImport() {
+      state.courses = [];
+      setParseState("loading");
+      render();
+      showModal('<div class="modal-head"><div><h3>正在解析 PDF</h3><p>模拟选择教务系统 PDF、提取文本、识别课程块的过程。</p></div><button class="close">×</button></div><div class="progress"><i></i></div>');
+      setTimeout(() => {
+        state.courses = mockCourses.slice();
+        state.scheduleName = "导入课表";
+        state.sectionCount = Math.max(11, ...state.courses.map(course => course.end));
+        state.semesterWeeks = 20;
+        state.displayDays = visibleDayNumbers().length;
+        setParseState("success");
+        render();
+        closeModal();
+        toast("解析成功：已生成 " + state.courses.length + " 条课程");
+      }, 1200);
+    }
+
+    function showSharePreview() {
+      if (!state.courses.length) {
+        toast("还没有课程，先导入或添加课程后再分享");
+        return;
+      }
+      const sharedCourses = state.courses.map(course => ({
+        name: course.name,
+        weekday: course.weekday,
+        start: course.start,
+        end: course.end,
+        weeks: course.weeks,
+        room: course.room,
+        teacher: course.teacher
+      }));
+      const link = "polaris://schedule/import?payload=preview-" + sharedCourses.length + "-courses";
+      showModal('<div class="modal-head"><div><h3>分享课表链接</h3><p>保留课程、地点、教师、周次和节次；不包含姓名、学号和 PDF 原文。</p></div><button class="close">×</button></div>' +
+        '<div class="raw-box"><span>链接预览</span>' + link + '</div>' +
+        '<button class="modal-action" id="copySharePreview">调用系统分享</button>');
+      document.getElementById("copySharePreview").addEventListener("click", () => {
+        closeModal();
+        toast("已生成可直接导入的分享链接");
+      });
+    }
+
+    function showLinkImportDialog() {
+      showModal('<div class="modal-head"><div><h3>链接导入</h3><p>粘贴 Polaris 课程表分享链接，确认后可直接导入。</p></div><button class="close">×</button></div>' +
+        '<div class="editor-form"><input id="shareLinkInput" placeholder="polaris://schedule/import?payload=...">' +
+        '<button class="modal-action" id="confirmLinkImport">确认导入</button></div>');
+      document.getElementById("confirmLinkImport").addEventListener("click", () => {
+        const link = document.getElementById("shareLinkInput").value.trim();
+        if (!link.startsWith("polaris://schedule/import?payload=")) {
+          toast("这不是有效的 Polaris 课表分享链接");
+          return;
+        }
+        closeModal();
+        startSimulatedImport();
+      });
+    }
+
+    document.querySelectorAll(".switcher button").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".switcher button").forEach(item => item.classList.remove("active"));
+        button.classList.add("active");
+        state.mode = button.dataset.mode;
+        document.getElementById("device").className = "device " + state.mode;
+        render();
+      });
+    });
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const boardWrap = document.getElementById("boardWrap");
+    boardWrap.addEventListener("touchstart", event => {
+      const touch = event.changedTouches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+    }, { passive: true });
+    boardWrap.addEventListener("touchend", event => {
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        changeWeek(dx < 0 ? 1 : -1);
+      }
+    }, { passive: true });
+    boardWrap.addEventListener("wheel", event => {
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY) && Math.abs(event.deltaX) > 55) {
+        event.preventDefault();
+        changeWeek(event.deltaX > 0 ? 1 : -1);
+      }
+    }, { passive: false });
+
+    function closeActions() {
+      document.getElementById("actions").classList.remove("open");
+    }
+
+    function runAction(action) {
+      closeActions();
+      action();
+    }
+
+    document.getElementById("actionToggle").addEventListener("click", event => {
+      event.stopPropagation();
+      document.getElementById("actions").classList.toggle("open");
+    });
+
+    document.getElementById("importBtn").addEventListener("click", () => runAction(() => showCourseEditor(null)));
+    document.getElementById("exportBtn").addEventListener("click", () => runAction(startSimulatedImport));
+    document.getElementById("linkImportBtn").addEventListener("click", () => runAction(showLinkImportDialog));
+    document.getElementById("shareBtn").addEventListener("click", () => runAction(showSharePreview));
+
+    document.addEventListener("click", event => {
+      if (!document.getElementById("actions").contains(event.target)) {
+        closeActions();
+      }
+    });
+
+    document.querySelectorAll(".bottom button").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".bottom button").forEach(item => item.classList.remove("active"));
+        button.classList.add("active");
+        state.activeNav = button.dataset.nav;
+        render();
+      });
+    });
+
+    document.getElementById("scheduleSettings").addEventListener("click", showScheduleSettings);
+    document.getElementById("globalSettings").addEventListener("click", showGlobalSettings);
+    document.getElementById("securitySettings").addEventListener("click", showSecuritySettings);
+
+    document.getElementById("modalBackdrop").addEventListener("click", event => {
+      if (event.target.id === "modalBackdrop") closeModal();
+    });
+
+    document.getElementById("emptyState").addEventListener("contextmenu", event => {
+      event.preventDefault();
+      showCourseEditor(null);
+    });
+
+    render();
+  </script>
+</body>
+</html>

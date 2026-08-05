@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>周课表 — Polaris课程表</title>
+    <style id="theme-vars">
+/* ============================================
+   Polaris 课程表 — Brand Design Tokens
+   ============================================ */
+
+:root {
+  /* — Primary Brand — */
+  --color-brand: #2563EB;
+  --color-brand-hover: #1D4ED8;
+  --color-brand-light: #DBEAFE;
+  --color-brand-subtle: #EFF6FF;
+
+  /* — Semantic State Colors — */
+  --state-success: #059669;
+  --state-success-bg: #ECFDF5;
+  --state-warning: #D97706;
+  --state-warning-bg: #FFFBEB;
+  --state-error: #DC2626;
+  --state-error-bg: #FEF2F2;
+  --state-info: #2563EB;
+  --state-info-bg: #EFF6FF;
+
+  /* — Course Palette (by weekday) — */
+  --course-mon: #2563EB;
+  --course-mon-bg: #EAF2FF;
+  --course-tue: #E8645A;
+  --course-tue-bg: #FFEDEE;
+  --course-wed: #0D9488;
+  --course-wed-bg: #EAF8F1;
+  --course-thu: #7C3AED;
+  --course-thu-bg: #F1EAFE;
+  --course-fri: #D97706;
+  --course-fri-bg: #FFF3D9;
+  --course-sat: #EC4899;
+  --course-sat-bg: #FDF2F8;
+
+  /* — Surfaces — */
+  --surface-page: #F6F7FB;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-overlay: rgba(15, 23, 42, 0.5);
+
+  /* — Text — */
+  --text-primary: #172033;
+  --text-secondary: #667085;
+  --text-tertiary: #98A2B3;
+  --text-inverse: #FFFFFF;
+  --text-brand: #2563EB;
+
+  /* — Borders — */
+  --border-default: #D9DFEA;
+  --border-subtle: #E5E7EB;
+  --border-brand: #2563EB;
+
+  /* — Typography — */
+  --font-family: 'Inter', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-base: 15px;
+  --font-size-lg: 17px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* — Radius — */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* — Spacing — */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 40px;
+
+  /* — Shadow — */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+
+  /* — Bottom Nav Height — */
+  --nav-height: 64px;
+  --status-bar-height: 44px;
+
+  /* — Schedule Grid — */
+  --schedule-time-col: 48px;
+  --schedule-day-col: 68px;
+  --schedule-row-height: 56px;
+  --schedule-gap: 2px;
+}
+
+/* — Typography Utility Classes — */
+.text-xs { font-size: var(--font-size-xs); line-height: var(--line-height-tight); }
+.text-sm { font-size: var(--font-size-sm); line-height: var(--line-height-normal); }
+.text-base { font-size: var(--font-size-base); line-height: var(--line-height-normal); }
+.text-lg { font-size: var(--font-size-lg); line-height: var(--line-height-normal); }
+.text-xl { font-size: var(--font-size-xl); line-height: var(--line-height-tight); }
+.text-2xl { font-size: var(--font-size-2xl); line-height: var(--line-height-tight); }
+.text-3xl { font-size: var(--font-size-3xl); line-height: var(--line-height-tight); }
+
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-brand { color: var(--text-brand); }
+
+/* — Color Utility Classes — */
+.bg-brand { background-color: var(--color-brand); }
+.bg-brand-light { background-color: var(--color-brand-light); }
+.bg-brand-subtle { background-color: var(--color-brand-subtle); }
+.bg-page { background-color: var(--surface-page); }
+.bg-card { background-color: var(--surface-card); }
+
+/* — Radius Utility Classes — */
+.rounded-sm { border-radius: var(--radius-sm); }
+.rounded-md { border-radius: var(--radius-md); }
+.rounded-lg { border-radius: var(--radius-lg); }
+.rounded-xl { border-radius: var(--radius-xl); }
+.rounded-full { border-radius: var(--radius-full); }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--text-primary);
+    --color-secondary: var(--text-secondary);
+  }
+  @layer base {
+    body { background: var(--text-background); color: var(--text-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="top-bar__title">周课表</div>
+    <div class="top-bar__week-switcher">
+      <button class="top-bar__chevron" aria-label="上一周">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="top-bar__week-label">第<span>18</span>周</div>
+      <button class="top-bar__chevron" aria-label="下一周">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <button class="top-bar__today-btn" data-dom-id="nav-today">今天</button>
+  </div>
+
+  <!-- Schedule Container -->
+  <div class="schedule-container">
+
+    <!-- Day Headers -->
+    <div class="day-headers-wrapper">
+      <div class="day-headers">
+        <div class="day-headers__time-gutter">时间</div>
+        <div class="day-headers__scroll" id="headerScroll">
+          <div class="day-header day-header--today">
+            <span class="day-header__name">周一</span>
+            <span class="day-header__date">7/13</span>
+          </div>
+          <div class="day-header">
+            <span class="day-header__name">周二</span>
+            <span class="day-header__date">7/14</span>
+          </div>
+          <div class="day-header">
+            <span class="day-header__name">周三</span>
+            <span class="day-header__date">7/15</span>
+          </div>
+          <div class="day-header">
+            <span class="day-header__name">周四</span>
+            <span class="day-header__date">7/16</span>
+          </div>
+          <div class="day-header">
+            <span class="day-header__name">周五</span>
+            <span class="day-header__date">7/17</span>
+          </div>
+          <div class="day-header">
+            <span class="day-header__name">周六</span>
+            <span class="day-header__date">7/18</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Grid Body -->
+    <div class="grid-wrapper" id="gridScroll">
+      <div class="grid-body">
+
+        <!-- Time Column (sticky left) -->
+        <div class="time-col">
+          <div class="time-row">
+            <span class="time-row__section">1</span>
+            <span class="time-row__range">08:00</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">2</span>
+            <span class="time-row__range">08:45</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">3</span>
+            <span class="time-row__range">09:50</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">4</span>
+            <span class="time-row__range">10:35</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">5</span>
+            <span class="time-row__range">11:30</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">6</span>
+            <span class="time-row__range">12:15</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">7</span>
+            <span class="time-row__range">14:00</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">8</span>
+            <span class="time-row__range">14:45</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">9</span>
+            <span class="time-row__range">16:00</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">10</span>
+            <span class="time-row__range">16:45</span>
+          </div>
+          <div class="time-row">
+            <span class="time-row__section">11</span>
+            <span class="time-row__range">19:00</span>
+          </div>
+        </div>
+
+        <!-- Days Area (course blocks positioned absolutely here) -->
+        <div class="days-area" id="daysArea">
+
+          <!-- Grid horizontal lines (visual only) -->
+          <div class="grid-lines">
+            <div class="grid-line" style="top: 56px;"></div>
+            <div class="grid-line" style="top: 112px;"></div>
+            <div class="grid-line" style="top: 168px;"></div>
+            <div class="grid-line" style="top: 224px;"></div>
+            <div class="grid-line" style="top: 280px;"></div>
+            <div class="grid-line" style="top: 336px;"></div>
+            <div class="grid-line" style="top: 392px;"></div>
+            <div class="grid-line" style="top: 448px;"></div>
+            <div class="grid-line" style="top: 504px;"></div>
+            <div class="grid-line" style="top: 560px;"></div>
+          </div>
+
+          <!-- Course Block 1: 高等数学 — Monday, sections 1-2 -->
+          <!-- top: 0 + 2px gap, height: 56*2 - 4px gap -->
+          <div class="course-block course-block--mon" style="left: 2px; top: 2px; width: 64px; height: 110px;">
+            <span class="course-block__name">高等数学</span>
+            <span class="course-block__room">教A-301</span>
+          </div>
+
+          <!-- Course Block 2: 大学物理 — Tuesday, sections 3-4 -->
+          <!-- left: 68px + 2px, top: 56*2 + 2px = 114px, height: 56*2 - 4px = 110px -->
+          <div class="course-block course-block--tue" style="left: 70px; top: 114px; width: 64px; height: 110px;">
+            <span class="course-block__name">大学物理</span>
+            <span class="course-block__room">理B-205</span>
+          </div>
+
+          <!-- Course Block 3: 程序设计 — Wednesday, sections 5-6 -->
+          <!-- left: 68*2 + 2px = 138px, top: 56*4 + 2px = 226px -->
+          <div class="course-block course-block--wed" style="left: 138px; top: 226px; width: 64px; height: 110px;">
+            <span class="course-block__name">程序设计</span>
+            <span class="course-block__room">计C-102</span>
+          </div>
+
+          <!-- Course Block 4: 大学英语 — Thursday, sections 1-2 -->
+          <!-- left: 68*3 + 2px = 206px, top: 2px -->
+          <div class="course-block course-block--thu" style="left: 206px; top: 2px; width: 64px; height: 110px;">
+            <span class="course-block__name">大学英语</span>
+            <span class="course-block__room">外A-401</span>
+          </div>
+
+          <!-- Course Block 5: 线性代数 — Friday, sections 7-8 -->
+          <!-- left: 68*4 + 2px = 274px, top: 56*6 + 2px = 338px -->
+          <div class="course-block course-block--fri" style="left: 274px; top: 338px; width: 64px; height: 110px;">
+            <span class="course-block__name">线性代数</span>
+            <span class="course-block__room">教B-103</span>
+          </div>
+
+          <!-- Course Block 6: 体育 — Saturday, sections 3-4 -->
+          <!-- left: 68*5 + 2px = 342px, top: 56*2 + 2px = 114px -->
+          <div class="course-block course-block--sat" style="left: 342px; top: 114px; width: 64px; height: 110px;">
+            <span class="course-block__name">体育</span>
+            <span class="course-block__room">体育馆</span>
+          </div>
+
+          <!-- Current Time Indicator — between section 2 and 3 (~09:40) -->
+          <!-- top: 56*2 = 112px, roughly at 09:40 which is 50min into the gap (09:50-08:45=65min range, 55min elapsed) -->
+          <div class="time-indicator" style="top: 111px;"></div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <a class="nav-tab" data-active="true" data-dom-id="nav-schedule-hidden" href="#">
+      <span class="nav-tab__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+          <line x1="9" y1="4" x2="9" y2="22"/>
+        </svg>
+      </span>
+      <span class="nav-tab__label">课表</span>
+    </a>
+    <a class="nav-tab" data-dom-id="nav-settings" href="#">
+      <span class="nav-tab__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#98A2B3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </span>
+      <span class="nav-tab__label">我的</span>
+    </a>
+  </nav>
+
+  <!-- Sync horizontal scroll between header and grid -->
+  <script>
+    const headerScroll = document.getElementById('headerScroll');
+    const gridScroll = document.getElementById('gridScroll');
+    let syncing = false;
+
+    headerScroll.addEventListener('scroll', () => {
+      if (syncing) return;
+      syncing = true;
+      gridScroll.scrollLeft = headerScroll.scrollLeft;
+      syncing = false;
+    });
+
+    gridScroll.addEventListener('scroll', () => {
+      if (syncing) return;
+      syncing = true;
+      headerScroll.scrollLeft = gridScroll.scrollLeft;
+      syncing = false;
+    });
+  </script>
+
+
+    <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-family);
+      background: var(--surface-page);
+      color: var(--text-primary);
+      padding-bottom: calc(var(--nav-height) + 16px);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* === Top Bar === */
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--surface-card);
+      border-bottom: 1px solid var(--border-default);
+    }
+    .top-bar__title {
+      font-size: var(--font-size-xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+    .top-bar__week-switcher {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .top-bar__chevron {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 16px;
+      border-radius: var(--radius-sm);
+    }
+    .top-bar__chevron:active {
+      background: var(--color-brand-subtle);
+    }
+    .top-bar__week-label {
+      font-size: var(--font-size-base);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .top-bar__week-label span {
+      color: var(--color-brand);
+      font-weight: var(--font-weight-semibold);
+    }
+    .top-bar__today-btn {
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-brand);
+      background: var(--color-brand-light);
+      border: none;
+      padding: 4px 12px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .top-bar__today-btn:active {
+      background: var(--color-brand-subtle);
+    }
+
+    /* === Schedule Container === */
+    .schedule-container {
+      background: var(--surface-card);
+    }
+
+    /* === Day Headers === */
+    .day-headers-wrapper {
+      overflow: hidden;
+      border-bottom: 1px solid var(--border-default);
+    }
+    .day-headers {
+      display: flex;
+      height: 48px;
+    }
+    .day-headers__time-gutter {
+      flex-shrink: 0;
+      width: var(--schedule-time-col);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--font-size-xs);
+      color: var(--text-tertiary);
+    }
+    .day-headers__scroll {
+      display: flex;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .day-headers__scroll::-webkit-scrollbar { display: none; }
+    .day-header {
+      width: var(--schedule-day-col);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+    }
+    .day-header__name {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      color: var(--text-secondary);
+    }
+    .day-header__date {
+      font-size: var(--font-size-xs);
+      color: var(--text-tertiary);
+    }
+    .day-header--today {
+      background: var(--color-brand-subtle);
+    }
+    .day-header--today .day-header__name {
+      color: var(--color-brand);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    /* === Grid Body === */
+    .grid-wrapper {
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      max-height: calc(100vh - 48px - var(--nav-height) - 16px - 49px);
+    }
+    .grid-wrapper::-webkit-scrollbar { width: 0; height: 0; }
+    .grid-body {
+      position: relative;
+      display: flex;
+    }
+
+    /* Time Column */
+    .time-col {
+      flex-shrink: 0;
+      width: var(--schedule-time-col);
+      position: sticky;
+      left: 0;
+      z-index: 5;
+      background: var(--surface-card);
+    }
+    .time-row {
+      height: var(--schedule-row-height);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .time-row__section {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      color: var(--text-secondary);
+      line-height: 1.2;
+    }
+    .time-row__range {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      line-height: 1.2;
+    }
+
+    /* Day Columns Container */
+    .days-area {
+      flex: 1;
+      position: relative;
+    }
+    .day-col-bg {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: var(--schedule-day-col);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .grid-lines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+    }
+    .grid-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--border-subtle);
+    }
+
+    /* Course Blocks */
+    .course-block {
+      position: absolute;
+      border-radius: var(--radius-sm);
+      padding: 4px 6px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      cursor: pointer;
+      border-left: 3px solid;
+    }
+    .course-block:active {
+      opacity: 0.85;
+    }
+    .course-block__name {
+      font-size: 12px;
+      font-weight: var(--font-weight-semibold);
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .course-block__room {
+      font-size: 10px;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.75;
+      margin-top: 1px;
+    }
+
+    /* Course color variants */
+    .course-block--mon { background: var(--course-mon-bg); border-color: var(--course-mon); color: var(--course-mon); }
+    .course-block--tue { background: var(--course-tue-bg); border-color: var(--course-tue); color: var(--course-tue); }
+    .course-block--wed { background: var(--course-wed-bg); border-color: var(--course-wed); color: var(--course-wed); }
+    .course-block--thu { background: var(--course-thu-bg); border-color: var(--course-thu); color: var(--course-thu); }
+    .course-block--fri { background: var(--course-fri-bg); border-color: var(--course-fri); color: var(--course-fri); }
+    .course-block--sat { background: var(--course-sat-bg); border-color: var(--course-sat); color: var(--course-sat); }
+
+    /* Current Time Indicator */
+    .time-indicator {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--course-tue);
+      z-index: 10;
+      pointer-events: none;
+    }
+    .time-indicator::before {
+      content: '';
+      position: absolute;
+      left: -4px;
+      top: -3px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--course-tue);
+    }
+
+    /* === Bottom Nav === */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-height);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      background: var(--surface-card);
+      border-top: 1px solid var(--border-default);
+      z-index: 30;
+    }
+    .nav-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      padding: 6px 16px;
+      text-decoration: none;
+    }
+    .nav-tab__icon {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .nav-tab__icon svg {
+      width: 22px;
+      height: 22px;
+    }
+    .nav-tab__label {
+      font-size: var(--font-size-xs);
+      color: var(--text-tertiary);
+      font-weight: var(--font-weight-normal);
+    }
+    .nav-tab[data-active="true"] .nav-tab__label {
+      color: var(--color-brand);
+      font-weight: var(--font-weight-semibold);
+    }
+    .nav-tab[data-active="true"] .nav-tab__icon svg {
+      stroke: var(--color-brand);
+    }
+
+    /* Mobile viewport constraint */
+    @media (max-width: 414px) {
+      .grid-wrapper {
+        max-height: calc(100vh - 48px - var(--nav-height) - 16px - 49px);
+      }
+    }
+  </style>
+</body>
+</html>

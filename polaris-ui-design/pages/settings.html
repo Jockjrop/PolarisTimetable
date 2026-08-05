@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - Polaris课程表</title>
+    <style id="theme-vars">
+/* ============================================
+   Polaris 课程表 — Brand Design Tokens
+   ============================================ */
+
+:root {
+  /* — Primary Brand — */
+  --color-brand: #2563EB;
+  --color-brand-hover: #1D4ED8;
+  --color-brand-light: #DBEAFE;
+  --color-brand-subtle: #EFF6FF;
+
+  /* — Semantic State Colors — */
+  --state-success: #059669;
+  --state-success-bg: #ECFDF5;
+  --state-warning: #D97706;
+  --state-warning-bg: #FFFBEB;
+  --state-error: #DC2626;
+  --state-error-bg: #FEF2F2;
+  --state-info: #2563EB;
+  --state-info-bg: #EFF6FF;
+
+  /* — Course Palette (by weekday) — */
+  --course-mon: #2563EB;
+  --course-mon-bg: #EAF2FF;
+  --course-tue: #E8645A;
+  --course-tue-bg: #FFEDEE;
+  --course-wed: #0D9488;
+  --course-wed-bg: #EAF8F1;
+  --course-thu: #7C3AED;
+  --course-thu-bg: #F1EAFE;
+  --course-fri: #D97706;
+  --course-fri-bg: #FFF3D9;
+  --course-sat: #EC4899;
+  --course-sat-bg: #FDF2F8;
+
+  /* — Surfaces — */
+  --surface-page: #F6F7FB;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-overlay: rgba(15, 23, 42, 0.5);
+
+  /* — Text — */
+  --text-primary: #172033;
+  --text-secondary: #667085;
+  --text-tertiary: #98A2B3;
+  --text-inverse: #FFFFFF;
+  --text-brand: #2563EB;
+
+  /* — Borders — */
+  --border-default: #D9DFEA;
+  --border-subtle: #E5E7EB;
+  --border-brand: #2563EB;
+
+  /* — Typography — */
+  --font-family: 'Inter', 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-base: 15px;
+  --font-size-lg: 17px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* — Radius — */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* — Spacing — */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 40px;
+
+  /* — Shadow — */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+
+  /* — Bottom Nav Height — */
+  --nav-height: 64px;
+  --status-bar-height: 44px;
+
+  /* — Schedule Grid — */
+  --schedule-time-col: 48px;
+  --schedule-day-col: 68px;
+  --schedule-row-height: 56px;
+  --schedule-gap: 2px;
+}
+
+/* — Typography Utility Classes — */
+.text-xs { font-size: var(--font-size-xs); line-height: var(--line-height-tight); }
+.text-sm { font-size: var(--font-size-sm); line-height: var(--line-height-normal); }
+.text-base { font-size: var(--font-size-base); line-height: var(--line-height-normal); }
+.text-lg { font-size: var(--font-size-lg); line-height: var(--line-height-normal); }
+.text-xl { font-size: var(--font-size-xl); line-height: var(--line-height-tight); }
+.text-2xl { font-size: var(--font-size-2xl); line-height: var(--line-height-tight); }
+.text-3xl { font-size: var(--font-size-3xl); line-height: var(--line-height-tight); }
+
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-brand { color: var(--text-brand); }
+
+/* — Color Utility Classes — */
+.bg-brand { background-color: var(--color-brand); }
+.bg-brand-light { background-color: var(--color-brand-light); }
+.bg-brand-subtle { background-color: var(--color-brand-subtle); }
+.bg-page { background-color: var(--surface-page); }
+.bg-card { background-color: var(--surface-card); }
+
+/* — Radius Utility Classes — */
+.rounded-sm { border-radius: var(--radius-sm); }
+.rounded-md { border-radius: var(--radius-md); }
+.rounded-lg { border-radius: var(--radius-lg); }
+.rounded-xl { border-radius: var(--radius-xl); }
+.rounded-full { border-radius: var(--radius-full); }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--text-primary);
+    --color-secondary: var(--text-secondary);
+  }
+  @layer base {
+    body { background: var(--text-background); color: var(--text-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+
+    <!-- Profile Header -->
+    <div class="profile-header">
+        <div class="avatar">P</div>
+        <div class="profile-info">
+            <span class="profile-name">Polaris</span>
+            <span class="profile-version">课程表 v1.0</span>
+        </div>
+    </div>
+
+    <!-- Settings Container -->
+    <div class="settings-container">
+
+        <!-- Group 1: 学期设置 -->
+        <div class="section-header">学期设置</div>
+        <div class="setting-row">
+            <span class="setting-label">当前学期</span>
+            <div class="setting-right">
+                <span class="setting-value">2025-2026 第二学期</span>
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">当前周次</span>
+            <div class="setting-right">
+                <span class="setting-value">第18周</span>
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">显示周末</span>
+            <div class="setting-right">
+                <label class="toggle">
+                    <input type="checkbox" checked>
+                    <span class="toggle-track"></span>
+                    <span class="toggle-thumb"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Group 2: 课表显示 -->
+        <div class="section-header">课表显示</div>
+        <div class="setting-row">
+            <span class="setting-label">课程颜色策略</span>
+            <div class="setting-right">
+                <span class="setting-value">按星期</span>
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">每天显示范围</span>
+            <div class="setting-right">
+                <span class="setting-value">第1-11节</span>
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">节次时间显示</span>
+            <div class="setting-right">
+                <label class="toggle">
+                    <input type="checkbox" checked>
+                    <span class="toggle-track"></span>
+                    <span class="toggle-thumb"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Group 3: 数据管理 -->
+        <div class="section-header">数据管理</div>
+        <div class="setting-row">
+            <span class="setting-label">导入课表</span>
+            <div class="setting-right">
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">导出课表</span>
+            <div class="setting-right">
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">分享课表</span>
+            <div class="setting-right">
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">清除数据</span>
+            <div class="setting-right">
+                <span class="setting-value-danger">清除</span>
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Group 4: 其他 -->
+        <div class="section-header">其他</div>
+        <div class="setting-row">
+            <span class="setting-label">解析日志</span>
+            <div class="setting-right">
+                <label class="toggle">
+                    <input type="checkbox">
+                    <span class="toggle-track"></span>
+                    <span class="toggle-thumb"></span>
+                </label>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">关于 Polaris</span>
+            <div class="setting-right">
+                <span class="setting-value-version">v1.0.0</span>
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+        <div class="setting-row">
+            <span class="setting-label">反馈与建议</span>
+            <div class="setting-right">
+                <svg class="chevron" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <a class="nav-item" data-dom-id="nav-today" data-active="false">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 5H20C20.5523 5 21 5.44772 21 6V19C21 19.5523 20.5523 20 20 20H4C3.44772 20 3 19.5523 3 19V6C3 5.44772 3.44772 5 4 5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M3 10H21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M8 3V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M16 3V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span class="nav-label">课表</span>
+        </a>
+        <a class="nav-item" data-dom-id="nav-settings-hidden" data-active="true">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 12C14.2091 12 16 10.2091 16 8C16 5.79086 14.2091 4 12 4C9.79086 4 8 5.79086 8 8C8 10.2091 9.79086 12 12 12Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M4 21V19C4 16.7909 5.79086 15 8 15H16C18.2091 15 20 16.7909 20 19V21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="nav-label">我的</span>
+        </a>
+    </nav>
+
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--surface-page);
+            color: var(--text-primary);
+            max-width: 375px;
+            margin: 0 auto;
+            min-height: 100vh;
+            padding-bottom: calc(var(--nav-height) + 16px);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Profile Header */
+        .profile-header {
+            background: var(--surface-card);
+            padding: var(--space-xl);
+            display: flex;
+            align-items: center;
+            gap: var(--space-lg);
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        .avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-full);
+            background: var(--color-brand-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-brand);
+            flex-shrink: 0;
+        }
+
+        .profile-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .profile-name {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--text-primary);
+            line-height: var(--line-height-tight);
+        }
+
+        .profile-version {
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+            line-height: var(--line-height-normal);
+        }
+
+        /* Settings Container */
+        .settings-container {
+            padding: 0 var(--space-lg);
+        }
+
+        /* Section Header */
+        .section-header {
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
+            color: var(--text-tertiary);
+            padding: var(--space-xl) 0 var(--space-sm);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Setting Row */
+        .setting-row {
+            background: var(--surface-card);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 48px;
+            padding: 0 var(--space-lg);
+            border-bottom: 1px solid var(--border-subtle);
+            cursor: pointer;
+        }
+
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+
+        .setting-label {
+            font-size: var(--font-size-base);
+            color: var(--text-primary);
+            line-height: var(--line-height-normal);
+        }
+
+        .setting-right {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+        }
+
+        .setting-value {
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+            line-height: var(--line-height-normal);
+        }
+
+        .setting-value-danger {
+            font-size: var(--font-size-sm);
+            color: var(--state-error);
+            line-height: var(--line-height-normal);
+        }
+
+        .setting-value-version {
+            font-size: var(--font-size-sm);
+            color: var(--text-tertiary);
+            line-height: var(--line-height-normal);
+        }
+
+        .chevron {
+            width: 16px;
+            height: 16px;
+            color: var(--text-tertiary);
+            flex-shrink: 0;
+        }
+
+        /* Toggle Switch */
+        .toggle {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            border-radius: var(--radius-full);
+            background: var(--color-brand);
+            transition: background 0.2s ease;
+            cursor: pointer;
+        }
+
+        .toggle-thumb {
+            position: absolute;
+            top: 2px;
+            left: 22px;
+            width: 20px;
+            height: 20px;
+            border-radius: var(--radius-full);
+            background: var(--text-inverse);
+            transition: left 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+            cursor: pointer;
+        }
+
+        .toggle input:not(:checked) ~ .toggle-track {
+            background: var(--border-subtle);
+        }
+
+        .toggle input:not(:checked) ~ .toggle-thumb {
+            left: 2px;
+        }
+
+        /* Bottom Nav */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 375px;
+            height: var(--nav-height);
+            background: var(--surface-card);
+            border-top: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            z-index: 100;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .nav-icon {
+            width: 24px;
+            height: 24px;
+            color: var(--text-tertiary);
+        }
+
+        .nav-label {
+            font-size: var(--font-size-xs);
+            color: var(--text-tertiary);
+            line-height: var(--line-height-tight);
+        }
+
+        .nav-item[data-active="true"] .nav-icon {
+            color: var(--color-brand);
+        }
+
+        .nav-item[data-active="true"] .nav-label {
+            color: var(--color-brand);
+            font-weight: var(--font-weight-semibold);
+        }
+    </style>
+</body>
+</html>

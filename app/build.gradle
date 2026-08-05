@@ -1,0 +1,69 @@
+plugins {
+    id "com.android.application"
+}
+
+def releaseSigningProperties = new Properties()
+def releaseSigningPropertiesFile = rootProject.file("keystore.properties")
+if (releaseSigningPropertiesFile.exists()) {
+    releaseSigningPropertiesFile.withInputStream { releaseSigningProperties.load(it) }
+}
+
+def signingValue = { String propertyName, String environmentName ->
+    releaseSigningProperties.getProperty(propertyName) ?: System.getenv(environmentName)
+}
+def releaseStoreFile = signingValue("storeFile", "POLARIS_RELEASE_STORE_FILE")
+def releaseStorePassword = signingValue("storePassword", "POLARIS_RELEASE_STORE_PASSWORD")
+def releaseKeyAlias = signingValue("keyAlias", "POLARIS_RELEASE_KEY_ALIAS")
+def releaseKeyPassword = signingValue("keyPassword", "POLARIS_RELEASE_KEY_PASSWORD")
+def hasReleaseSigning = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword]
+        .every { it != null && !it.trim().isEmpty() }
+
+android {
+    namespace "com.polaris.timetable"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.polaris.timetable"
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+def releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.toLowerCase(Locale.ROOT).contains("release")
+}
+if (releaseTaskRequested && !hasReleaseSigning) {
+    throw new GradleException(
+            "Release signing is not configured. Copy keystore.properties.example to " +
+                    "keystore.properties and fill it in, or set the POLARIS_RELEASE_* environment variables."
+    )
+}
+
+dependencies {
+    implementation "com.tom-roush:pdfbox-android:2.0.27.0"
+    testImplementation "junit:junit:4.13.2"
+}
