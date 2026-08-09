@@ -96,8 +96,11 @@ public class CourseDetailDialog {
         closeParams.leftMargin = dp(12);
         header.addView(close, closeParams);
 
-        addRow(content, "时间", dayText(course.day) + " · " + course.startSection + "-" + course.endSection + "节");
+        addRow(content, "时间", course.isBannerOnlyCourse()
+                ? "顶部横幅 · 无固定节次"
+                : dayText(course.day) + " · " + course.startSection + "-" + course.endSection + "节");
         addRow(content, "周次", emptyText(course.weeks, "周次见PDF"));
+        addRow(content, "类型", course.courseType.displayName);
         addRow(content, "学分", creditText(course.credit));
         addRow(content, "地点", emptyText(course.location, "未识别地点"));
         addRow(content, "教师", emptyText(course.teacher, "未识别教师"));
@@ -227,7 +230,7 @@ public class CourseDetailDialog {
 
     private GradientDrawable actionBg() {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color("#172033"));
+        drawable.setColor(isDarkMode() ? color("#1F73E0") : color("#172033"));
         drawable.setCornerRadius(dp(14));
         return drawable;
     }

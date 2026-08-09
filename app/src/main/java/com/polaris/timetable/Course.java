@@ -1,5 +1,7 @@
 package com.polaris.timetable;
 
+import com.polaris.timetable.model.CourseType;
+
 public class Course {
     public final int day;
     public final int startSection;
@@ -11,6 +13,7 @@ public class Course {
     public final String raw;
     public final String credit;
     public final String color;
+    public final CourseType courseType;
 
     public Course(int day, int startSection, int endSection, String name, String weeks,
                   String location, String teacher, String raw) {
@@ -24,6 +27,13 @@ public class Course {
 
     public Course(int day, int startSection, int endSection, String name, String weeks,
                   String location, String teacher, String raw, String credit, String color) {
+        this(day, startSection, endSection, name, weeks, location, teacher, raw,
+                credit, color, CourseType.LECTURE);
+    }
+
+    public Course(int day, int startSection, int endSection, String name, String weeks,
+                  String location, String teacher, String raw, String credit, String color,
+                  CourseType courseType) {
         this.day = day;
         this.startSection = startSection;
         this.endSection = endSection;
@@ -34,5 +44,18 @@ public class Course {
         this.raw = raw;
         this.credit = credit == null ? "" : credit;
         this.color = color == null ? "" : color;
+        this.courseType = courseType == null ? CourseType.LECTURE : courseType;
+    }
+
+    public boolean hasFixedTime() {
+        return day >= 0 && day <= 6 && startSection >= 1 && endSection >= startSection;
+    }
+
+    public boolean isPracticeBannerOnly() {
+        return courseType == CourseType.PRACTICE && !hasFixedTime();
+    }
+
+    public boolean isBannerOnlyCourse() {
+        return courseType.supportsBannerOnly() && !hasFixedTime();
     }
 }

@@ -1,14 +1,17 @@
 package com.polaris.timetable.storage;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseStructureMapper;
+import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
+import com.polaris.timetable.widget.ScheduleWidgetProvider;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -27,12 +30,20 @@ public class ScheduleRepository {
     private static final String KEY_ACTIVE_SCHEDULE = "active_schedule";
     private static final String KEY_SCHEDULES = "schedules";
     private static final String KEY_GLOBAL_DARK_MODE = "global_dark_mode";
+    private static final String KEY_ACCOUNT_NAME = "account_name";
+    private static final String KEY_ACCOUNT_AVATAR_URI = "account_avatar_uri";
+    private static final String KEY_ACCOUNT_AVATAR_CROP_LEFT = "account_avatar_crop_left";
+    private static final String KEY_ACCOUNT_AVATAR_CROP_TOP = "account_avatar_crop_top";
+    private static final String KEY_ACCOUNT_AVATAR_CROP_RIGHT = "account_avatar_crop_right";
+    private static final String KEY_ACCOUNT_AVATAR_CROP_BOTTOM = "account_avatar_crop_bottom";
 
+    private final Context appContext;
     private final SharedPreferences preferences;
     private final CourseStructureMapper structureMapper = new CourseStructureMapper();
 
     public ScheduleRepository(Context context) {
-        preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        appContext = context.getApplicationContext();
+        preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     public void saveCourses(List<Course> courses) {
@@ -63,6 +74,7 @@ public class ScheduleRepository {
                 .putString(structuredCourseKey(scheduleId), structuredCoursesToJson(safeStructuredCourses).toString())
                 .putBoolean(courseReadyKey(scheduleId), true)
                 .apply();
+        notifyWidgets();
     }
 
     public List<Course> loadCourses() {
@@ -118,6 +130,7 @@ public class ScheduleRepository {
 
     public void saveConfig(String scheduleId, Config config) {
         preferences.edit().putString(configKey(scheduleId), config.toJson().toString()).apply();
+        notifyWidgets();
     }
 
     public Config loadConfig() {
@@ -146,6 +159,7 @@ public class ScheduleRepository {
 
     public void setActiveScheduleId(String scheduleId) {
         preferences.edit().putString(KEY_ACTIVE_SCHEDULE, safeScheduleId(scheduleId)).apply();
+        notifyWidgets();
     }
 
     public String loadGlobalDarkMode() {
@@ -155,6 +169,38 @@ public class ScheduleRepository {
     public void saveGlobalDarkMode(String darkMode) {
         preferences.edit().putString(KEY_GLOBAL_DARK_MODE,
                 darkMode == null || darkMode.length() == 0 ? "跟随系统" : darkMode).apply();
+        notifyWidgets();
+    }
+
+    public AccountProfile loadAccountProfile() {
+        AccountProfile profile = new AccountProfile();
+        profile.name = preferences.getString(KEY_ACCOUNT_NAME, profile.name);
+        profile.avatarUri = preferences.getString(KEY_ACCOUNT_AVATAR_URI, profile.avatarUri);
+        profile.cropLeft = preferences.getFloat(KEY_ACCOUNT_AVATAR_CROP_LEFT, profile.cropLeft);
+        profile.cropTop = preferences.getFloat(KEY_ACCOUNT_AVATAR_CROP_TOP, profile.cropTop);
+        profile.cropRight = preferences.getFloat(KEY_ACCOUNT_AVATAR_CROP_RIGHT, profile.cropRight);
+        profile.cropBottom = preferences.getFloat(KEY_ACCOUNT_AVATAR_CROP_BOTTOM, profile.cropBottom);
+        return profile;
+    }
+
+    public void saveAccountProfile(AccountProfile profile) {
+        AccountProfile safeProfile = profile == null ? new AccountProfile() : profile;
+        String name = safeProfile.name == null ? "" : safeProfile.name.trim();
+        preferences.edit()
+                .putString(KEY_ACCOUNT_NAME, name.length() == 0 ? "管理员" : name)
+                .putString(KEY_ACCOUNT_AVATAR_URI,
+                        safeProfile.avatarUri == null ? "" : safeProfile.avatarUri)
+                .putFloat(KEY_ACCOUNT_AVATAR_CROP_LEFT, safeProfile.cropLeft)
+                .putFloat(KEY_ACCOUNT_AVATAR_CROP_TOP, safeProfile.cropTop)
+                .putFloat(KEY_ACCOUNT_AVATAR_CROP_RIGHT, safeProfile.cropRight)
+                .putFloat(KEY_ACCOUNT_AVATAR_CROP_BOTTOM, safeProfile.cropBottom)
+                .apply();
+    }
+
+    private void notifyWidgets() {
+        Intent intent = new Intent(ScheduleWidgetProvider.ACTION_SCHEDULE_CHANGED);
+        intent.setPackage(appContext.getPackageName());
+        appContext.sendBroadcast(intent);
     }
 
     public List<ScheduleEntry> loadSchedules() {
@@ -254,6 +300,7 @@ public class ScheduleRepository {
             object.put("rawText", course.rawText);
             object.put("credit", course.credit);
             object.put("color", course.color);
+            object.put("courseType", course.courseType.name());
             JSONArray meetings = new JSONArray();
             for (CourseMeeting meeting : course.meetings) {
                 meetings.put(courseMeetingToJson(meeting));
@@ -345,7 +392,8 @@ public class ScheduleRepository {
                 meetings,
                 object.optString("rawText", ""),
                 object.optString("credit", ""),
-                object.optString("color", ""));
+                object.optString("color", ""),
+                CourseType.fromStorage(object.optString("courseType", "")));
     }
 
     private CourseMeeting courseMeetingFromJson(JSONObject object) {
@@ -401,6 +449,7 @@ public class ScheduleRepository {
             object.put("raw", course.raw);
             object.put("credit", course.credit);
             object.put("color", course.color);
+            object.put("courseType", course.courseType.name());
         } catch (JSONException exception) {
             Log.e(TAG, "Unable to serialize course", exception);
         }
@@ -418,7 +467,17 @@ public class ScheduleRepository {
                 object.optString("teacher", ""),
                 object.optString("raw", ""),
                 object.optString("credit", ""),
-                object.optString("color", ""));
+                object.optString("color", ""),
+                CourseType.fromStorage(object.optString("courseType", "")));
+    }
+
+    public static class AccountProfile {
+        public String name = "管理员";
+        public String avatarUri = "";
+        public float cropLeft = 0f;
+        public float cropTop = 0f;
+        public float cropRight = 1f;
+        public float cropBottom = 1f;
     }
 
     public static class Config {
@@ -432,15 +491,23 @@ public class ScheduleRepository {
         public String lateAfternoonStartTime = "16:35";
         public String parserModel = "";
         public String firstWeekDay = "2026/3/3";
-        public String gradeAndSchool = "2025级 · Polaris大学";
+        public String semesterName = "";
+        public String schoolName = "";
         public String timetableBackground = "清爽蓝";
         public String backgroundImageUri = "";
+        public float backgroundCropLeft = 0f;
+        public float backgroundCropTop = 0f;
+        public float backgroundCropRight = 1f;
+        public float backgroundCropBottom = 1f;
         public String darkMode = "跟随系统";
         public int sectionCount = 11;
         public int semesterWeeks = 20;
+        public boolean remindersEnabled = false;
+        public int reminderMinutesBefore = 15;
         public boolean showSaturday = false;
         public boolean showSunday = false;
         public boolean showOutOfWeekCourses = true;
+        public boolean showPracticeBanner = true;
         public boolean collapseXautMiddleSections = false;
         public int courseCellHeight = 76;
         public int courseCornerRadius = 9;
@@ -448,7 +515,7 @@ public class ScheduleRepository {
         public int timetableHeaderOpacity = 78;
         public int bottomNavOpacity = 86;
         public String bottomNavShape = "矩形";
-        public int bottomNavHeight = 72;
+        public int bottomNavHeight = 60;
         public int bottomNavCornerRadius = 58;
         public int bottomNavRectCornerRadius = 58;
         public int bottomNavSplitCornerRadius = 58;
@@ -469,15 +536,23 @@ public class ScheduleRepository {
                 object.put("lateAfternoonStartTime", lateAfternoonStartTime);
                 object.put("parserModel", parserModel);
                 object.put("firstWeekDay", firstWeekDay);
-                object.put("gradeAndSchool", gradeAndSchool);
+                object.put("semesterName", semesterName);
+                object.put("schoolName", schoolName);
                 object.put("timetableBackground", timetableBackground);
                 object.put("backgroundImageUri", backgroundImageUri);
+                object.put("backgroundCropLeft", backgroundCropLeft);
+                object.put("backgroundCropTop", backgroundCropTop);
+                object.put("backgroundCropRight", backgroundCropRight);
+                object.put("backgroundCropBottom", backgroundCropBottom);
                 object.put("darkMode", darkMode);
                 object.put("sectionCount", sectionCount);
                 object.put("semesterWeeks", semesterWeeks);
+                object.put("remindersEnabled", remindersEnabled);
+                object.put("reminderMinutesBefore", reminderMinutesBefore);
                 object.put("showSaturday", showSaturday);
                 object.put("showSunday", showSunday);
                 object.put("showOutOfWeekCourses", showOutOfWeekCourses);
+                object.put("showPracticeBanner", showPracticeBanner);
                 object.put("collapseXautMiddleSections", collapseXautMiddleSections);
                 object.put("courseCellHeight", courseCellHeight);
                 object.put("courseCornerRadius", courseCornerRadius);
@@ -511,15 +586,39 @@ public class ScheduleRepository {
             config.lateAfternoonStartTime = object.optString("lateAfternoonStartTime", config.lateAfternoonStartTime);
             config.parserModel = object.optString("parserModel", config.parserModel);
             config.firstWeekDay = object.optString("firstWeekDay", config.firstWeekDay);
-            config.gradeAndSchool = object.optString("gradeAndSchool", config.gradeAndSchool);
+            config.semesterName = object.optString("semesterName", config.semesterName);
+            config.schoolName = object.optString("schoolName", config.schoolName);
+            String legacyGradeAndSchool = object.optString("gradeAndSchool", "");
+            if (legacyGradeAndSchool.contains(" · ")) {
+                String[] legacyParts = legacyGradeAndSchool.split(" · ", 2);
+                if (config.semesterName.length() == 0 && legacyParts[0].contains("学期")) {
+                    config.semesterName = legacyParts[0];
+                }
+                if (config.schoolName.length() == 0) {
+                    config.schoolName = legacyParts[1];
+                }
+            }
             config.timetableBackground = object.optString("timetableBackground", config.timetableBackground);
             config.backgroundImageUri = object.optString("backgroundImageUri", config.backgroundImageUri);
+            config.backgroundCropLeft = (float) object.optDouble(
+                    "backgroundCropLeft", config.backgroundCropLeft);
+            config.backgroundCropTop = (float) object.optDouble(
+                    "backgroundCropTop", config.backgroundCropTop);
+            config.backgroundCropRight = (float) object.optDouble(
+                    "backgroundCropRight", config.backgroundCropRight);
+            config.backgroundCropBottom = (float) object.optDouble(
+                    "backgroundCropBottom", config.backgroundCropBottom);
             config.darkMode = object.optString("darkMode", config.darkMode);
             config.sectionCount = object.optInt("sectionCount", config.sectionCount);
             config.semesterWeeks = object.optInt("semesterWeeks", config.semesterWeeks);
+            config.remindersEnabled = object.optBoolean(
+                    "remindersEnabled", config.remindersEnabled);
+            config.reminderMinutesBefore = object.optInt(
+                    "reminderMinutesBefore", config.reminderMinutesBefore);
             config.showSaturday = object.optBoolean("showSaturday", config.showSaturday);
             config.showSunday = object.optBoolean("showSunday", config.showSunday);
             config.showOutOfWeekCourses = object.optBoolean("showOutOfWeekCourses", config.showOutOfWeekCourses);
+            config.showPracticeBanner = object.optBoolean("showPracticeBanner", config.showPracticeBanner);
             config.collapseXautMiddleSections = object.optBoolean("collapseXautMiddleSections", config.collapseXautMiddleSections);
             config.courseCellHeight = object.optInt("courseCellHeight", config.courseCellHeight);
             config.courseCornerRadius = object.optInt("courseCornerRadius", config.courseCornerRadius);

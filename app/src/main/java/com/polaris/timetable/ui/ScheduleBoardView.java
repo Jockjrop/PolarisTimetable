@@ -5,12 +5,16 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.RelativeSizeSpan;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -22,6 +26,9 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.model.CourseType;
+import com.polaris.timetable.time.CourseTimeResolver;
+import com.polaris.timetable.validation.CourseConflictDetector;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -48,6 +55,14 @@ public class ScheduleBoardView extends FrameLayout {
         void onSlotLongClick(int day, int section);
     }
 
+    public interface OnPracticeBannerClickListener {
+        void onPracticeBannerClick(List<Course> practiceCourses);
+    }
+
+    public interface OnVerticalScrollListener {
+        void onVerticalScroll(int scrollY, int deltaY, boolean atBottom);
+    }
+
     private static final String[] DAYS = {"一", "二", "三", "四", "五", "六", "日"};
     private static final String[] TIMES = {
             "08:00\n08:50", "08:55\n09:45", "10:15\n11:05", "11:10\n12:00",
@@ -65,14 +80,20 @@ public class ScheduleBoardView extends FrameLayout {
     private OnWeekSwipeListener weekSwipeListener;
     private OnCourseLongClickListener courseLongClickListener;
     private OnSlotLongClickListener slotLongClickListener;
+    private OnPracticeBannerClickListener practiceBannerClickListener;
+    private OnVerticalScrollListener verticalScrollListener;
+    private int firstWeek = 1;
+    private int lastWeek = 20;
     private int currentWeek = 18;
     private int visibleDayCount = DAYS.length;
     private int sectionCount = TIMES.length;
     private long firstWeekStartMillis = defaultFirstWeekStartMillis();
     private boolean darkMode;
     private boolean showOutOfWeekCourses;
+    private boolean showPracticeBanner = true;
     private boolean hasBackgroundImage;
     private String currentBackgroundImageUri = "";
+    private BackgroundImageCrop currentBackgroundCrop = BackgroundImageCrop.full();
     private Bitmap currentBackgroundBitmap;
     private Drawable currentBackgroundDrawable;
     private boolean backgroundDrawableApplied;
@@ -154,12 +175,42 @@ public class ScheduleBoardView extends FrameLayout {
         slotLongClickListener = listener;
     }
 
+    public void setOnPracticeBannerClickListener(OnPracticeBannerClickListener listener) {
+        practiceBannerClickListener = listener;
+    }
+
+    public void setOnVerticalScrollListener(OnVerticalScrollListener listener) {
+        verticalScrollListener = listener;
+    }
+
     public void setCurrentWeek(int week) {
-        int nextWeek = Math.max(1, week);
+        int nextWeek = clamp(week, firstWeek, lastWeek);
         if (currentWeek == nextWeek) {
             return;
         }
         currentWeek = nextWeek;
+        renderSchedule();
+    }
+
+    public void setWeekBounds(int first, int last) {
+        int nextFirstWeek = Math.max(1, first);
+        int nextLastWeek = Math.max(nextFirstWeek, last);
+        int nextCurrentWeek = clamp(currentWeek, nextFirstWeek, nextLastWeek);
+        if (firstWeek == nextFirstWeek && lastWeek == nextLastWeek
+                && currentWeek == nextCurrentWeek) {
+            return;
+        }
+        firstWeek = nextFirstWeek;
+        lastWeek = nextLastWeek;
+        currentWeek = nextCurrentWeek;
+        renderSchedule();
+    }
+
+    public void setShowPracticeBanner(boolean enabled) {
+        if (showPracticeBanner == enabled) {
+            return;
+        }
+        showPracticeBanner = enabled;
         renderSchedule();
     }
 
@@ -228,8 +279,10 @@ public class ScheduleBoardView extends FrameLayout {
     public void setClassTimeSettings(String firstStartTime, int classMinutes, int breakMinutes,
                                      int bigBreakMinutes, String afternoonStartTime,
                                      String lateAfternoonStartTime, String anchorConfigText) {
-        String[] nextTimes = generatedClassTimes(firstStartTime, classMinutes, breakMinutes,
-                bigBreakMinutes, afternoonStartTime, lateAfternoonStartTime, anchorConfigText);
+        CourseTimeResolver.Settings settings = new CourseTimeResolver.Settings(
+                firstStartTime, classMinutes, breakMinutes, bigBreakMinutes,
+                afternoonStartTime, lateAfternoonStartTime, anchorConfigText);
+        String[] nextTimes = CourseTimeResolver.sectionTimeLabels(settings, 20);
         if (sameTimes(sectionTimes, nextTimes)) {
             return;
         }
@@ -295,9 +348,25 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     public boolean setBackgroundImageUri(String uriText) {
+        return setBackgroundImage(uriText, currentBackgroundCrop);
+    }
+
+    public boolean setBackgroundImage(String uriText, BackgroundImageCrop crop) {
         String nextUri = uriText == null ? "" : uriText;
-        if (nextUri.equals(currentBackgroundImageUri)) {
+        BackgroundImageCrop nextCrop = crop == null ? BackgroundImageCrop.full() : crop;
+        boolean uriChanged = !nextUri.equals(currentBackgroundImageUri);
+        boolean cropChanged = !nextCrop.sameAs(currentBackgroundCrop);
+        if (!uriChanged && !cropChanged) {
             return nextUri.isEmpty() || hasBackgroundImage;
+        }
+        currentBackgroundCrop = nextCrop;
+        if (!uriChanged && currentBackgroundBitmap != null) {
+            currentBackgroundDrawable = new CoverBitmapDrawable(
+                    currentBackgroundBitmap, currentBackgroundCrop);
+            backgroundDrawableApplied = false;
+            applyBoardBackground();
+            updateAdaptiveTextColors();
+            return hasBackgroundImage;
         }
         currentBackgroundImageUri = nextUri;
         currentBackgroundBitmap = null;
@@ -326,7 +395,7 @@ public class ScheduleBoardView extends FrameLayout {
             if (bitmap != null) {
                 hasBackgroundImage = true;
                 currentBackgroundBitmap = bitmap;
-                currentBackgroundDrawable = new CoverBitmapDrawable(bitmap);
+                currentBackgroundDrawable = new CoverBitmapDrawable(bitmap, currentBackgroundCrop);
             } else {
                 Log.w(TAG, "Background image decoder returned no bitmap");
             }
@@ -409,8 +478,16 @@ public class ScheduleBoardView extends FrameLayout {
                     beginWeekDrag(event);
                 }
                 draggingWeek = true;
-                prepareWeekDragPreview();
                 int width = Math.max(1, getDragPageWidth());
+                int delta = dx < 0 ? 1 : -1;
+                if (!canChangeWeek(delta)) {
+                    if (dragSlider != null) {
+                        dragSlider.setTranslationX(-width);
+                    }
+                    scheduleHost.setTranslationX(0f);
+                    return true;
+                }
+                prepareWeekDragPreview();
                 float limited = Math.max(-width, Math.min(width, dx));
                 if (dragSlider != null) {
                     dragSlider.setTranslationX(-width + limited);
@@ -424,25 +501,28 @@ public class ScheduleBoardView extends FrameLayout {
             float dy = event.getY() - touchStartY;
             int width = Math.max(1, getDragPageWidth());
             int threshold = Math.max(dp(42), Math.round(width * 0.12f));
-            if (Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy) * 1.25f) {
+            if (event.getAction() == MotionEvent.ACTION_UP
+                    && Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy) * 1.25f) {
                 int delta = dx < 0 ? 1 : -1;
-                if (dragSlider != null) {
-                    float target = delta > 0 ? -width * 2f : 0f;
-                    dragSlider.animate()
-                            .translationX(target)
-                            .setDuration(220)
+                if (canChangeWeek(delta)) {
+                    if (dragSlider != null) {
+                        float target = delta > 0 ? -width * 2f : 0f;
+                        dragSlider.animate()
+                                .translationX(target)
+                                .setDuration(220)
+                                .withEndAction(() -> finishGestureWeekSwitch(delta))
+                                .start();
+                    } else {
+                        scheduleHost.animate()
+                            .translationX(delta > 0 ? -width * 0.45f : width * 0.45f)
+                            .setDuration(100)
                             .withEndAction(() -> finishGestureWeekSwitch(delta))
                             .start();
-                } else {
-                    scheduleHost.animate()
-                        .translationX(delta > 0 ? -width * 0.45f : width * 0.45f)
-                        .setDuration(100)
-                        .withEndAction(() -> finishGestureWeekSwitch(delta))
-                        .start();
+                    }
+                    draggingWeek = false;
+                    keepCourseInteractionsSuppressed();
+                    return true;
                 }
-                draggingWeek = false;
-                keepCourseInteractionsSuppressed();
-                return true;
             }
             if (draggingWeek) {
                 if (dragSlider != null) {
@@ -464,6 +544,10 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private void finishGestureWeekSwitch(int delta) {
+        if (!canChangeWeek(delta)) {
+            restoreCurrentBoardFromDrag();
+            return;
+        }
         skipNextProgrammaticTransition = true;
         if (weekSwipeListener != null) {
             weekSwipeListener.onWeekSwipe(delta);
@@ -539,7 +623,11 @@ public class ScheduleBoardView extends FrameLayout {
             return;
         }
         int width = getDragPageWidth();
-        int height = Math.max(scheduleHost.getChildAt(0).getHeight(), boardHeight());
+        int previousWeek = Math.max(firstWeek, currentWeek - 1);
+        int nextWeek = Math.min(lastWeek, currentWeek + 1);
+        int height = Math.max(scheduleHost.getChildAt(0).getHeight(),
+                Math.max(boardHeight(previousWeek),
+                        Math.max(boardHeight(currentWeek), boardHeight(nextWeek))));
         if (width <= 0 || height <= 0) {
             return;
         }
@@ -548,9 +636,9 @@ public class ScheduleBoardView extends FrameLayout {
         dragOverlay.setClipChildren(true);
         dragOverlay.setBackgroundColor(Color.TRANSPARENT);
         dragSlider = new FrameLayout(getContext());
-        FrameLayout previous = buildBoard(Math.max(1, currentWeek - 1), false);
+        FrameLayout previous = buildBoard(previousWeek, false);
         FrameLayout current = buildBoard(currentWeek, false);
-        FrameLayout next = buildBoard(currentWeek + 1, false);
+        FrameLayout next = buildBoard(nextWeek, false);
         dragSlider.addView(previous, dragPageParams(0, width, height));
         dragSlider.addView(current, dragPageParams(width, width, height));
         dragSlider.addView(next, dragPageParams(width * 2, width, height));
@@ -563,6 +651,11 @@ public class ScheduleBoardView extends FrameLayout {
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         verticalScroll.setVisibility(INVISIBLE);
         previewingWeekDrag = true;
+    }
+
+    private boolean canChangeWeek(int delta) {
+        int targetWeek = currentWeek + delta;
+        return targetWeek >= firstWeek && targetWeek <= lastWeek;
     }
 
     private FrameLayout.LayoutParams dragPageParams(int left, int width, int height) {
@@ -617,7 +710,7 @@ public class ScheduleBoardView extends FrameLayout {
         }
         scheduleHost.removeAllViews();
         int width = Math.max(availableWidth, timeWidth + dayWidth * visibleDayCount);
-        int height = boardHeight();
+        int height = boardHeight(currentWeek);
         FrameLayout board = buildBoard(currentWeek, true);
         scheduleHost.addView(board, new LinearLayout.LayoutParams(width, height));
         if (!draggingWeek && !previewingWeekDrag) {
@@ -627,7 +720,7 @@ public class ScheduleBoardView extends FrameLayout {
 
     private FrameLayout buildBoard(int week, boolean interactive) {
         int width = Math.max(getAvailableBoardWidth(), timeWidth + dayWidth * visibleDayCount);
-        int height = boardHeight();
+        int height = boardHeight(week);
         FrameLayout board = new FrameLayout(getContext());
         if (interactive) {
             board.setOnTouchListener((view, event) -> {
@@ -642,7 +735,7 @@ public class ScheduleBoardView extends FrameLayout {
                     return true;
                 }
                 int day = (int) ((boardTouchX - timeWidth) / dayWidth);
-                int section = sectionAtY(Math.round(boardTouchY));
+                int section = sectionAtY(Math.round(boardTouchY), week);
                 if (slotLongClickListener != null && day >= 0 && day < visibleDayCount
                         && section >= 1 && section <= sectionCount) {
                     slotLongClickListener.onSlotLongClick(visibleDays.get(day), section);
@@ -657,17 +750,21 @@ public class ScheduleBoardView extends FrameLayout {
         for (int day = 0; day < visibleDayCount; day++) {
             addDayHeader(board, day, visibleDays.get(day), week);
         }
+        addPracticeBanner(board, week, interactive);
         for (int section = 1; section <= sectionCount; section++) {
             if (sectionRowHeight(section) <= 0) {
                 continue;
             }
-            addTimeLabel(board, section);
-            addRowLine(board, section);
+            addTimeLabel(board, section, week);
+            addRowLine(board, section, week);
         }
         List<Course> visibleCourses = displayCourses(week);
         Map<Course, SlotLayout> layouts = slotLayouts(visibleCourses, week);
+        List<Course> conflictingCourses = CourseConflictDetector.conflictingCoursesForWeek(
+                courses, lastWeek, week);
         for (Course course : visibleCourses) {
-            addCourseBlock(board, course, week, interactive, layouts.get(course));
+            addCourseBlock(board, course, week, interactive, layouts.get(course),
+                    containsIdentity(conflictingCourses, course));
         }
         board.setLayoutParams(new FrameLayout.LayoutParams(width, height));
         return board;
@@ -689,15 +786,29 @@ public class ScheduleBoardView extends FrameLayout {
         return getResources().getDisplayMetrics().widthPixels;
     }
 
-    private String courseText(Course course) {
-        StringBuilder text = new StringBuilder(course.name);
+    private CharSequence courseText(Course course, boolean conflict) {
+        SpannableStringBuilder text = new SpannableStringBuilder();
+        if (conflict) {
+            String badge = "冲突 · ";
+            text.append(badge);
+            text.setSpan(new RelativeSizeSpan(0.78f), 0, badge.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (course.courseType != CourseType.LECTURE) {
+            String badge = course.courseType.badgeText + " · ";
+            int start = text.length();
+            text.append(badge);
+            text.setSpan(new RelativeSizeSpan(0.78f), start, text.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        text.append(course.name);
         if (!course.location.isEmpty()) {
             text.append("\n@").append(course.location);
         }
         if (!course.teacher.isEmpty()) {
             text.append('\n').append(course.teacher);
         }
-        return text.toString();
+        return text;
     }
 
     private int courseColor(Course course) {
@@ -782,14 +893,161 @@ public class ScheduleBoardView extends FrameLayout {
                 && date.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR);
     }
 
-    private void addTimeLabel(FrameLayout board, int section) {
+    private void addPracticeBanner(FrameLayout board, int week, boolean interactive) {
+        List<Course> practiceCourses = practiceCoursesForWeek(week);
+        if (practiceCourses.isEmpty()) {
+            return;
+        }
+
+        LinearLayout banner = new LinearLayout(getContext());
+        banner.setOrientation(LinearLayout.VERTICAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setPadding(dp(14), dp(7), dp(14), dp(7));
+        banner.setBackground(practiceBannerBg());
+
+        LinearLayout heading = new LinearLayout(getContext());
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(getContext());
+        title.setText("本周实践");
+        title.setTextColor(darkMode ? color("#9CE9DF") : color("#075E56"));
+        title.setTextSize(14);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        heading.addView(title, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView count = new TextView(getContext());
+        count.setText(practiceCourses.size() + " 项 · 查看");
+        count.setTextColor(darkMode ? color("#B7D8D4") : color("#39736D"));
+        count.setTextSize(11);
+        count.setSingleLine(true);
+        heading.addView(count);
+        banner.addView(heading, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView summary = new TextView(getContext());
+        summary.setText(practiceSummary(practiceCourses));
+        summary.setTextColor(darkMode ? color("#F0FFFC") : color("#123B38"));
+        summary.setTextSize(14);
+        summary.setTypeface(Typeface.DEFAULT_BOLD);
+        summary.setSingleLine(true);
+        summary.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        summaryParams.topMargin = dp(2);
+        banner.addView(summary, summaryParams);
+        banner.setContentDescription("本周实践，" + practiceCourses.size() + "项，点击查看");
+
+        if (interactive) {
+            banner.setClickable(true);
+            banner.setOnClickListener(v -> {
+                if (interactionsSuppressed()) {
+                    return;
+                }
+                if (practiceCourses.size() == 1 && courseClickListener != null) {
+                    courseClickListener.onCourseClick(practiceCourses.get(0));
+                } else if (practiceBannerClickListener != null) {
+                    practiceBannerClickListener.onPracticeBannerClick(new ArrayList<>(practiceCourses));
+                }
+            });
+            if (practiceCourses.size() == 1) {
+                banner.setOnLongClickListener(v -> {
+                    if (interactionsSuppressed()) {
+                        return true;
+                    }
+                    if (courseLongClickListener != null) {
+                        courseLongClickListener.onCourseLongClick(practiceCourses.get(0));
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        }
+
+        int width = Math.max(getAvailableBoardWidth(), timeWidth + dayWidth * visibleDayCount);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                Math.max(dp(120), width - dp(16)), dp(64));
+        params.leftMargin = dp(8);
+        params.topMargin = dayHeaderHeight + dp(6);
+        board.addView(banner, params);
+    }
+
+    private List<Course> practiceCoursesForWeek(int week) {
+        List<Course> result = new ArrayList<>();
+        if (!showPracticeBanner) {
+            return result;
+        }
+        for (Course course : courses) {
+            if (course != null && isPracticeBannerCourse(course)
+                    && isCourseInWeek(course, week)) {
+                result.add(course);
+            }
+        }
+        return result;
+    }
+
+    private int practiceBannerInset(int week) {
+        if (!showPracticeBanner) {
+            return 0;
+        }
+        for (Course course : courses) {
+            if (course != null && isPracticeBannerCourse(course)
+                    && isCourseInWeek(course, week)) {
+                return dp(76);
+            }
+        }
+        return 0;
+    }
+
+    private String practiceSummary(List<Course> practiceCourses) {
+        StringBuilder summary = new StringBuilder();
+        int visibleCount = Math.min(3, practiceCourses.size());
+        for (int index = 0; index < visibleCount; index++) {
+            Course course = practiceCourses.get(index);
+            if (summary.length() > 0) {
+                summary.append(" · ");
+            }
+            summary.append(course.name == null || course.name.trim().isEmpty()
+                    ? "未命名实践" : course.name.trim());
+        }
+        if (practiceCourses.size() == 1) {
+            summary.append(" · ").append(practiceTimeText(practiceCourses.get(0)));
+        } else if (practiceCourses.size() > visibleCount) {
+            summary.append(" 等").append(practiceCourses.size()).append("项");
+        }
+        return summary.toString();
+    }
+
+    private boolean isPracticeBannerCourse(Course course) {
+        return course.courseType == CourseType.PRACTICE || course.isBannerOnlyCourse();
+    }
+
+    private String practiceTimeText(Course course) {
+        if (course.isBannerOnlyCourse()) {
+            return "集中实践";
+        }
+        if (course.day >= 0 && course.day < DAYS.length) {
+            return "周" + DAYS[course.day] + " " + course.startSection + "-" + course.endSection + "节";
+        }
+        return "时间待定";
+    }
+
+    private GradientDrawable practiceBannerBg() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(darkMode ? color("#E620504D") : color("#F2DDF4F0"));
+        drawable.setStroke(dp(1), darkMode ? color("#5B58CFC0") : color("#8044AFA2"));
+        drawable.setCornerRadius(dp(14));
+        return drawable;
+    }
+
+    private void addTimeLabel(FrameLayout board, int section, int week) {
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
 
         TextView number = new TextView(getContext());
         number.setText(String.valueOf(section));
-        int top = sectionTop(section);
+        int top = sectionTop(section, week);
         int rowHeight = sectionRowHeight(section);
         applyAdaptiveTextColor(number, 0, top, timeWidth, rowHeight / 2, false);
         number.setTextSize(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 19 : 17);
@@ -808,26 +1066,26 @@ public class ScheduleBoardView extends FrameLayout {
         board.addView(box, params);
     }
 
-    private void addRowLine(FrameLayout board, int section) {
+    private void addRowLine(FrameLayout board, int section, int week) {
         View line = new View(getContext());
-        int top = sectionTop(section);
-        line.setBackgroundColor(darkMode ? color("#31415B") : color("#D1DCEE"));
+        int top = sectionTop(section, week);
+        line.setBackgroundColor(darkMode ? color("#465B7A") : color("#D1DCEE"));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dayWidth * visibleDayCount, dp(1));
         params.leftMargin = timeWidth;
         params.topMargin = top;
         board.addView(line, params);
     }
 
-    private int boardHeight() {
-        int height = dayHeaderHeight;
+    private int boardHeight(int week) {
+        int height = dayHeaderHeight + practiceBannerInset(week);
         for (int section = 1; section <= sectionCount; section++) {
             height += sectionRowHeight(section);
         }
         return height;
     }
 
-    private int sectionTop(int section) {
-        int top = dayHeaderHeight;
+    private int sectionTop(int section, int week) {
+        int top = dayHeaderHeight + practiceBannerInset(week);
         int bounded = Math.max(1, Math.min(sectionCount + 1, section));
         for (int index = 1; index < bounded; index++) {
             top += sectionRowHeight(index);
@@ -852,9 +1110,9 @@ public class ScheduleBoardView extends FrameLayout {
         return height;
     }
 
-    private int sectionAtY(int y) {
+    private int sectionAtY(int y, int week) {
         for (int section = 1; section <= sectionCount; section++) {
-            int top = sectionTop(section);
+            int top = sectionTop(section, week);
             if (y >= top && y < top + sectionRowHeight(section)) {
                 return section;
             }
@@ -862,19 +1120,21 @@ public class ScheduleBoardView extends FrameLayout {
         return sectionCount + 1;
     }
 
-    private void addCourseBlock(FrameLayout board, Course course, int week, boolean interactive, SlotLayout layout) {
+    private void addCourseBlock(FrameLayout board, Course course, int week, boolean interactive,
+                                SlotLayout layout, boolean conflict) {
         int column = columnForCourse(course);
         if (column < 0) {
             return;
         }
         TextView view = new TextView(getContext());
-        view.setText(courseText(course));
-        view.setTextColor(Color.WHITE);
+        view.setText(courseText(course, conflict));
+        int fill = courseColor(course);
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setGravity(Gravity.START | Gravity.TOP);
-        view.setBackground(cardBg(courseColor(course)));
+        view.setBackground(cardBg(fill, conflict));
+        view.setContentDescription(courseContentDescription(course, conflict));
         if (showOutOfWeekCourses && !isCourseInWeek(course, week)) {
-            view.setAlpha(0.28f);
+            view.setAlpha(0.52f);
         }
         if (interactive) {
             view.setOnClickListener(v -> {
@@ -906,7 +1166,7 @@ public class ScheduleBoardView extends FrameLayout {
         }
         int availableHeight = Math.max(dp(20), spanHeight - dp(8));
         int left = timeWidth + dayWidth * column + dp(2);
-        int top = sectionTop(course.startSection) + dp(4);
+        int top = sectionTop(course.startSection, week) + dp(4);
         int width;
         int height;
         if (layout != null && layout.vertical) {
@@ -920,6 +1180,10 @@ public class ScheduleBoardView extends FrameLayout {
             height = availableHeight;
             left += blockWidth * slotIndex;
         }
+        int courseTextColor = contrastingCourseTextColor(fill, left, top, width, height);
+        view.setTextColor(courseTextColor);
+        view.setShadowLayer(dp(1), 0f, dp(1), courseTextColor == Color.WHITE
+                ? color("#66000000") : color("#33FFFFFF"));
         configureCourseBlockText(view, width, height);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
         params.leftMargin = left;
@@ -935,7 +1199,8 @@ public class ScheduleBoardView extends FrameLayout {
         view.setHorizontallyScrolling(false);
         view.setEllipsize(TextUtils.TruncateAt.END);
 
-        int minimumTextSize = getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 10 : 8;
+        boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+        int minimumTextSize = tablet ? 10 : (visibleDayCount >= 7 ? 10 : 8);
         int textSize = courseTextSize();
         int maxLines;
         while (true) {
@@ -943,7 +1208,7 @@ public class ScheduleBoardView extends FrameLayout {
             Paint.FontMetricsInt fontMetrics = view.getPaint().getFontMetricsInt();
             int lineHeight = Math.max(1, fontMetrics.descent - fontMetrics.ascent);
             int contentHeight = Math.max(1, height - view.getPaddingTop() - view.getPaddingBottom());
-            maxLines = Math.max(1, Math.min(6, contentHeight / lineHeight));
+            maxLines = Math.max(1, contentHeight / lineHeight);
             int contentWidth = Math.max(1, width - view.getPaddingLeft() - view.getPaddingRight());
             if (textSize <= minimumTextSize
                     || estimatedCourseLineCount(view, contentWidth) <= maxLines) {
@@ -1062,7 +1327,9 @@ public class ScheduleBoardView extends FrameLayout {
                 && sameText(first.location, second.location)
                 && sameText(first.teacher, second.teacher)
                 && sameText(first.raw, second.raw)
-                && sameText(first.credit, second.credit);
+                && sameText(first.credit, second.credit)
+                && sameText(first.color, second.color)
+                && first.courseType == second.courseType;
     }
 
     private boolean sameText(String first, String second) {
@@ -1091,72 +1358,6 @@ public class ScheduleBoardView extends FrameLayout {
             }
         }
         return parsed;
-    }
-
-    private String[] generatedClassTimes(String firstStartTime, int classMinutes, int breakMinutes,
-                                         int bigBreakMinutes, String afternoonStartTime,
-                                         String lateAfternoonStartTime, String anchorConfigText) {
-        String[] generated = new String[Math.max(20, TIMES.length)];
-        Map<Integer, Integer> anchors = classTimeAnchors(anchorConfigText);
-        int start = minutesFromText(firstStartTime);
-        int duration = Math.max(1, Math.min(240, classMinutes));
-        int rest = Math.max(0, Math.min(120, breakMinutes));
-        int longRest = Math.max(0, Math.min(240, bigBreakMinutes));
-        int afternoonStart = minutesFromText(afternoonStartTime);
-        int lateAfternoonStart = minutesFromText(lateAfternoonStartTime);
-        for (int i = 0; i < generated.length; i++) {
-            int section = i + 1;
-            Integer anchoredStart = anchors.get(i + 1);
-            if (anchoredStart != null && i > 0) {
-                start = anchoredStart;
-            } else if (section == 5) {
-                start = afternoonStart;
-            } else if (section == 7) {
-                start = lateAfternoonStart;
-            }
-            int end = start + duration;
-            generated[i] = timeText(start) + "\n" + timeText(end);
-            start = end + (section % 2 == 0 ? longRest : rest);
-        }
-        return generated;
-    }
-
-    private Map<Integer, Integer> classTimeAnchors(String configText) {
-        Map<Integer, Integer> anchors = new LinkedHashMap<>();
-        String text = configText == null ? "" : configText.trim();
-        if (text.length() == 0 || !text.contains("-")) {
-            return anchors;
-        }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("(\\d{1,2})\\s+((?:\\d{1,2})[:：](?:\\d{2}))\\s*-\\s*(?:\\d{1,2})[:：](?:\\d{2})")
-                .matcher(text);
-        while (matcher.find()) {
-            int section = Integer.parseInt(matcher.group(1));
-            if (section > 0 && section <= 40) {
-                anchors.put(section, minutesFromText(matcher.group(2)));
-            }
-        }
-        return anchors;
-    }
-
-    private int minutesFromText(String value) {
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d{1,2})\\s*[:：]\\s*(\\d{1,2})")
-                .matcher(value == null ? "" : value);
-        if (matcher.find()) {
-            int hour = Math.max(0, Math.min(23, Integer.parseInt(matcher.group(1))));
-            int minute = Math.max(0, Math.min(59, Integer.parseInt(matcher.group(2))));
-            return hour * 60 + minute;
-        }
-        return 8 * 60;
-    }
-
-    private String timeText(int minutes) {
-        int normalized = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
-        return twoDigits(normalized / 60) + ":" + twoDigits(normalized % 60);
-    }
-
-    private String twoDigits(int value) {
-        return value < 10 ? "0" + value : String.valueOf(value);
     }
 
     private boolean sameTimes(String[] first, String[] second) {
@@ -1190,31 +1391,7 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private boolean isCourseInWeek(Course course, int week) {
-        String weeks = course.weeks == null ? "" : course.weeks;
-        if (weeks.contains("项目")) {
-            return true;
-        }
-        if (weeks.contains("双") && week % 2 != 0) {
-            return false;
-        }
-        if (weeks.contains("单") && week % 2 == 0) {
-            return false;
-        }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("(\\d+)\\s*-\\s*(\\d+)")
-                .matcher(weeks);
-        if (matcher.find()) {
-            int start = Integer.parseInt(matcher.group(1));
-            int end = Integer.parseInt(matcher.group(2));
-            return week >= start && week <= end;
-        }
-        matcher = java.util.regex.Pattern
-                .compile("(^|[^\\d])(\\d+)\\s*周")
-                .matcher(weeks);
-        if (matcher.find()) {
-            return week == Integer.parseInt(matcher.group(2));
-        }
-        return true;
+        return CourseTimeResolver.isActiveInWeek(course, week);
     }
 
     private boolean hasCourseEnded(Course course, int week) {
@@ -1243,12 +1420,83 @@ public class ScheduleBoardView extends FrameLayout {
         return endWeek;
     }
 
-    private GradientDrawable cardBg(int fill) {
+    private GradientDrawable cardBg(int fill, boolean conflict) {
         GradientDrawable drawable = new GradientDrawable();
         int alpha = Math.round(255f * courseBlockOpacity / 100f);
         drawable.setColor(Color.argb(alpha, Color.red(fill), Color.green(fill), Color.blue(fill)));
         drawable.setCornerRadius(dp(courseCornerRadius));
+        if (conflict) {
+            drawable.setStroke(dp(2), darkMode ? color("#FF9DA8") : color("#C92840"));
+        }
         return drawable;
+    }
+
+    private String courseContentDescription(Course course, boolean conflict) {
+        StringBuilder text = new StringBuilder();
+        if (conflict) {
+            text.append("时间冲突，");
+        }
+        String name = course.name == null || course.name.trim().isEmpty()
+                ? "未命名课程" : course.name.trim();
+        text.append(name);
+        if (course.day >= 0 && course.day < DAYS.length) {
+            text.append("，周").append(DAYS[course.day]);
+        }
+        text.append("，第").append(course.startSection)
+                .append("至").append(course.endSection).append("节");
+        if (course.location != null && !course.location.trim().isEmpty()) {
+            text.append("，地点").append(course.location.trim());
+        }
+        return text.append("，点击查看详情，长按编辑").toString();
+    }
+
+    private boolean containsIdentity(List<Course> source, Course target) {
+        for (Course course : source) {
+            if (course == target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int contrastingCourseTextColor(int fill, int left, int top, int width, int height) {
+        int lightText = Color.WHITE;
+        int darkText = color("#101827");
+        double backgroundLuminance = effectiveCourseBackgroundLuminance(fill, left, top, width, height);
+        return contrastRatio(backgroundLuminance, relativeLuminance(darkText))
+                >= contrastRatio(backgroundLuminance, relativeLuminance(lightText))
+                ? darkText : lightText;
+    }
+
+    private double effectiveCourseBackgroundLuminance(int fill, int left, int top, int width, int height) {
+        double fillLuminance = relativeLuminance(fill);
+        double surfaceLuminance;
+        if (hasBackgroundImage && currentBackgroundBitmap != null) {
+            double sampledChannel = backgroundLuminance(left, top, width, height) / 255d;
+            surfaceLuminance = linearColorChannel(sampledChannel);
+        } else {
+            surfaceLuminance = relativeLuminance(boardBgColor());
+        }
+        double opacity = courseBlockOpacity / 100d;
+        return fillLuminance * opacity + surfaceLuminance * (1d - opacity);
+    }
+
+    private double contrastRatio(double firstLuminance, double secondLuminance) {
+        return (Math.max(firstLuminance, secondLuminance) + 0.05d)
+                / (Math.min(firstLuminance, secondLuminance) + 0.05d);
+    }
+
+    private double relativeLuminance(int value) {
+        double red = linearColorChannel(Color.red(value) / 255d);
+        double green = linearColorChannel(Color.green(value) / 255d);
+        double blue = linearColorChannel(Color.blue(value) / 255d);
+        return red * 0.2126d + green * 0.7152d + blue * 0.0722d;
+    }
+
+    private double linearColorChannel(double value) {
+        return value <= 0.04045d
+                ? value / 12.92d
+                : Math.pow((value + 0.055d) / 1.055d, 2.4d);
     }
 
     private int tabletText(int tabletSize, int phoneSize) {
@@ -1263,7 +1511,7 @@ public class ScheduleBoardView extends FrameLayout {
         if (visibleDayCount == 6) {
             return tablet ? 14 : 11;
         }
-        return tablet ? 13 : 10;
+        return tablet ? 13 : 11;
     }
 
     private int color(String hex) {
@@ -1355,13 +1603,16 @@ public class ScheduleBoardView extends FrameLayout {
 
     private double sampleBackgroundLuminance(int localX, int localY, int viewWidth, int viewHeight) {
         Bitmap bitmap = currentBackgroundBitmap;
-        float scale = Math.max(viewWidth / (float) bitmap.getWidth(), viewHeight / (float) bitmap.getHeight());
-        float drawWidth = bitmap.getWidth() * scale;
-        float drawHeight = bitmap.getHeight() * scale;
-        float offsetX = (viewWidth - drawWidth) / 2f;
-        float offsetY = (viewHeight - drawHeight) / 2f;
-        int bitmapX = clamp(Math.round((localX - offsetX) / scale), 0, bitmap.getWidth() - 1);
-        int bitmapY = clamp(Math.round((localY - offsetY) / scale), 0, bitmap.getHeight() - 1);
+        BackgroundImageCrop fittedCrop = currentBackgroundCrop.fitToAspect(
+                bitmap.getWidth(), bitmap.getHeight(), viewWidth / (float) viewHeight);
+        float sourceLeft = fittedCrop.left * bitmap.getWidth();
+        float sourceTop = fittedCrop.top * bitmap.getHeight();
+        float sourceWidth = (fittedCrop.right - fittedCrop.left) * bitmap.getWidth();
+        float sourceHeight = (fittedCrop.bottom - fittedCrop.top) * bitmap.getHeight();
+        int bitmapX = clamp(Math.round(sourceLeft + localX / (float) viewWidth * sourceWidth),
+                0, bitmap.getWidth() - 1);
+        int bitmapY = clamp(Math.round(sourceTop + localY / (float) viewHeight * sourceHeight),
+                0, bitmap.getHeight() - 1);
         int color = bitmap.getPixel(bitmapX, bitmapY);
         return 0.299d * Color.red(color) + 0.587d * Color.green(color) + 0.114d * Color.blue(color);
     }
@@ -1402,6 +1653,10 @@ public class ScheduleBoardView extends FrameLayout {
             super.onScrollChanged(left, top, oldLeft, oldTop);
             if (top != oldTop) {
                 updateAdaptiveTextColors();
+                if (verticalScrollListener != null) {
+                    verticalScrollListener.onVerticalScroll(
+                            top, top - oldTop, !canScrollVertically(1));
+                }
             }
         }
     }
@@ -1438,11 +1693,14 @@ public class ScheduleBoardView extends FrameLayout {
 
     private static class CoverBitmapDrawable extends Drawable {
         private final Bitmap bitmap;
+        private final BackgroundImageCrop crop;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Rect source = new Rect();
         private final RectF target = new RectF();
 
-        CoverBitmapDrawable(Bitmap bitmap) {
+        CoverBitmapDrawable(Bitmap bitmap, BackgroundImageCrop crop) {
             this.bitmap = bitmap;
+            this.crop = crop == null ? BackgroundImageCrop.full() : crop;
         }
 
         @Override
@@ -1452,13 +1710,18 @@ public class ScheduleBoardView extends FrameLayout {
             }
             float width = getBounds().width();
             float height = getBounds().height();
-            float scale = Math.max(width / bitmap.getWidth(), height / bitmap.getHeight());
-            float drawWidth = bitmap.getWidth() * scale;
-            float drawHeight = bitmap.getHeight() * scale;
-            float left = getBounds().left + (width - drawWidth) / 2f;
-            float top = getBounds().top + (height - drawHeight) / 2f;
-            target.set(left, top, left + drawWidth, top + drawHeight);
-            canvas.drawBitmap(bitmap, null, target, paint);
+            if (width <= 0f || height <= 0f) {
+                return;
+            }
+            BackgroundImageCrop fittedCrop = crop.fitToAspect(
+                    bitmap.getWidth(), bitmap.getHeight(), width / height);
+            source.set(
+                    Math.max(0, Math.round(fittedCrop.left * bitmap.getWidth())),
+                    Math.max(0, Math.round(fittedCrop.top * bitmap.getHeight())),
+                    Math.min(bitmap.getWidth(), Math.round(fittedCrop.right * bitmap.getWidth())),
+                    Math.min(bitmap.getHeight(), Math.round(fittedCrop.bottom * bitmap.getHeight())));
+            target.set(getBounds().left, getBounds().top, getBounds().right, getBounds().bottom);
+            canvas.drawBitmap(bitmap, source, target, paint);
         }
 
         @Override

@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Polaris课程表</string>
+    <string name="schedule_widget_name">Polaris 今日课表</string>
+    <string name="schedule_widget_description">显示当前课表的今日与明日课程</string>
+    <string name="widget_today_empty">今日无课</string>
+    <string name="widget_tomorrow_empty">明日无课</string>
+    <string name="widget_today_preview_title">今天·周一 8/10</string>
+    <string name="widget_tomorrow_preview_title">明天·周二 8/11</string>
 </resources>

@@ -4,12 +4,14 @@ import android.content.Context;
 import android.net.Uri;
 
 import com.polaris.timetable.model.CourseStructureMapper;
+import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.ParseError;
 import com.polaris.timetable.model.ParseResult;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
 import com.polaris.timetable.parser.ParseDiagnostics;
 import com.polaris.timetable.parser.SchoolParserModel;
+import com.polaris.timetable.parser.SemesterTextExtractor;
 import com.polaris.timetable.parser.WeekRuleParser;
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
 import com.tom_roush.pdfbox.pdmodel.PDDocument;
@@ -38,6 +40,9 @@ public class ScheduleParser {
     private static final Pattern XAUT_SECTION_PATTERN = Pattern.compile("(\\d+)(?:\\s*-\\s*(\\d+))*\\s*节");
     private static final Pattern XAUT_WEEK_SECTION_PATTERN = Pattern.compile("(\\d+(?:\\s*-\\s*\\d+)?)\\s*\\(\\[周\\]\\)\\s*\\[\\s*(\\d{1,2}(?:\\s*-\\s*\\d{1,2})*)");
     private static final Pattern WEEK_PATTERN = Pattern.compile("(\\d+)\\s*-\\s*(\\d+)\\s*周?(?:\\s*[（(](单|双)[）)])?|全周|项目周");
+    private static final Pattern XUPT_FOOTER_ITEM_PATTERN = Pattern.compile(
+            "([^;；]+?)([◇●])\\s*([^()（）/;；]+?)\\s*[（(]\\s*共\\s*\\d+\\s*周\\s*[）)]\\s*/\\s*"
+                    + "((?:\\d+\\s*-\\s*\\d+|\\d+)\\s*周(?:\\s*[（(](?:单|双)[）)])?|项目周)");
     private static final Pattern TIME_RANGE_PATTERN = Pattern.compile("(\\d{1,2})\\s*[:：]\\s*(\\d{2})\\s*-\\s*(\\d{1,2})\\s*[:：]\\s*(\\d{2})");
     private static final Pattern COURSE_META_PATTERN = Pattern.compile(".*(学时|总学时|学分|课程性质|课程属性|考核方式|课程编号|课程序号|容量|人数|起止周|上课班级)\\s*[:：]?.*");
     private static final Pattern ROOM_PATTERN = Pattern.compile("([A-Z]\\-?\\d{2,4}[A-Z]?|[A-Z]楼\\d{2,4}|[A-Z]座\\d{2,4}|\\d{1,2}号楼\\d{0,4}|第?\\d{1,2}教学楼\\d{0,4}|第?\\d{1,2}教研楼[东西南北中]?\\d{0,4}(?:-\\d{2,4})*|[一二三四五六七八九十]号楼\\d{0,4}|实验楼\\d{0,4}|教学楼\\d{0,4}|体育馆[^/\\s]*|图书馆\\d{0,4}|体育场|操场|机房\\d{0,4}|课外实践不在教室|未排地点)");
@@ -98,7 +103,7 @@ public class ScheduleParser {
             String cellText = collectCellText(blocks, seeds, seed, dayCenters);
             ParsedCell parsed = parseHduCell(seed, cellText, blocks, dayCenters, diagnostics);
             courses.add(new Course(seed.day, parsed.start, parsed.end, parsed.name, parsed.weeks,
-                    parsed.location, parsed.teacher, cellText, parsed.credit));
+                    parsed.location, parsed.teacher, cellText, parsed.credit, "", parsed.courseType));
             diagnostics.info("hdu course day=" + seed.day + " sections=" + parsed.start + "-" + parsed.end
                     + " name=" + parsed.name + " room=" + parsed.location);
         }
@@ -109,8 +114,9 @@ public class ScheduleParser {
         List<StructuredCourse> structuredCourses = new CourseStructureMapper().fromLegacyCourses(merged);
         diagnostics.info("hdu structured courses=" + structuredCourses.size());
         String classTimeConfig = extractClassTimeConfig(blocks, diagnostics);
+        String semesterName = extractSemesterName(blocks, diagnostics);
         return new ParseResult(!merged.isEmpty(), merged, structuredCourses,
-                diagnostics.errors(), diagnostics.text(), pageCount, classTimeConfig);
+                diagnostics.errors(), diagnostics.text(), pageCount, classTimeConfig, semesterName);
     }
 
     private ParseResult parseXautBlocks(List<TextBlock> sourceBlocks, ParseDiagnostics diagnostics, int pageCount) {
@@ -134,7 +140,7 @@ public class ScheduleParser {
             String cellText = collectCellText(blocks, seeds, seed, dayCenters);
             ParsedCell parsed = parseXautCell(seed, cellText, diagnostics);
             courses.add(new Course(seed.day, parsed.start, parsed.end, parsed.name, parsed.weeks,
-                    parsed.location, parsed.teacher, cellText, parsed.credit));
+                    parsed.location, parsed.teacher, cellText, parsed.credit, "", parsed.courseType));
             diagnostics.info("xaut course day=" + seed.day + " sections=" + parsed.start + "-" + parsed.end
                     + " name=" + parsed.name + " room=" + parsed.location);
         }
@@ -144,8 +150,9 @@ public class ScheduleParser {
         List<StructuredCourse> structuredCourses = new CourseStructureMapper().fromLegacyCourses(merged);
         diagnostics.info("xaut courses beforeMerge=" + courses.size() + " afterMerge=" + merged.size());
         String classTimeConfig = extractClassTimeConfig(blocks, diagnostics);
+        String semesterName = extractSemesterName(blocks, diagnostics);
         return new ParseResult(!merged.isEmpty(), merged, structuredCourses,
-                diagnostics.errors(), diagnostics.text(), pageCount, classTimeConfig);
+                diagnostics.errors(), diagnostics.text(), pageCount, classTimeConfig, semesterName);
     }
 
     private List<CourseSeed> findXautCourseSeeds(List<TextBlock> blocks, Map<Integer, Float> dayCenters,
@@ -272,17 +279,19 @@ public class ScheduleParser {
 
         List<CourseSeed> seeds = findCourseSeeds(blocks, dayCenters, diagnostics);
         diagnostics.info("course seeds=" + seeds.size());
-        if (seeds.isEmpty()) {
+        List<Course> footerCourses = extractXuptFooterCourses(joinBlockText(blocks));
+        diagnostics.info("xupt footer practice courses=" + footerCourses.size());
+        if (seeds.isEmpty() && footerCourses.isEmpty()) {
             diagnostics.error(ParseError.Code.SECTION_NOT_FOUND, "没有识别到课程节次文本", 0, preview(blocks));
             return new ParseResult(false, Collections.emptyList(), diagnostics.errors(), diagnostics.text(), pageCount);
         }
 
-        List<Course> courses = new ArrayList<>();
+        List<Course> courses = new ArrayList<>(footerCourses);
         for (CourseSeed seed : seeds) {
             String cellText = collectCellText(blocks, seeds, seed, dayCenters);
             ParsedCell parsed = parseCell(seed, cellText, blocks, dayCenters, diagnostics);
             courses.add(new Course(seed.day, parsed.start, parsed.end, parsed.name, parsed.weeks,
-                    parsed.location, parsed.teacher, cellText, parsed.credit));
+                    parsed.location, parsed.teacher, cellText, parsed.credit, "", parsed.courseType));
             diagnostics.info("course day=" + seed.day + " sections=" + parsed.start + "-" + parsed.end
                     + " name=" + parsed.name + " room=" + parsed.location);
         }
@@ -293,8 +302,56 @@ public class ScheduleParser {
         List<StructuredCourse> structuredCourses = new CourseStructureMapper().fromLegacyCourses(merged);
         diagnostics.info("structured courses=" + structuredCourses.size());
         String classTimeConfig = extractClassTimeConfig(blocks, diagnostics);
+        String semesterName = extractSemesterName(blocks, diagnostics);
         return new ParseResult(!merged.isEmpty(), merged, structuredCourses,
-                diagnostics.errors(), diagnostics.text(), pageCount, classTimeConfig);
+                diagnostics.errors(), diagnostics.text(), pageCount, classTimeConfig, semesterName);
+    }
+
+    private String extractSemesterName(List<TextBlock> blocks, ParseDiagnostics diagnostics) {
+        String semesterName = SemesterTextExtractor.extract(joinBlockText(blocks));
+        diagnostics.info(semesterName.length() == 0
+                ? "semester name not found in PDF"
+                : "semester name=" + semesterName);
+        return semesterName;
+    }
+
+    private String joinBlockText(List<TextBlock> blocks) {
+        StringBuilder text = new StringBuilder();
+        for (TextBlock block : blocks) {
+            if (text.length() > 0) {
+                text.append(' ');
+            }
+            text.append(block.text);
+        }
+        return text.toString();
+    }
+
+    private List<Course> extractXuptFooterCourses(String documentText) {
+        List<Course> courses = new ArrayList<>();
+        String text = clean(documentText);
+        Matcher sectionStart = Pattern.compile("实践课程\\s*[:：]").matcher(text);
+        if (!sectionStart.find()) {
+            return courses;
+        }
+        String footer = text.substring(sectionStart.end());
+        Matcher sectionEnd = Pattern.compile("○\\s*[:：]\\s*网络|打印时间").matcher(footer);
+        if (sectionEnd.find()) {
+            footer = footer.substring(0, sectionEnd.start());
+        }
+
+        Matcher item = XUPT_FOOTER_ITEM_PATTERN.matcher(footer);
+        while (item.find()) {
+            String name = cleanupMarker(clean(item.group(1)));
+            String teacher = cleanupMarker(clean(item.group(3)));
+            String weeks = normalizeWeekText(item.group(4));
+            CourseType courseType = CourseType.fromMarker(item.group(2).charAt(0));
+            if (name.length() < 2 || !courseType.supportsBannerOnly()) {
+                continue;
+            }
+            courses.add(new Course(-1, 0, 0, name, weeks, "", teacher,
+                    item.group(), "", "", courseType));
+        }
+        return courses;
     }
 
     private List<TextBlock> normalizeBlocks(List<TextBlock> sourceBlocks) {
@@ -397,6 +454,7 @@ public class ScheduleParser {
         parsed.start = seed.start;
         parsed.end = seed.end;
         parsed.weeks = normalizeWeekText(seed.weeks.length() == 0 ? extractWeeks(cellText) : seed.weeks);
+        parsed.courseType = extractCourseType(cellText);
         parsed.name = extractName(cellText);
         if (parsed.name.length() == 0) {
             parsed.name = fallbackName(blocks, seed, dayCenters);
@@ -605,6 +663,26 @@ public class ScheduleParser {
             }
         }
         return "";
+    }
+
+    private CourseType extractCourseType(String cellText) {
+        String beforeSection = cellText == null ? "" : cellText;
+        Matcher section = SECTION_PATTERN.matcher(beforeSection);
+        if (section.find()) {
+            beforeSection = beforeSection.substring(0, section.start());
+        } else {
+            Matcher looseSection = LOOSE_SECTION_PATTERN.matcher(beforeSection);
+            if (looseSection.find()) {
+                beforeSection = beforeSection.substring(0, looseSection.start());
+            }
+        }
+        for (int index = beforeSection.length() - 1; index >= 0; index--) {
+            char marker = beforeSection.charAt(index);
+            if (marker == '◆' || marker == '◇' || marker == '●' || marker == '○') {
+                return CourseType.fromMarker(marker);
+            }
+        }
+        return CourseType.LECTURE;
     }
 
     private String fallbackName(List<TextBlock> blocks, CourseSeed seed, Map<Integer, Float> centers) {
@@ -1012,7 +1090,8 @@ public class ScheduleParser {
         Map<String, Course> merged = new LinkedHashMap<>();
         for (Course course : courses) {
             String key = course.day + "|" + course.startSection + "|" + course.endSection + "|"
-                    + course.name + "|" + course.weeks + "|" + course.location;
+                    + course.name + "|" + course.weeks + "|" + course.location + "|"
+                    + course.courseType.name();
             if (!merged.containsKey(key)) {
                 merged.put(key, course);
             }
@@ -1076,6 +1155,10 @@ public class ScheduleParser {
 
     private String removeCourseMeta(String text) {
         String value = clean(text);
+        // XUPT PDFs can split the "学分" label at a timetable column edge, leaving
+        // an orphaned prefix such as "分:3.0无线定位技术" in the course-name block.
+        // Only strip it at the beginning so legitimate names such as "微积分" remain intact.
+        value = value.replaceFirst("^分\\s*[:：]\\s*\\d+(?:\\.\\d+)?\\s*", "");
         value = value.replaceAll("[:：]?\\d+(\\.\\d+)?\\s*总?学时\\s*[:：]?\\s*\\d+(\\.\\d+)?", "");
         value = value.replaceAll("总?学时\\s*[:：]?\\s*\\d+(\\.\\d+)?", "");
         value = value.replaceAll("学分\\s*[:：]?\\s*\\d+(\\.\\d+)?", "");
@@ -1091,6 +1174,9 @@ public class ScheduleParser {
         String text = clean(value);
         if (text.startsWith("/")) {
             text = text.substring(1);
+        }
+        if (weekRuleParser.isSupportedExpression(text)) {
+            return weekRuleParser.parse(text).displayText();
         }
         String extracted = extractWeeks(text);
         if (!"周次见PDF".equals(extracted)) {
@@ -1162,6 +1248,7 @@ public class ScheduleParser {
         String location = "";
         String teacher = "";
         String credit = "";
+        CourseType courseType = CourseType.LECTURE;
     }
 
     private static class CourseSeed {

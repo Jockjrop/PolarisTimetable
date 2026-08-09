@@ -4,6 +4,7 @@ import android.net.Uri;
 import android.util.Base64;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.model.CourseType;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -40,7 +41,8 @@ public class ScheduleShareCodec {
                         .append(escape(safeText(course.teacher))).append('\t')
                         .append(escape(safeText(course.name))).append('\t')
                         .append(escape(safeText(course.credit))).append('\t')
-                        .append(escape(safeText(course.color)));
+                        .append(escape(safeText(course.color))).append('\t')
+                        .append(course.courseType.name());
             }
         }
         String payload = "z" + Base64.encodeToString(deflate(builder.toString().getBytes(StandardCharsets.UTF_8)),
@@ -100,12 +102,18 @@ public class ScheduleShareCodec {
             int day = item.optInt("d", -1);
             int start = item.optInt("s", 1);
             int end = item.optInt("e", start);
-            if (day < 0 || day > 6 || start < 1 || end < start) {
+            CourseType courseType = CourseType.fromStorage(
+                    item.optString("courseType", item.optString("type", "")));
+            boolean bannerOnly = courseType.supportsBannerOnly()
+                    && day < 0 && start <= 0 && end <= 0;
+            if (!bannerOnly && (day < 0 || day > 6 || start < 1 || end < start)) {
                 continue;
             }
             courses.add(new Course(day, start, end, name, item.optString("w", "周次见PDF"),
                     item.optString("l", ""), item.optString("t", ""), "",
-                    item.optString("credit", item.optString("c", ""))));
+                    item.optString("credit", item.optString("c", "")),
+                    item.optString("color", ""),
+                    courseType));
         }
         return courses;
     }
@@ -129,13 +137,20 @@ public class ScheduleShareCodec {
             int start = parseInt(parts[1], 1);
             int end = parseInt(parts[2], start);
             String name = unescape(parts[6]).trim();
-            if (name.length() == 0 || day < 0 || day > 6 || start < 1 || end < start) {
-                continue;
-            }
             String credit = parts.length > 7 ? unescape(parts[7]) : "";
             String color = parts.length > 8 ? unescape(parts[8]) : "";
+            CourseType courseType = parts.length > 9
+                    ? CourseType.fromStorage(unescape(parts[9]))
+                    : CourseType.LECTURE;
+            boolean bannerOnly = courseType.supportsBannerOnly()
+                    && day < 0 && start <= 0 && end <= 0;
+            if (name.length() == 0
+                    || (!bannerOnly && (day < 0 || day > 6 || start < 1 || end < start))) {
+                continue;
+            }
             courses.add(new Course(day, start, end, name,
-                    unescape(parts[3]), unescape(parts[4]), unescape(parts[5]), "", credit, color));
+                    unescape(parts[3]), unescape(parts[4]), unescape(parts[5]), "",
+                    credit, color, courseType));
         }
         return courses;
     }

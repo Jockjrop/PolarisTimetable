@@ -22,7 +22,8 @@ public class CourseStructureMapper {
             CourseBuilder builder = builders.get(key);
             if (builder == null) {
                 builder = new CourseBuilder(
-                        key, course.name, course.teacher, course.location, course.credit, course.color);
+                        key, course.name, course.teacher, course.location, course.credit,
+                        course.color, course.courseType);
                 builders.put(key, builder);
             }
             builder.addMeeting(new CourseMeeting(
@@ -74,7 +75,8 @@ public class CourseStructureMapper {
                         teacher,
                         rawText,
                         course.credit,
-                        course.color));
+                        course.color,
+                        course.courseType));
             }
         }
         return legacyCourses;
@@ -82,7 +84,8 @@ public class CourseStructureMapper {
 
     private String keyFor(Course course) {
         return normalize(course.name) + "|" + normalize(course.teacher)
-                + "|" + normalize(course.credit) + "|" + normalize(course.color);
+                + "|" + normalize(course.credit) + "|" + normalize(course.color)
+                + "|" + course.courseType.name();
     }
 
     private String normalize(String value) {
@@ -96,17 +99,19 @@ public class CourseStructureMapper {
         final String defaultLocation;
         final String credit;
         final String color;
+        final CourseType courseType;
         final List<CourseMeeting> meetings = new ArrayList<>();
         final StringBuilder rawText = new StringBuilder();
 
         CourseBuilder(String id, String name, String teacher, String defaultLocation,
-                      String credit, String color) {
+                      String credit, String color, CourseType courseType) {
             this.id = id;
             this.name = name;
             this.teacher = teacher;
             this.defaultLocation = defaultLocation;
             this.credit = credit;
             this.color = color;
+            this.courseType = courseType;
         }
 
         void addMeeting(CourseMeeting meeting) {
@@ -121,7 +126,8 @@ public class CourseStructureMapper {
 
         StructuredCourse build() {
             return new StructuredCourse(
-                    id, name, teacher, defaultLocation, meetings, rawText.toString(), credit, color);
+                    id, name, teacher, defaultLocation, meetings, rawText.toString(),
+                    credit, color, courseType);
         }
     }
 }

@@ -14,6 +14,7 @@ public class ParseResult {
     public final String diagnosticsText;
     public final int pageCount;
     public final String classTimeConfig;
+    public final String semesterName;
 
     public ParseResult(boolean success, List<Course> courses, List<ParseError> errors,
                        String diagnosticsText, int pageCount) {
@@ -27,6 +28,12 @@ public class ParseResult {
 
     public ParseResult(boolean success, List<Course> courses, List<StructuredCourse> structuredCourses,
                        List<ParseError> errors, String diagnosticsText, int pageCount, String classTimeConfig) {
+        this(success, courses, structuredCourses, errors, diagnosticsText, pageCount, classTimeConfig, "");
+    }
+
+    public ParseResult(boolean success, List<Course> courses, List<StructuredCourse> structuredCourses,
+                       List<ParseError> errors, String diagnosticsText, int pageCount,
+                       String classTimeConfig, String semesterName) {
         this.success = success;
         this.courses = courses == null
                 ? Collections.emptyList()
@@ -40,5 +47,6 @@ public class ParseResult {
         this.diagnosticsText = diagnosticsText == null ? "" : diagnosticsText;
         this.pageCount = pageCount;
         this.classTimeConfig = classTimeConfig == null ? "" : classTimeConfig;
+        this.semesterName = semesterName == null ? "" : semesterName;
     }
 }

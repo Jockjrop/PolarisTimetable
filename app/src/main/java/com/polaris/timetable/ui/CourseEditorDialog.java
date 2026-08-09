@@ -6,11 +6,13 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
@@ -21,6 +23,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.CourseDeletionScope;
+import com.polaris.timetable.model.CourseType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +32,8 @@ import java.util.List;
 public final class CourseEditorDialog {
     public interface Listener {
         void onCourseSaved(Course original, Course edited);
+
+        void onCourseDeleteRequested(Course original, CourseDeletionScope scope);
 
         void onEditorDismissed();
     }
@@ -71,9 +77,11 @@ public final class CourseEditorDialog {
     }
 
     public void show() {
-        Dialog dialog = new Dialog(activity, android.R.style.Theme_Material_NoActionBar);
+        int dialogTheme = darkMode
+                ? android.R.style.Theme_Material_NoActionBar
+                : android.R.style.Theme_Material_Light_NoActionBar;
+        Dialog dialog = new Dialog(activity, dialogTheme);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        setSystemBarColors(backgroundColor);
 
         LinearLayout page = new LinearLayout(activity);
         page.setOrientation(LinearLayout.VERTICAL);
@@ -117,9 +125,9 @@ public final class CourseEditorDialog {
 
         EditText name = input("课程名称", original.name);
         EditText weeks = input("第1-20周", original.weeks.isEmpty() ? defaultWeeks() : original.weeks);
-        EditText day = input("周几 1-7", String.valueOf(original.day + 1));
-        EditText start = input("开始节次", String.valueOf(original.startSection));
-        EditText end = input("结束节次", String.valueOf(original.endSection));
+        EditText day = input("周几 1-7", original.hasFixedTime() ? String.valueOf(original.day + 1) : "");
+        EditText start = input("开始节次", original.hasFixedTime() ? String.valueOf(original.startSection) : "");
+        EditText end = input("结束节次", original.hasFixedTime() ? String.valueOf(original.endSection) : "");
         EditText teacher = input("授课老师（可不填）", original.teacher);
         EditText location = input("上课地点（可不填）", original.location);
         day.setInputType(InputType.TYPE_CLASS_NUMBER);
@@ -127,6 +135,30 @@ public final class CourseEditorDialog {
         end.setInputType(InputType.TYPE_CLASS_NUMBER);
 
         final String[] selectedColor = {normalizeColor(original.color)};
+        final CourseType[] selectedType = {original.courseType};
+        final boolean[] bannerOnly = {original.isBannerOnlyCourse()};
+        View timeInputRow = timeRow(day, start, end);
+        View placementAction = actionRow("位", "#FFB000", bannerOnly[0] ? "顶部横幅" : "固定节次");
+        View typeAction = actionRow("类", "#168FE4", selectedType[0].displayName);
+        typeAction.setOnClickListener(v -> showCourseTypeDialog(selectedType[0], value -> {
+            selectedType[0] = value;
+            if (!value.supportsBannerOnly() && bannerOnly[0]) {
+                bannerOnly[0] = false;
+                updatePlacementRow(placementAction, false);
+                timeInputRow.setVisibility(View.VISIBLE);
+            }
+            updateTypeRow(typeAction, value);
+        }));
+        placementAction.setOnClickListener(v -> showCoursePlacementDialog(bannerOnly[0], value -> {
+            bannerOnly[0] = value;
+            if (value && !selectedType[0].supportsBannerOnly()) {
+                selectedType[0] = CourseType.PRACTICE;
+                updateTypeRow(typeAction, selectedType[0]);
+            }
+            updatePlacementRow(placementAction, value);
+            timeInputRow.setVisibility(value ? View.GONE : View.VISIBLE);
+        }));
+        timeInputRow.setVisibility(bannerOnly[0] ? View.GONE : View.VISIBLE);
         View colorAction = actionRow("●", editorColor(selectedColor[0]), colorLabel(selectedColor[0]));
         colorAction.setOnClickListener(v -> showColorDialog(selectedColor[0], value -> {
             selectedColor[0] = value;
@@ -137,22 +169,43 @@ public final class CourseEditorDialog {
         panel.addView(group(
                 editorRow("▣", "#10BFAE", name),
                 chipRow(courseNameQuickValues(), name),
+                typeAction,
                 colorAction));
         panel.addView(sectionTitle("时间段"));
         panel.addView(group(
                 editorRow("▣", "#12B8A6", weeks),
-                timeRow(day, start, end),
+                placementAction,
+                timeInputRow,
                 chipRow(new String[]{"1-20周", "单周", "双周"}, weeks)));
         panel.addView(group(
                 editorRow("♙", "#168FE4", teacher),
                 editorRow("▯", "#F0334B", location)));
+        if (courses.contains(original)) {
+            TextView delete = text("删除此课程", color("#E5484D"), 16, true);
+            delete.setGravity(Gravity.CENTER);
+            delete.setMinHeight(dp(50));
+            delete.setBackground(roundedStrokeBg("transparent", darkMode ? "#A94A55" : "#D96A70", 16));
+            delete.setContentDescription("删除此课程");
+            delete.setOnClickListener(v -> showDeleteScopeDialog(dialog));
+            LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
+            deleteParams.topMargin = dp(24);
+            panel.addView(delete, deleteParams);
+        }
 
         save.setOnClickListener(v -> {
             String nextName = name.getText().toString().trim();
-            int nextDay = parseBounded(day.getText().toString(), 1, 7, -1) - 1;
-            int nextStart = parseBounded(start.getText().toString(), 1, sectionCount, -1);
-            int nextEnd = parseBounded(end.getText().toString(), nextStart, sectionCount, -1);
-            if (nextName.isEmpty() || nextDay < 0 || nextStart < 1 || nextEnd < nextStart) {
+            int nextDay = bannerOnly[0]
+                    ? -1 : parseBounded(day.getText().toString(), 1, 7, -1) - 1;
+            int nextStart = bannerOnly[0]
+                    ? 0 : parseBounded(start.getText().toString(), 1, sectionCount, -1);
+            int nextEnd = bannerOnly[0]
+                    ? 0 : parseBounded(end.getText().toString(), nextStart, sectionCount, -1);
+            if (nextName.isEmpty()) {
+                Toast.makeText(activity, "请填写课程名称", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (!bannerOnly[0] && (nextDay < 0 || nextStart < 1 || nextEnd < nextStart)) {
                 Toast.makeText(activity, "请填写课程名称和有效时间", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -166,7 +219,9 @@ public final class CourseEditorDialog {
                     teacher.getText().toString().trim(),
                     "",
                     original.credit,
-                    selectedColor[0]);
+                    selectedColor[0],
+                    bannerOnly[0] && !selectedType[0].supportsBannerOnly()
+                            ? CourseType.PRACTICE : selectedType[0]);
             listener.onCourseSaved(original, edited);
             dialog.dismiss();
         });
@@ -177,12 +232,96 @@ public final class CourseEditorDialog {
         configureFullScreenWindow(dialog.getWindow());
     }
 
+    private void showDeleteScopeDialog(Dialog editorDialog) {
+        Dialog scopeDialog = new Dialog(activity);
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(16), dp(18), dp(14));
+        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+
+        TextView heading = text("删除课程", inkColor, 20, true);
+        panel.addView(heading);
+        TextView message = text("请选择删除范围。删除后无法撤销。", mutedColor, 14, false);
+        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        messageParams.topMargin = dp(5);
+        messageParams.bottomMargin = dp(10);
+        panel.addView(message, messageParams);
+
+        panel.addView(deleteScopeChoice(
+                "仅删除本周此节",
+                "保留其他周相同时间的课程",
+                () -> dispatchDelete(scopeDialog, editorDialog, CourseDeletionScope.CURRENT_WEEK)));
+        panel.addView(deleteScopeChoice(
+                "删除每周此节",
+                "删除这个星期与节次的全部周次",
+                () -> dispatchDelete(scopeDialog, editorDialog, CourseDeletionScope.CURRENT_MEETING)));
+        panel.addView(deleteScopeChoice(
+                "删除该课程全部节次",
+                "删除该课程在课表中的所有时间安排",
+                () -> dispatchDelete(scopeDialog, editorDialog, CourseDeletionScope.ALL_MEETINGS)));
+
+        TextView cancel = text("取消", inkColor, 16, true);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setOnClickListener(v -> scopeDialog.dismiss());
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        cancelParams.topMargin = dp(6);
+        panel.addView(cancel, cancelParams);
+
+        scopeDialog.setContentView(panel);
+        scopeDialog.show();
+        Window window = scopeDialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(darkMode ? 0.68f : 0.42f);
+            window.setLayout(
+                    Math.min(dp(360), activity.getResources().getDisplayMetrics().widthPixels - dp(40)),
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            disableWindowAnimations(window);
+        }
+    }
+
+    private View deleteScopeChoice(String title, String description, Runnable action) {
+        LinearLayout item = new LinearLayout(activity);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(dp(12), dp(8), dp(12), dp(8));
+        item.setMinimumHeight(dp(64));
+        item.setBackground(roundedBg(darkMode ? "#202D44" : "#FFFFFF", 14));
+        item.setOnClickListener(v -> action.run());
+
+        TextView titleView = text(title, color(darkMode ? "#FF8A91" : "#C9343C"), 16, true);
+        titleView.setSingleLine(false);
+        item.addView(titleView);
+        TextView descriptionView = text(description, mutedColor, 13, false);
+        descriptionView.setSingleLine(false);
+        LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        descriptionParams.topMargin = dp(2);
+        item.addView(descriptionView, descriptionParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(7);
+        item.setLayoutParams(params);
+        return item;
+    }
+
+    private void dispatchDelete(
+            Dialog scopeDialog, Dialog editorDialog, CourseDeletionScope scope) {
+        scopeDialog.dismiss();
+        listener.onCourseDeleteRequested(original, scope);
+        editorDialog.dismiss();
+    }
+
     private EditText input(String hint, String value) {
         EditText editText = new EditText(activity);
         editText.setHint(hint);
         editText.setText(value);
         editText.setTextColor(inkColor);
-        editText.setHintTextColor(darkMode ? color("#768398") : color("#A4A9B3"));
+        editText.setHintTextColor(darkMode ? color("#7F8DA3") : color("#667085"));
         editText.setTextSize(16);
         editText.setSingleLine(true);
         editText.setEllipsize(TextUtils.TruncateAt.END);
@@ -348,6 +487,79 @@ public final class CourseEditorDialog {
         }
     }
 
+    private void showCourseTypeDialog(CourseType currentType, CourseTypeSetter setter) {
+        Dialog dialog = new Dialog(activity);
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(14), dp(18), dp(14));
+        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        panel.addView(text("课程类型", mutedColor, 13, false));
+        for (CourseType type : CourseType.values()) {
+            LinearLayout item = new LinearLayout(activity);
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            TextView label = text(type.displayName, inkColor, 16, type == currentType);
+            item.addView(label, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            TextView check = text(type == currentType ? "✓" : "", inkColor, 22, true);
+            check.setGravity(Gravity.CENTER);
+            item.addView(check, new LinearLayout.LayoutParams(dp(32), dp(48)));
+            item.setOnClickListener(v -> {
+                setter.set(type);
+                dialog.dismiss();
+            });
+            panel.addView(item, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        }
+        dialog.setContentView(panel);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(darkMode ? 0.68f : 0.42f);
+            window.setLayout(Math.min(dp(320), activity.getResources().getDisplayMetrics().widthPixels - dp(48)),
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            disableWindowAnimations(window);
+        }
+    }
+
+    private void showCoursePlacementDialog(boolean currentBannerOnly, PlacementSetter setter) {
+        Dialog dialog = new Dialog(activity);
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(14), dp(18), dp(14));
+        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        panel.addView(text("展示位置", mutedColor, 13, false));
+        String[] labels = {"固定节次", "顶部横幅（无固定节次）"};
+        boolean[] values = {false, true};
+        for (int index = 0; index < labels.length; index++) {
+            boolean value = values[index];
+            LinearLayout item = new LinearLayout(activity);
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            TextView label = text(labels[index], inkColor, 16, value == currentBannerOnly);
+            item.addView(label, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            TextView check = text(value == currentBannerOnly ? "✓" : "", inkColor, 22, true);
+            check.setGravity(Gravity.CENTER);
+            item.addView(check, new LinearLayout.LayoutParams(dp(32), dp(48)));
+            item.setOnClickListener(v -> {
+                setter.set(value);
+                dialog.dismiss();
+            });
+            panel.addView(item, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        }
+        dialog.setContentView(panel);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(darkMode ? 0.68f : 0.42f);
+            window.setLayout(Math.min(dp(320), activity.getResources().getDisplayMetrics().widthPixels - dp(48)),
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            disableWindowAnimations(window);
+        }
+    }
+
     private String[] courseNameQuickValues() {
         List<String> names = new ArrayList<>();
         for (Course course : courses) {
@@ -375,6 +587,19 @@ public final class CourseEditorDialog {
         ((TextView) layout.getChildAt(1)).setText(colorLabel(value));
     }
 
+    private void updateTypeRow(View row, CourseType value) {
+        if (row instanceof LinearLayout) {
+            ((TextView) ((LinearLayout) row).getChildAt(1)).setText(value.displayName);
+        }
+    }
+
+    private void updatePlacementRow(View row, boolean bannerOnly) {
+        if (row instanceof LinearLayout) {
+            ((TextView) ((LinearLayout) row).getChildAt(1))
+                    .setText(bannerOnly ? "顶部横幅" : "固定节次");
+        }
+    }
+
     private void configureFullScreenWindow(Window window) {
         if (window == null) {
             return;
@@ -386,6 +611,7 @@ public final class CourseEditorDialog {
         window.getDecorView().setBackgroundColor(backgroundColor);
         window.setStatusBarColor(backgroundColor);
         window.setNavigationBarColor(backgroundColor);
+        updateSystemBarAppearance(window);
         WindowManager.LayoutParams attributes = window.getAttributes();
         attributes.width = LinearLayout.LayoutParams.MATCH_PARENT;
         attributes.height = LinearLayout.LayoutParams.MATCH_PARENT;
@@ -393,13 +619,27 @@ public final class CourseEditorDialog {
         disableWindowAnimations(window);
     }
 
-    private void setSystemBarColors(int value) {
-        Window window = activity.getWindow();
-        if (window != null) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-            window.setStatusBarColor(value);
-            window.setNavigationBarColor(value);
+    private void updateSystemBarAppearance(Window window) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(darkMode ? 0 : mask, mask);
+            }
+            return;
         }
+        View decor = window.getDecorView();
+        int flags = decor.getSystemUiVisibility();
+        flags = darkMode
+                ? flags & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                : flags | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            flags = darkMode
+                    ? flags & ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                    : flags | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        decor.setSystemUiVisibility(flags);
     }
 
     private void disableWindowAnimations(Window window) {
@@ -432,7 +672,9 @@ public final class CourseEditorDialog {
     private GradientDrawable roundedBg(String fill, int radius) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color(fill));
-        drawable.setStroke(dp(1), Color.argb(130, 255, 255, 255));
+        drawable.setStroke(dp(1), darkMode
+                ? Color.argb(42, 255, 255, 255)
+                : Color.argb(130, 255, 255, 255));
         drawable.setCornerRadius(dp(radius));
         return drawable;
     }
@@ -503,5 +745,13 @@ public final class CourseEditorDialog {
 
     private interface ColorSetter {
         void set(String value);
+    }
+
+    private interface CourseTypeSetter {
+        void set(CourseType value);
+    }
+
+    private interface PlacementSetter {
+        void set(boolean value);
     }
 }
