@@ -22,6 +22,10 @@ android {
     namespace "com.polaris.timetable"
     compileSdk 35
 
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
     defaultConfig {
         applicationId "com.polaris.timetable"
         minSdk 23
@@ -66,4 +70,5 @@ if (releaseTaskRequested && !hasReleaseSigning) {
 dependencies {
     implementation "com.tom-roush:pdfbox-android:2.0.27.0"
     testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20240303"
 }

@@ -46,7 +46,7 @@ public final class ScheduleWidgetService extends RemoteViewsService {
             Calendar target = (Calendar) now.clone();
             target.add(Calendar.DATE, dayOffset);
             entries = ScheduleWidgetData.forDate(
-                    repository.loadCourses(scheduleId), config, target, now);
+                    repository.loadCourseView(scheduleId), config, target, now);
         }
 
         @Override

@@ -21,8 +21,10 @@ public class CourseStructureMapper {
             String key = keyFor(course);
             CourseBuilder builder = builders.get(key);
             if (builder == null) {
+                String stableId = StableCourseId.isValid(course.structuredCourseId)
+                        ? course.structuredCourseId : StableCourseId.create();
                 builder = new CourseBuilder(
-                        key, course.name, course.teacher, course.location, course.credit,
+                        stableId, course.name, course.teacher, course.location, course.credit,
                         course.color, course.courseType);
                 builders.put(key, builder);
             }
@@ -76,13 +78,17 @@ public class CourseStructureMapper {
                         rawText,
                         course.credit,
                         course.color,
-                        course.courseType));
+                        course.courseType,
+                        course.id));
             }
         }
         return legacyCourses;
     }
 
     private String keyFor(Course course) {
+        if (StableCourseId.isValid(course.structuredCourseId)) {
+            return "id|" + course.structuredCourseId;
+        }
         return normalize(course.name) + "|" + normalize(course.teacher)
                 + "|" + normalize(course.credit) + "|" + normalize(course.color)
                 + "|" + course.courseType.name();

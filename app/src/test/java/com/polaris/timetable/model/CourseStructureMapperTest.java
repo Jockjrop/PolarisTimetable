@@ -1,6 +1,8 @@
 package com.polaris.timetable.model;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.time.CourseTimeResolver;
@@ -100,6 +102,87 @@ public class CourseStructureMapperTest {
                         CourseTimeResolver.isActiveInWeek(restored, week));
             }
         }
+    }
+
+    @Test
+    public void courseStructuredCourseRoundTripGeneratesIdOnlyOnce() {
+        Course original = new Course(
+                0, 1, 2, "高等数学", "1-16周", "A101", "李老师", "");
+        CourseStructureMapper mapper = new CourseStructureMapper();
+
+        StructuredCourse firstStructured = mapper.fromLegacyCourses(
+                Arrays.asList(original)).get(0);
+        Course legacyWithId = mapper.toLegacyCourses(
+                Arrays.asList(firstStructured)).get(0);
+        StructuredCourse secondStructured = mapper.fromLegacyCourses(
+                Arrays.asList(legacyWithId)).get(0);
+
+        assertTrue(StableCourseId.isValid(firstStructured.id));
+        assertEquals(firstStructured.id, legacyWithId.structuredCourseId);
+        assertEquals(firstStructured.id, secondStructured.id);
+    }
+
+    @Test
+    public void mutableCourseFieldsAndMeetingChangesKeepStableId() {
+        String id = "11111111-1111-4111-8111-111111111111";
+        Course original = courseWithId(
+                id, 0, 1, 2, "高等数学", "李老师", "A101", "#4FA4F3");
+        List<Course> editedVariants = Arrays.asList(
+                courseWithId(id, 0, 1, 2, "高等数学A", "李老师", "A101", "#4FA4F3"),
+                courseWithId(id, 0, 1, 2, "高等数学", "王老师", "A101", "#4FA4F3"),
+                courseWithId(id, 0, 1, 2, "高等数学", "李老师", "B202", "#4FA4F3"),
+                courseWithId(id, 0, 1, 2, "高等数学", "李老师", "A101", "#36B889"),
+                courseWithId(id, 2, 5, 6, "高等数学", "李老师", "A101", "#4FA4F3"),
+                new Course(0, 1, 2, "高等数学", "1-16周", "A101", "李老师", "raw",
+                        "4.0", "#4FA4F3", CourseType.LECTURE, id),
+                new Course(0, 1, 2, "高等数学", "1-16周", "A101", "李老师", "raw",
+                        "3.0", "#4FA4F3", CourseType.EXPERIMENT, id));
+        CourseStructureMapper mapper = new CourseStructureMapper();
+
+        assertEquals(id, mapper.fromLegacyCourses(Arrays.asList(original)).get(0).id);
+        for (Course edited : editedVariants) {
+            assertEquals(id, mapper.fromLegacyCourses(Arrays.asList(edited)).get(0).id);
+        }
+    }
+
+    @Test
+    public void sameNameCoursesDoNotShareGeneratedIds() {
+        Course first = new Course(
+                0, 1, 2, "大学英语", "1-16周", "A101", "李老师", "");
+        Course second = new Course(
+                1, 1, 2, "大学英语", "1-16周", "B202", "王老师", "");
+
+        List<StructuredCourse> structured = new CourseStructureMapper()
+                .fromLegacyCourses(Arrays.asList(first, second));
+
+        assertEquals(2, structured.size());
+        assertTrue(StableCourseId.isValid(structured.get(0).id));
+        assertTrue(StableCourseId.isValid(structured.get(1).id));
+        assertNotEquals(structured.get(0).id, structured.get(1).id);
+    }
+
+    @Test
+    public void distinctStableIdsKeepOtherwiseIdenticalCoursesSeparate() {
+        String firstId = "11111111-1111-4111-8111-111111111111";
+        String secondId = "22222222-2222-4222-8222-222222222222";
+        Course first = courseWithId(
+                firstId, 0, 1, 2, "同名课程", "同一教师", "A101", "#4FA4F3");
+        Course second = courseWithId(
+                secondId, 0, 1, 2, "同名课程", "同一教师", "A101", "#4FA4F3");
+
+        List<StructuredCourse> structured = new CourseStructureMapper()
+                .fromLegacyCourses(Arrays.asList(first, second));
+
+        assertEquals(2, structured.size());
+        assertEquals(firstId, structured.get(0).id);
+        assertEquals(secondId, structured.get(1).id);
+    }
+
+    private Course courseWithId(String id, int day, int start, int end,
+                                String name, String teacher, String location, String color) {
+        return new Course(
+                day, start, end, name, "1-16周", location, teacher, "raw",
+                "3.0", color, CourseType.LECTURE, id);
     }
 
     private void assertCourse(Course expected, Course actual) {

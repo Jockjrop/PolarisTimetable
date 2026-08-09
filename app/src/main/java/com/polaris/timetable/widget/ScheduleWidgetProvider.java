@@ -167,7 +167,7 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         ScheduleRepository repository = new ScheduleRepository(context);
         String scheduleId = repository.activeScheduleId();
         long nextEnd = ScheduleWidgetData.nextCourseEndAfter(
-                repository.loadCourses(scheduleId),
+                repository.loadCourseView(scheduleId),
                 repository.loadConfig(scheduleId),
                 Calendar.getInstance());
         if (nextEnd > System.currentTimeMillis()) {

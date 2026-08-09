@@ -62,6 +62,8 @@ import com.polaris.timetable.export.SchedulePdfExporter;
 import com.polaris.timetable.export.SemesterPdfExporter;
 import com.polaris.timetable.model.ParseError;
 import com.polaris.timetable.model.ParseResult;
+import com.polaris.timetable.model.CourseStructureMapper;
+import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.parser.ParseDiagnosticsReport;
 import com.polaris.timetable.reminder.CourseReminderScheduler;
@@ -135,7 +137,9 @@ public class MainActivity extends Activity {
     private static final int BOTTOM_NAV_HIDE_DURATION_MS = 160;
     private static final int BOTTOM_NAV_SHOW_DURATION_MS = 220;
     private static final int ACTION_PANEL_OPACITY_PERCENT = 70;
+    private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
+    private final CourseStructureMapper courseStructureMapper = new CourseStructureMapper();
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
     private ScheduleRepository scheduleRepository;
     private PdfImportCoordinator importCoordinator;
@@ -763,6 +767,11 @@ public class MainActivity extends Activity {
     private void applyReviewedImport(ParseResult result,
                                      ImportDestination destination,
                                      int importedSemesterWeeks) {
+        if (!result.courses.isEmpty() && result.structuredCourses.isEmpty()) {
+            Toast.makeText(this,
+                    "结构化课程数据不可用，已取消写入以保护当前课表", Toast.LENGTH_LONG).show();
+            return;
+        }
         if (destination.createNewSchedule) {
             ScheduleRepository.ScheduleEntry entry = scheduleRepository.createSchedule(
                     destination.scheduleName);
@@ -771,8 +780,7 @@ public class MainActivity extends Activity {
         } else if (!destination.scheduleId.equals(activeScheduleId)) {
             switchSchedule(destination.scheduleId);
         }
-        courses.clear();
-        courses.addAll(result.courses);
+        replaceCanonicalCourses(result.structuredCourses);
         scheduleName = destination.scheduleName;
         selectedParserModel = destination.parserModel;
         schoolName = destination.parserModel.label;
@@ -784,7 +792,8 @@ public class MainActivity extends Activity {
         firstWeekDay = SemesterStartDateDefaults.resolve(Calendar.getInstance());
         currentWeek = currentWeekFromDate();
         updateVisibleDayCount();
-        scheduleRepository.saveCourses(activeScheduleId, courses, result.structuredCourses);
+        scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
+        loadActiveCourses();
         saveConfig();
         refreshMyPage();
         updateHeader();
@@ -1925,8 +1934,8 @@ public class MainActivity extends Activity {
     }
 
     private void applySharedCourses(List<Course> sharedCourses, String targetScheduleName) {
-        courses.clear();
-        courses.addAll(sharedCourses);
+        replaceCanonicalCourses(scheduleRepository.replaceFromLegacyCourses(
+                activeScheduleId, sharedCourses));
         scheduleName = targetScheduleName;
         semesterName = SemesterStartDateDefaults.resolveSemesterName(Calendar.getInstance());
         if (selectedParserModel != null) {
@@ -1937,7 +1946,6 @@ public class MainActivity extends Activity {
         firstWeekDay = SemesterStartDateDefaults.resolve(Calendar.getInstance());
         currentWeek = currentWeekFromDate();
         updateVisibleDayCount();
-        scheduleRepository.saveCourses(activeScheduleId, courses);
         saveConfig();
         updateHeader();
         renderSchedule();
@@ -2005,13 +2013,15 @@ public class MainActivity extends Activity {
                 new CourseEditorDialog.Listener() {
                     @Override
                     public void onCourseSaved(Course original, Course edited) {
-                        int index = courses.indexOf(original);
-                        if (index >= 0) {
-                            courses.set(index, edited);
-                        } else {
-                            courses.add(edited);
+                        if (!CourseEditManager.applyStructuredEdit(
+                                structuredCourses, original, edited)) {
+                            Toast.makeText(MainActivity.this,
+                                    "课程已发生变化，请重新打开后编辑", Toast.LENGTH_SHORT).show();
+                            return;
                         }
-                        scheduleRepository.saveCourses(activeScheduleId, courses);
+                        refreshCourseView();
+                        scheduleRepository.saveStructuredCourses(
+                                activeScheduleId, structuredCourses);
                         rescheduleCourseReminders();
                         renderSchedule();
                         updateEmptyScheduleView();
@@ -2020,14 +2030,16 @@ public class MainActivity extends Activity {
 
                     @Override
                     public void onCourseDeleteRequested(Course original, CourseDeletionScope scope) {
-                        int deleted = CourseDeletionManager.delete(
-                                courses, original, scope, currentWeek, semesterWeeks);
+                        int deleted = CourseDeletionManager.deleteStructured(
+                                structuredCourses, original, scope, currentWeek, semesterWeeks);
                         if (deleted <= 0) {
                             Toast.makeText(MainActivity.this,
                                     "本周没有这节课程，无需删除", Toast.LENGTH_SHORT).show();
                             return;
                         }
-                        scheduleRepository.saveCourses(activeScheduleId, courses);
+                        refreshCourseView();
+                        scheduleRepository.saveStructuredCourses(
+                                activeScheduleId, structuredCourses);
                         rescheduleCourseReminders();
                         renderSchedule();
                         updateEmptyScheduleView();
@@ -4264,7 +4276,7 @@ public class MainActivity extends Activity {
 
     private void switchSchedule(String scheduleId) {
         saveConfig();
-        scheduleRepository.saveCourses(activeScheduleId, courses);
+        scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
         activeScheduleId = scheduleId;
         scheduleRepository.setActiveScheduleId(scheduleId);
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
@@ -4278,11 +4290,20 @@ public class MainActivity extends Activity {
     }
 
     private void loadActiveCourses() {
-        courses.clear();
-        courses.addAll(scheduleRepository.loadCourses(activeScheduleId));
-        if (CourseDeletionManager.compactSplitWeekEntries(courses)) {
-            scheduleRepository.saveCourses(activeScheduleId, courses);
+        replaceCanonicalCourses(scheduleRepository.loadStructuredCourses(activeScheduleId));
+    }
+
+    private void replaceCanonicalCourses(List<StructuredCourse> source) {
+        structuredCourses.clear();
+        if (source != null) {
+            structuredCourses.addAll(source);
         }
+        refreshCourseView();
+    }
+
+    private void refreshCourseView() {
+        courses.clear();
+        courses.addAll(courseStructureMapper.toLegacyCourses(structuredCourses));
     }
 
     private void showSecuritySettings() {

@@ -46,47 +46,61 @@ public class ScheduleRepository {
         preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
-    public void saveCourses(List<Course> courses) {
-        saveCourses(activeScheduleId(), courses);
+    ScheduleRepository(SharedPreferences preferences) {
+        appContext = null;
+        this.preferences = preferences;
     }
 
-    public void saveCourses(String scheduleId, List<Course> courses) {
-        saveCourses(scheduleId, courses, structureMapper.fromLegacyCourses(courses));
+    public void saveStructuredCourses(List<StructuredCourse> structuredCourses) {
+        saveStructuredCourses(activeScheduleId(), structuredCourses);
     }
 
-    public void saveCourses(
-            String scheduleId,
-            List<Course> courses,
-            List<StructuredCourse> structuredCourses) {
+    /**
+     * Persists the canonical course model and derives the legacy JSON from the same snapshot.
+     * Runtime callers must never rebuild this data from an edited flat Course list.
+     */
+    public void saveStructuredCourses(
+            String scheduleId, List<StructuredCourse> structuredCourses) {
+        ScheduleStorageSchema.MigrationResult normalized = ScheduleStorageSchema.migrate(
+                ScheduleStorageSchema.CURRENT_VERSION, structuredCourses);
+        List<StructuredCourse> safeStructuredCourses = normalized.courses;
+        List<Course> canonicalLegacyCourses = structureMapper.toLegacyCourses(safeStructuredCourses);
         JSONArray array = new JSONArray();
-        if (courses != null) {
-            for (Course course : courses) {
+        if (canonicalLegacyCourses != null) {
+            for (Course course : canonicalLegacyCourses) {
                 array.put(toJson(course));
             }
-        }
-        List<StructuredCourse> safeStructuredCourses = structuredCourses;
-        if ((safeStructuredCourses == null || safeStructuredCourses.isEmpty())
-                && courses != null && !courses.isEmpty()) {
-            safeStructuredCourses = structureMapper.fromLegacyCourses(courses);
         }
         preferences.edit()
                 .putString(courseKey(scheduleId), array.toString())
                 .putString(structuredCourseKey(scheduleId), structuredCoursesToJson(safeStructuredCourses).toString())
                 .putBoolean(courseReadyKey(scheduleId), true)
+                .putInt(ScheduleStorageSchema.versionKey(safeScheduleId(scheduleId)),
+                        ScheduleStorageSchema.CURRENT_VERSION)
                 .apply();
         notifyWidgets();
     }
 
-    public List<Course> loadCourses() {
-        return loadCourses(activeScheduleId());
+    /**
+     * Explicit compatibility import. This is the only public write path that accepts Course[].
+     * It is intended for old share payloads and migration/recovery, not runtime editing.
+     */
+    public List<StructuredCourse> replaceFromLegacyCourses(
+            String scheduleId, List<Course> legacyCourses) {
+        List<StructuredCourse> structuredCourses = structureMapper.fromLegacyCourses(legacyCourses);
+        ScheduleStorageSchema.MigrationResult normalized = ScheduleStorageSchema.migrate(
+                ScheduleStorageSchema.CURRENT_VERSION, structuredCourses);
+        saveStructuredCourses(scheduleId, normalized.courses);
+        return new ArrayList<>(normalized.courses);
     }
 
-    public List<Course> loadCourses(String scheduleId) {
-        List<StructuredCourse> structuredCourses = readStructuredCourses(scheduleId);
-        if (structuredCourses != null) {
-            return structureMapper.toLegacyCourses(structuredCourses);
-        }
-        return loadLegacyCourses(scheduleId);
+    public List<Course> loadCourseView() {
+        return loadCourseView(activeScheduleId());
+    }
+
+    /** Returns a temporary compatibility view derived from canonical StructuredCourse data. */
+    public List<Course> loadCourseView(String scheduleId) {
+        return structureMapper.toLegacyCourses(loadStructuredCourses(scheduleId));
     }
 
     public List<StructuredCourse> loadStructuredCourses(String scheduleId) {
@@ -94,29 +108,41 @@ public class ScheduleRepository {
         if (structuredCourses != null) {
             return structuredCourses;
         }
-        return structureMapper.fromLegacyCourses(loadLegacyCourses(scheduleId));
+        List<Course> legacyCourses = loadLegacyCourses(scheduleId);
+        List<StructuredCourse> migrated = structureMapper.fromLegacyCourses(legacyCourses);
+        if (!legacyCourses.isEmpty()) {
+            persistMigratedCourses(scheduleId, migrated);
+        }
+        return migrated;
     }
 
     private List<Course> loadLegacyCourses(String scheduleId) {
         List<Course> courses = new ArrayList<>();
-        if (!preferences.getBoolean(courseReadyKey(scheduleId), false)) {
+        boolean coursesReady;
+        try {
+            coursesReady = preferences.getBoolean(courseReadyKey(scheduleId), false);
+        } catch (ClassCastException exception) {
+            Log.e(TAG, "Saved course readiness flag has an invalid value type", exception);
             return courses;
         }
-        String json = preferences.getString(courseKey(scheduleId), "");
-        if ((json == null || json.length() == 0) && "default".equals(scheduleId)) {
-            json = preferences.getString(KEY_COURSES, "");
+        if (!coursesReady) {
+            return courses;
+        }
+        String json;
+        try {
+            json = preferences.getString(courseKey(scheduleId), "");
+            if ((json == null || json.length() == 0) && "default".equals(scheduleId)) {
+                json = preferences.getString(KEY_COURSES, "");
+            }
+        } catch (ClassCastException exception) {
+            Log.e(TAG, "Saved legacy course data has an invalid value type", exception);
+            return courses;
         }
         if (json == null || json.length() == 0) {
             return courses;
         }
         try {
-            JSONArray array = new JSONArray(json);
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject item = array.optJSONObject(i);
-                if (item != null) {
-                    courses.add(fromJson(item));
-                }
-            }
+            courses.addAll(legacyCoursesFromJson(json));
         } catch (JSONException exception) {
             Log.e(TAG, "Saved course data is corrupted", exception);
             return new ArrayList<>();
@@ -198,6 +224,9 @@ public class ScheduleRepository {
     }
 
     private void notifyWidgets() {
+        if (appContext == null) {
+            return;
+        }
         Intent intent = new Intent(ScheduleWidgetProvider.ACTION_SCHEDULE_CHANGED);
         intent.setPackage(appContext.getPackageName());
         appContext.sendBroadcast(intent);
@@ -253,7 +282,7 @@ public class ScheduleRepository {
         Config config = new Config();
         config.scheduleName = entry.name;
         saveConfig(id, config);
-        saveCourses(id, new ArrayList<>());
+        saveStructuredCourses(id, new ArrayList<>());
         return entry;
     }
 
@@ -277,7 +306,7 @@ public class ScheduleRepository {
         return scheduleId == null || scheduleId.length() == 0 ? "default" : scheduleId;
     }
 
-    private JSONArray structuredCoursesToJson(List<StructuredCourse> courses) {
+    static JSONArray structuredCoursesToJson(List<StructuredCourse> courses) {
         JSONArray array = new JSONArray();
         if (courses == null) {
             return array;
@@ -290,7 +319,7 @@ public class ScheduleRepository {
         return array;
     }
 
-    private JSONObject structuredCourseToJson(StructuredCourse course) {
+    private static JSONObject structuredCourseToJson(StructuredCourse course) {
         JSONObject object = new JSONObject();
         try {
             object.put("id", course.id);
@@ -312,7 +341,7 @@ public class ScheduleRepository {
         return object;
     }
 
-    private JSONObject courseMeetingToJson(CourseMeeting meeting) {
+    private static JSONObject courseMeetingToJson(CourseMeeting meeting) {
         JSONObject object = new JSONObject();
         try {
             object.put("day", meeting.day);
@@ -328,7 +357,7 @@ public class ScheduleRepository {
         return object;
     }
 
-    private JSONObject weekRuleToJson(WeekRule rule) {
+    private static JSONObject weekRuleToJson(WeekRule rule) {
         JSONObject object = new JSONObject();
         if (rule == null) {
             return object;
@@ -350,38 +379,106 @@ public class ScheduleRepository {
     }
 
     private List<StructuredCourse> readStructuredCourses(String scheduleId) {
-        String json = preferences.getString(structuredCourseKey(scheduleId), null);
-        if (json == null && "default".equals(scheduleId)) {
-            json = preferences.getString(KEY_STRUCTURED_COURSES, null);
+        String json;
+        try {
+            json = preferences.getString(structuredCourseKey(scheduleId), null);
+            if (json == null && "default".equals(scheduleId)) {
+                json = preferences.getString(KEY_STRUCTURED_COURSES, null);
+            }
+        } catch (ClassCastException exception) {
+            Log.e(TAG, "Saved structured course data has an invalid value type", exception);
+            return null;
         }
         if (json == null) {
             return null;
         }
         List<StructuredCourse> courses = new ArrayList<>();
         try {
-            JSONArray array = new JSONArray(json);
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject object = array.optJSONObject(i);
-                if (object != null) {
-                    courses.add(structuredCourseFromJson(object));
-                }
+            courses.addAll(structuredCoursesFromJson(json));
+            int storedVersion;
+            try {
+                storedVersion = preferences.getInt(
+                        ScheduleStorageSchema.versionKey(safeScheduleId(scheduleId)),
+                        ScheduleStorageSchema.LEGACY_VERSION);
+            } catch (ClassCastException exception) {
+                Log.w(TAG, "Invalid saved schema version; treating data as legacy", exception);
+                storedVersion = ScheduleStorageSchema.LEGACY_VERSION;
             }
-            return courses;
+            ScheduleStorageSchema.MigrationResult migration =
+                    ScheduleStorageSchema.migrate(storedVersion, courses);
+            if (migration.changed && migration.canPersist) {
+                persistMigratedCourses(scheduleId, migration.courses);
+            }
+            return migration.courses;
         } catch (JSONException exception) {
             Log.e(TAG, "Saved structured course data is corrupted; using legacy data", exception);
             return null;
         }
     }
 
-    private StructuredCourse structuredCourseFromJson(JSONObject object) {
+    private void persistMigratedCourses(String scheduleId, List<StructuredCourse> structuredCourses) {
+        List<Course> legacyCourses = structureMapper.toLegacyCourses(structuredCourses);
+        JSONArray legacyArray = new JSONArray();
+        for (Course course : legacyCourses) {
+            legacyArray.put(toJson(course));
+        }
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString(structuredCourseKey(scheduleId),
+                        structuredCoursesToJson(structuredCourses).toString())
+                .putInt(ScheduleStorageSchema.versionKey(safeScheduleId(scheduleId)),
+                        ScheduleStorageSchema.CURRENT_VERSION)
+                .putBoolean(courseReadyKey(scheduleId), true);
+        if (!legacyCourses.isEmpty() || !hasLegacyCourseData(scheduleId)) {
+            editor.putString(courseKey(scheduleId), legacyArray.toString());
+        }
+        if (!editor.commit()) {
+            Log.e(TAG, "Unable to persist migrated schedule data");
+        }
+    }
+
+    private boolean hasLegacyCourseData(String scheduleId) {
+        if (preferences.contains(courseKey(scheduleId))) {
+            return true;
+        }
+        return "default".equals(scheduleId) && preferences.contains(KEY_COURSES);
+    }
+
+    static List<StructuredCourse> structuredCoursesFromJson(String json) throws JSONException {
+        List<StructuredCourse> courses = new ArrayList<>();
+        JSONArray array = new JSONArray(json);
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject object = array.optJSONObject(i);
+            if (object == null) {
+                throw new JSONException("Structured course entry is not an object at index " + i);
+            }
+            courses.add(structuredCourseFromJson(object));
+        }
+        return courses;
+    }
+
+    static List<Course> legacyCoursesFromJson(String json) throws JSONException {
+        List<Course> courses = new ArrayList<>();
+        JSONArray array = new JSONArray(json);
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject object = array.optJSONObject(i);
+            if (object == null) {
+                throw new JSONException("Legacy course entry is not an object at index " + i);
+            }
+            courses.add(fromJson(object));
+        }
+        return courses;
+    }
+
+    private static StructuredCourse structuredCourseFromJson(JSONObject object) throws JSONException {
         List<CourseMeeting> meetings = new ArrayList<>();
         JSONArray meetingArray = object.optJSONArray("meetings");
         if (meetingArray != null) {
             for (int i = 0; i < meetingArray.length(); i++) {
                 JSONObject meeting = meetingArray.optJSONObject(i);
-                if (meeting != null) {
-                    meetings.add(courseMeetingFromJson(meeting));
+                if (meeting == null) {
+                    throw new JSONException("Course meeting entry is not an object at index " + i);
                 }
+                meetings.add(courseMeetingFromJson(meeting));
             }
         }
         return new StructuredCourse(
@@ -396,7 +493,7 @@ public class ScheduleRepository {
                 CourseType.fromStorage(object.optString("courseType", "")));
     }
 
-    private CourseMeeting courseMeetingFromJson(JSONObject object) {
+    private static CourseMeeting courseMeetingFromJson(JSONObject object) {
         return new CourseMeeting(
                 object.optInt("day", -1),
                 object.optInt("startSection", 1),
@@ -407,7 +504,7 @@ public class ScheduleRepository {
                 object.optString("rawText", ""));
     }
 
-    private WeekRule weekRuleFromJson(JSONObject object) {
+    private static WeekRule weekRuleFromJson(JSONObject object) {
         if (object == null) {
             return null;
         }
@@ -436,7 +533,7 @@ public class ScheduleRepository {
                 object.optString("rawText", ""));
     }
 
-    private JSONObject toJson(Course course) {
+    static JSONObject toJson(Course course) {
         JSONObject object = new JSONObject();
         try {
             object.put("day", course.day);
@@ -450,13 +547,14 @@ public class ScheduleRepository {
             object.put("credit", course.credit);
             object.put("color", course.color);
             object.put("courseType", course.courseType.name());
+            object.put("structuredCourseId", course.structuredCourseId);
         } catch (JSONException exception) {
             Log.e(TAG, "Unable to serialize course", exception);
         }
         return object;
     }
 
-    private Course fromJson(JSONObject object) {
+    private static Course fromJson(JSONObject object) {
         return new Course(
                 object.optInt("day", -1),
                 object.optInt("startSection", 1),
@@ -468,7 +566,8 @@ public class ScheduleRepository {
                 object.optString("raw", ""),
                 object.optString("credit", ""),
                 object.optString("color", ""),
-                CourseType.fromStorage(object.optString("courseType", "")));
+                CourseType.fromStorage(object.optString("courseType", "")),
+                object.optString("structuredCourseId", ""));
     }
 
     public static class AccountProfile {

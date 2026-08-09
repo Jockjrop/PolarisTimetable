@@ -53,7 +53,7 @@ public final class CourseReminderScheduler {
             return 0;
         }
         createNotificationChannel(appContext);
-        List<Course> courses = repository.loadCourses(scheduleId);
+        List<Course> courses = repository.loadCourseView(scheduleId);
         CourseTimeResolver.Settings timeSettings = new CourseTimeResolver.Settings(
                 config.firstClassStartTime,
                 config.classDurationMinutes,

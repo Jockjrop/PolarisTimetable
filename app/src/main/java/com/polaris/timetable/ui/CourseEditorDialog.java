@@ -25,6 +25,7 @@ import android.widget.Toast;
 import com.polaris.timetable.Course;
 import com.polaris.timetable.CourseDeletionScope;
 import com.polaris.timetable.model.CourseType;
+import com.polaris.timetable.model.StableCourseId;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -221,7 +222,9 @@ public final class CourseEditorDialog {
                     original.credit,
                     selectedColor[0],
                     bannerOnly[0] && !selectedType[0].supportsBannerOnly()
-                            ? CourseType.PRACTICE : selectedType[0]);
+                            ? CourseType.PRACTICE : selectedType[0],
+                    StableCourseId.isValid(original.structuredCourseId)
+                            ? original.structuredCourseId : StableCourseId.create());
             listener.onCourseSaved(original, edited);
             dialog.dismiss();
         });

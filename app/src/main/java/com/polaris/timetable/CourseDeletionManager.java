@@ -1,6 +1,9 @@
 package com.polaris.timetable;
 
+import com.polaris.timetable.model.CourseMeeting;
+import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
+import com.polaris.timetable.model.StableCourseId;
 import com.polaris.timetable.parser.WeekRuleParser;
 import com.polaris.timetable.time.CourseTimeResolver;
 
@@ -15,6 +18,136 @@ public final class CourseDeletionManager {
     private CourseDeletionManager() {
     }
 
+    /** Deletes from canonical StructuredCourse data using only the stable UUID and meeting. */
+    public static int deleteStructured(
+            List<StructuredCourse> structuredCourses,
+            Course target,
+            CourseDeletionScope scope,
+            int currentWeek,
+            int semesterWeeks) {
+        if (structuredCourses == null || target == null || scope == null
+                || !StableCourseId.isValid(target.structuredCourseId)) {
+            return 0;
+        }
+        int courseIndex = findStructuredCourseIndex(
+                structuredCourses, target.structuredCourseId);
+        if (courseIndex < 0) {
+            return 0;
+        }
+        if (scope == CourseDeletionScope.ALL_MEETINGS) {
+            structuredCourses.remove(courseIndex);
+            return 1;
+        }
+
+        StructuredCourse course = structuredCourses.get(courseIndex);
+        int meetingIndex = findMeetingIndex(course, target);
+        if (meetingIndex < 0) {
+            return 0;
+        }
+        List<CourseMeeting> meetings = new ArrayList<>(course.meetings);
+        if (scope == CourseDeletionScope.CURRENT_MEETING) {
+            meetings.remove(meetingIndex);
+        } else if (scope == CourseDeletionScope.CURRENT_WEEK) {
+            CourseMeeting meeting = meetings.get(meetingIndex);
+            if (currentWeek <= 0 || !meeting.isActiveInWeek(currentWeek)) {
+                return 0;
+            }
+            List<Integer> remainingWeeks = remainingWeeks(
+                    meeting.weekRule, currentWeek, semesterWeeks);
+            if (remainingWeeks.isEmpty()) {
+                meetings.remove(meetingIndex);
+            } else {
+                WeekRule remainingRule = new WeekRule(
+                        WeekRule.Type.RANGE,
+                        remainingWeeks.get(0),
+                        remainingWeeks.get(remainingWeeks.size() - 1),
+                        remainingWeeks,
+                        compactWeekExpression(remainingWeeks));
+                meetings.set(meetingIndex, new CourseMeeting(
+                        meeting.day,
+                        meeting.startSection,
+                        meeting.endSection,
+                        remainingRule,
+                        meeting.location,
+                        meeting.teacher,
+                        meeting.rawText));
+            }
+        } else {
+            return 0;
+        }
+        structuredCourses.set(courseIndex, copyWithMeetings(course, meetings));
+        return 1;
+    }
+
+    private static int findStructuredCourseIndex(
+            List<StructuredCourse> structuredCourses, String stableId) {
+        for (int index = 0; index < structuredCourses.size(); index++) {
+            StructuredCourse course = structuredCourses.get(index);
+            if (course != null && stableId.equalsIgnoreCase(course.id)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static int findMeetingIndex(StructuredCourse course, Course target) {
+        int slotFallback = -1;
+        for (int index = 0; index < course.meetings.size(); index++) {
+            CourseMeeting meeting = course.meetings.get(index);
+            if (meeting.day != target.day
+                    || meeting.startSection != target.startSection
+                    || meeting.endSection != target.endSection) {
+                continue;
+            }
+            if (slotFallback < 0) {
+                slotFallback = index;
+            }
+            String weeks = meeting.weekRule == null
+                    ? "周次见PDF" : meeting.weekRule.displayText();
+            String teacher = meeting.teacher.isEmpty() ? course.teacher : meeting.teacher;
+            String location = meeting.location.isEmpty()
+                    ? course.defaultLocation : meeting.location;
+            if (same(weeks, target.weeks)
+                    && same(teacher, target.teacher)
+                    && same(location, target.location)) {
+                return index;
+            }
+        }
+        return slotFallback;
+    }
+
+    private static List<Integer> remainingWeeks(
+            WeekRule rule, int deletedWeek, int semesterWeeks) {
+        int boundedWeeks = Math.max(deletedWeek, Math.max(1, semesterWeeks));
+        List<Integer> remaining = new ArrayList<>();
+        for (int week = 1; week <= boundedWeeks; week++) {
+            if (week != deletedWeek && (rule == null || rule.containsWeek(week))) {
+                remaining.add(week);
+            }
+        }
+        return remaining;
+    }
+
+    private static StructuredCourse copyWithMeetings(
+            StructuredCourse source, List<CourseMeeting> meetings) {
+        return new StructuredCourse(
+                source.id,
+                source.name,
+                source.teacher,
+                source.defaultLocation,
+                meetings,
+                source.rawText,
+                source.credit,
+                source.color,
+                source.courseType);
+    }
+
+    private static boolean same(String first, String second) {
+        return normalizedName(first).equals(normalizedName(second));
+    }
+
+    /** Legacy-only flat-list helper retained for compatibility tests and old integrations. */
+    @Deprecated
     public static int delete(
             List<Course> courses,
             Course target,
@@ -119,12 +252,21 @@ public final class CourseDeletionManager {
         if (first == null || second == null) {
             return false;
         }
+        boolean firstHasStableId = StableCourseId.isValid(first.structuredCourseId);
+        boolean secondHasStableId = StableCourseId.isValid(second.structuredCourseId);
+        if (firstHasStableId || secondHasStableId) {
+            return firstHasStableId
+                    && secondHasStableId
+                    && first.structuredCourseId.equalsIgnoreCase(second.structuredCourseId)
+                    && normalizedName(first.teacher).equals(normalizedName(second.teacher));
+        }
         String firstName = normalizedName(first.name);
         String secondName = normalizedName(second.name);
         if (firstName.length() == 0 || secondName.length() == 0) {
             return first == second;
         }
-        return firstName.equals(secondName);
+        return firstName.equals(secondName)
+                && normalizedName(first.teacher).equals(normalizedName(second.teacher));
     }
 
     private static boolean sameMeeting(Course first, Course second) {
@@ -149,7 +291,8 @@ public final class CourseDeletionManager {
                 source.raw,
                 source.credit,
                 source.color,
-                source.courseType);
+                source.courseType,
+                source.structuredCourseId);
     }
 
     private static String compactWeekExpression(List<Integer> weeks) {
@@ -190,7 +333,7 @@ public final class CourseDeletionManager {
         return course.day + "|" + course.startSection + "|" + course.endSection + "|"
                 + safe(course.name) + "|" + safe(course.location) + "|" + safe(course.teacher) + "|"
                 + safe(course.raw) + "|" + safe(course.credit) + "|" + safe(course.color) + "|"
-                + course.courseType.name();
+                + course.courseType.name() + "|" + safe(course.structuredCourseId);
     }
 
     private static String safe(String value) {
