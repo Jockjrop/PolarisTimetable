@@ -25,6 +25,7 @@ public class WeekRuleParserTest {
         assertWeeks("2、5-6周", 8, 2, 5, 6);
         assertWeeks("1,3,5周", 8, 1, 3, 5);
         assertWeeks("1，3，5周", 8, 1, 3, 5);
+        assertWeeks("第1、3、5周", 8, 1, 3, 5);
         assertWeeks("5周", 8, 5);
     }
 

@@ -73,12 +73,18 @@ public class StructuredCourseCanonicalDataTest {
                 1, 7, 8, WeekRule.Type.ODD, 1, 15, Collections.emptyList(),
                 "D404", "赵老师", "1-15周(单)");
 
-        assertTrue(CourseEditManager.updateMeeting(courses, FIRST_ID, 1, replacement));
+        assertTrue(CourseEditManager.updateMeeting(
+                courses, FIRST_ID, original.meetings.get(1).id, replacement));
 
         StructuredCourse edited = courses.get(0);
         assertEquals(FIRST_ID, edited.id);
         assertEquals(original.meetings.get(0), edited.meetings.get(0));
-        assertEquals(replacement, edited.meetings.get(1));
+        assertEquals(original.meetings.get(1).id, edited.meetings.get(1).id);
+        assertEquals(replacement.day, edited.meetings.get(1).day);
+        assertEquals(replacement.startSection, edited.meetings.get(1).startSection);
+        assertEquals(replacement.endSection, edited.meetings.get(1).endSection);
+        assertEquals(replacement.teacher, edited.meetings.get(1).teacher);
+        assertEquals(replacement.location, edited.meetings.get(1).location);
         assertEquals(original.meetings.get(2), edited.meetings.get(2));
     }
 

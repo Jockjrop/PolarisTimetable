@@ -5,6 +5,7 @@ import com.polaris.timetable.model.CourseType;
 import org.junit.Test;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -59,6 +60,32 @@ public class ScheduleParserTest {
         assertEquals("1-2周，5–6周", cleanupWeeks("1-2周，5–6周"));
     }
 
+    @Test
+    public void mergeDuplicates_keepsSameCourseWithDifferentTeachersSeparate() throws Exception {
+        Course first = new Course(
+                0, 1, 2, "大学英语", "1-16周", "A101", "张老师", "raw-1");
+        Course second = new Course(
+                0, 1, 2, "大学英语", "1-16周", "A101", "李老师", "raw-2");
+
+        List<Course> merged = mergeDuplicates(Arrays.asList(first, second));
+
+        assertEquals(2, merged.size());
+        assertEquals("张老师", merged.get(0).teacher);
+        assertEquals("李老师", merged.get(1).teacher);
+    }
+
+    @Test
+    public void mergeDuplicates_stillCollapsesExactDuplicateFromSameTeacher() throws Exception {
+        Course first = new Course(
+                0, 1, 2, "大学英语", "1-16周", "A101", "张老师", "raw-1");
+        Course duplicate = new Course(
+                0, 1, 2, "大学英语", "1-16周", "A101", " 张 老师 ", "raw-2");
+
+        List<Course> merged = mergeDuplicates(Arrays.asList(first, duplicate));
+
+        assertEquals(1, merged.size());
+    }
+
     private String cleanupCourseName(String value) throws Exception {
         ScheduleParser parser = new ScheduleParser();
         Method method = ScheduleParser.class.getDeclaredMethod("cleanupCourseName", String.class);
@@ -78,6 +105,14 @@ public class ScheduleParserTest {
         Method method = ScheduleParser.class.getDeclaredMethod("cleanupWeeks", String.class);
         method.setAccessible(true);
         return (String) method.invoke(parser, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Course> mergeDuplicates(List<Course> courses) throws Exception {
+        ScheduleParser parser = new ScheduleParser();
+        Method method = ScheduleParser.class.getDeclaredMethod("mergeDuplicates", List.class);
+        method.setAccessible(true);
+        return (List<Course>) method.invoke(parser, courses);
     }
 
     @SuppressWarnings("unchecked")

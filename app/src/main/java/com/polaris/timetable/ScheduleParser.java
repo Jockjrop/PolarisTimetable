@@ -1091,12 +1091,16 @@ public class ScheduleParser {
         for (Course course : courses) {
             String key = course.day + "|" + course.startSection + "|" + course.endSection + "|"
                     + course.name + "|" + course.weeks + "|" + course.location + "|"
-                    + course.courseType.name();
+                    + normalizeIdentityText(course.teacher) + "|" + course.courseType.name();
             if (!merged.containsKey(key)) {
                 merged.put(key, course);
             }
         }
         return new ArrayList<>(merged.values());
+    }
+
+    private String normalizeIdentityText(String value) {
+        return value == null ? "" : value.replaceAll("\\s+", "").trim();
     }
 
     private boolean isCourseName(String text) {

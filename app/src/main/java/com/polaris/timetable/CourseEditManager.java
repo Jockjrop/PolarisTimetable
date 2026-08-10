@@ -3,6 +3,7 @@ package com.polaris.timetable;
 import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableCourseId;
+import com.polaris.timetable.model.StableMeetingId;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.parser.WeekRuleParser;
 
@@ -47,6 +48,7 @@ public final class CourseEditManager {
         List<CourseMeeting> meetings = new ArrayList<>(source.meetings);
         CourseMeeting previousMeeting = meetings.get(meetingIndex);
         meetings.set(meetingIndex, new CourseMeeting(
+                previousMeeting.id,
                 edited.day,
                 edited.startSection,
                 edited.endSection,
@@ -95,7 +97,29 @@ public final class CourseEditManager {
         return true;
     }
 
-    /** Replaces one meeting by index without changing the parent course or sibling meetings. */
+    /** Replaces one meeting by stable ID without changing its identity or sibling meetings. */
+    public static boolean updateMeeting(
+            List<StructuredCourse> structuredCourses,
+            String structuredCourseId,
+            String meetingId,
+            CourseMeeting editedMeeting) {
+        int courseIndex = findCourseIndex(structuredCourses, structuredCourseId);
+        if (courseIndex < 0 || editedMeeting == null || !StableMeetingId.isValid(meetingId)) {
+            return false;
+        }
+        StructuredCourse source = structuredCourses.get(courseIndex);
+        int meetingIndex = findMeetingIndex(source, meetingId);
+        if (meetingIndex < 0) {
+            return false;
+        }
+        List<CourseMeeting> meetings = new ArrayList<>(source.meetings);
+        meetings.set(meetingIndex, copyWithId(editedMeeting, meetingId));
+        structuredCourses.set(courseIndex, copyWithMeetings(source, meetings));
+        return true;
+    }
+
+    /** Legacy index-based compatibility helper. Normal production edits use meeting UUID. */
+    @Deprecated
     public static boolean updateMeeting(
             List<StructuredCourse> structuredCourses,
             String structuredCourseId,
@@ -109,10 +133,9 @@ public final class CourseEditManager {
         if (meetingIndex < 0 || meetingIndex >= source.meetings.size()) {
             return false;
         }
-        List<CourseMeeting> meetings = new ArrayList<>(source.meetings);
-        meetings.set(meetingIndex, editedMeeting);
-        structuredCourses.set(courseIndex, copyWithMeetings(source, meetings));
-        return true;
+        return updateMeeting(
+                structuredCourses, structuredCourseId,
+                source.meetings.get(meetingIndex).id, editedMeeting);
     }
 
     private static boolean addStructuredCourse(
@@ -155,6 +178,25 @@ public final class CourseEditManager {
     }
 
     private static int findMeetingIndex(StructuredCourse course, Course target) {
+        if (StableMeetingId.isValid(target.meetingId)) {
+            return findMeetingIndex(course, target.meetingId);
+        }
+        return findMeetingIndexByLegacySignature(course, target);
+    }
+
+    private static int findMeetingIndex(StructuredCourse course, String meetingId) {
+        for (int index = 0; index < course.meetings.size(); index++) {
+            CourseMeeting meeting = course.meetings.get(index);
+            if (meeting != null && meetingId.equalsIgnoreCase(meeting.id)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /** Compatibility fallback for pre-v2 views and old share/recovery payloads. */
+    private static int findMeetingIndexByLegacySignature(
+            StructuredCourse course, Course target) {
         int slotFallback = -1;
         for (int index = 0; index < course.meetings.size(); index++) {
             CourseMeeting meeting = course.meetings.get(index);
@@ -178,6 +220,18 @@ public final class CourseEditManager {
             }
         }
         return slotFallback;
+    }
+
+    private static CourseMeeting copyWithId(CourseMeeting meeting, String id) {
+        return new CourseMeeting(
+                id,
+                meeting.day,
+                meeting.startSection,
+                meeting.endSection,
+                meeting.weekRule,
+                meeting.location,
+                meeting.teacher,
+                meeting.rawText);
     }
 
     private static StructuredCourse copyWithMeetings(
@@ -266,7 +320,8 @@ public final class CourseEditManager {
                 course.credit,
                 course.color,
                 course.courseType,
-                stableId);
+                stableId,
+                course.meetingId);
     }
 
     private static Course copyCourseLevelFields(
@@ -283,6 +338,7 @@ public final class CourseEditManager {
                 edited.credit,
                 edited.color,
                 edited.courseType,
-                stableId);
+                stableId,
+                meeting.meetingId);
     }
 }

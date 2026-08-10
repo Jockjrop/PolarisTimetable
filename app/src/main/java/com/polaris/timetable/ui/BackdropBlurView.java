@@ -142,11 +142,7 @@ public class BackdropBlurView extends FrameLayout {
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         removeSourcePreDrawListener();
-        if (buffer != null) {
-            buffer.recycle();
-            buffer = null;
-            bufferCanvas = null;
-        }
+        releaseBuffer();
     }
 
     private void drawBackdrop(Canvas canvas) {
@@ -191,6 +187,14 @@ public class BackdropBlurView extends FrameLayout {
         }
         buffer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         bufferCanvas = new Canvas(buffer);
+    }
+
+    private void releaseBuffer() {
+        if (buffer != null) {
+            buffer.recycle();
+            buffer = null;
+            bufferCanvas = null;
+        }
     }
 
     private void invalidateBackdrop() {

@@ -344,6 +344,7 @@ public class ScheduleRepository {
     private static JSONObject courseMeetingToJson(CourseMeeting meeting) {
         JSONObject object = new JSONObject();
         try {
+            object.put("id", meeting.id);
             object.put("day", meeting.day);
             object.put("startSection", meeting.startSection);
             object.put("endSection", meeting.endSection);
@@ -495,6 +496,7 @@ public class ScheduleRepository {
 
     private static CourseMeeting courseMeetingFromJson(JSONObject object) {
         return new CourseMeeting(
+                object.optString("id", ""),
                 object.optInt("day", -1),
                 object.optInt("startSection", 1),
                 object.optInt("endSection", 1),
@@ -548,6 +550,7 @@ public class ScheduleRepository {
             object.put("color", course.color);
             object.put("courseType", course.courseType.name());
             object.put("structuredCourseId", course.structuredCourseId);
+            object.put("meetingId", course.meetingId);
         } catch (JSONException exception) {
             Log.e(TAG, "Unable to serialize course", exception);
         }
@@ -567,7 +570,8 @@ public class ScheduleRepository {
                 object.optString("credit", ""),
                 object.optString("color", ""),
                 CourseType.fromStorage(object.optString("courseType", "")),
-                object.optString("structuredCourseId", ""));
+                object.optString("structuredCourseId", ""),
+                object.optString("meetingId", ""));
     }
 
     public static class AccountProfile {
@@ -593,6 +597,7 @@ public class ScheduleRepository {
         public String semesterName = "";
         public String schoolName = "";
         public String timetableBackground = "清爽蓝";
+        public String visualTheme = "极简风格";
         public String backgroundImageUri = "";
         public float backgroundCropLeft = 0f;
         public float backgroundCropTop = 0f;
@@ -638,6 +643,7 @@ public class ScheduleRepository {
                 object.put("semesterName", semesterName);
                 object.put("schoolName", schoolName);
                 object.put("timetableBackground", timetableBackground);
+                object.put("visualTheme", visualTheme);
                 object.put("backgroundImageUri", backgroundImageUri);
                 object.put("backgroundCropLeft", backgroundCropLeft);
                 object.put("backgroundCropTop", backgroundCropTop);
@@ -698,6 +704,7 @@ public class ScheduleRepository {
                 }
             }
             config.timetableBackground = object.optString("timetableBackground", config.timetableBackground);
+            config.visualTheme = object.optString("visualTheme", config.visualTheme);
             config.backgroundImageUri = object.optString("backgroundImageUri", config.backgroundImageUri);
             config.backgroundCropLeft = (float) object.optDouble(
                     "backgroundCropLeft", config.backgroundCropLeft);

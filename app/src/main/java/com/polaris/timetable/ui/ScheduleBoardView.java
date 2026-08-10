@@ -11,6 +11,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -89,6 +90,7 @@ public class ScheduleBoardView extends FrameLayout {
     private int sectionCount = TIMES.length;
     private long firstWeekStartMillis = defaultFirstWeekStartMillis();
     private boolean darkMode;
+    private String visualTheme = PolarisVisualTheme.MINIMAL;
     private boolean showOutOfWeekCourses;
     private boolean showPracticeBanner = true;
     private boolean hasBackgroundImage;
@@ -129,7 +131,7 @@ public class ScheduleBoardView extends FrameLayout {
     public ScheduleBoardView(Context context) {
         super(context);
         setClipChildren(true);
-        setBackgroundColor(color("#EAF3FB"));
+        setBackgroundColor(PolarisVisualTheme.boardSurfaceColor(visualTheme, false));
         resetVisibleDays();
 
         verticalScroll = new AdaptiveScrollView(context);
@@ -420,6 +422,18 @@ public class ScheduleBoardView extends FrameLayout {
             return;
         }
         darkMode = enabled;
+        rebuildCourseColors();
+        applyBoardBackground();
+        renderSchedule();
+    }
+
+    public void setVisualTheme(String theme) {
+        String nextTheme = PolarisVisualTheme.normalize(theme);
+        if (nextTheme.equals(visualTheme)) {
+            return;
+        }
+        visualTheme = nextTheme;
+        rebuildCourseColors();
         applyBoardBackground();
         renderSchedule();
     }
@@ -839,9 +853,14 @@ public class ScheduleBoardView extends FrameLayout {
             return;
         }
         View header = new View(getContext());
-        int fill = darkMode ? color("#101827") : color("#F8FBFF");
+        int fill = PolarisVisualTheme.MINIMAL.equals(visualTheme)
+                ? (darkMode ? color("#101827") : color("#F8FBFF"))
+                : PolarisVisualTheme.cardColor(visualTheme, darkMode);
         int alpha = Math.round(255f * timetableHeaderOpacity / 100f);
-        header.setBackgroundColor(Color.argb(alpha, Color.red(fill), Color.green(fill), Color.blue(fill)));
+        int sourceAlpha = Color.alpha(fill);
+        int combinedAlpha = Math.round(alpha * sourceAlpha / 255f);
+        header.setBackgroundColor(Color.argb(combinedAlpha,
+                Color.red(fill), Color.green(fill), Color.blue(fill)));
         board.addView(header, new FrameLayout.LayoutParams(
                 Math.max(getAvailableBoardWidth(), timeWidth + dayWidth * visibleDayCount),
                 dayHeaderHeight));
@@ -852,6 +871,13 @@ public class ScheduleBoardView extends FrameLayout {
         view.setOrientation(LinearLayout.VERTICAL);
         view.setGravity(Gravity.CENTER);
         boolean today = isToday(actualDay, week);
+        if (today && !PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+            GradientDrawable highlight = new GradientDrawable();
+            highlight.setColor(PolarisVisualTheme.accentSurfaceColor(visualTheme, darkMode));
+            highlight.setStroke(dp(1), PolarisVisualTheme.outlineColor(visualTheme, darkMode));
+            highlight.setCornerRadius(dp(13));
+            view.setBackground(highlight);
+        }
 
         TextView weekday = new TextView(getContext());
         weekday.setText("周" + DAYS[actualDay]);
@@ -909,7 +935,9 @@ public class ScheduleBoardView extends FrameLayout {
         heading.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(getContext());
         title.setText("本周实践");
-        title.setTextColor(darkMode ? color("#9CE9DF") : color("#075E56"));
+        title.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
+                ? (darkMode ? color("#9CE9DF") : color("#075E56"))
+                : PolarisVisualTheme.accentColor(visualTheme, darkMode));
         title.setTextSize(14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setSingleLine(true);
@@ -918,7 +946,9 @@ public class ScheduleBoardView extends FrameLayout {
 
         TextView count = new TextView(getContext());
         count.setText(practiceCourses.size() + " 项 · 查看");
-        count.setTextColor(darkMode ? color("#B7D8D4") : color("#39736D"));
+        count.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
+                ? (darkMode ? color("#B7D8D4") : color("#39736D"))
+                : mutedColor());
         count.setTextSize(11);
         count.setSingleLine(true);
         heading.addView(count);
@@ -927,7 +957,9 @@ public class ScheduleBoardView extends FrameLayout {
 
         TextView summary = new TextView(getContext());
         summary.setText(practiceSummary(practiceCourses));
-        summary.setTextColor(darkMode ? color("#F0FFFC") : color("#123B38"));
+        summary.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
+                ? (darkMode ? color("#F0FFFC") : color("#123B38"))
+                : inkColor());
         summary.setTextSize(14);
         summary.setTypeface(Typeface.DEFAULT_BOLD);
         summary.setSingleLine(true);
@@ -1034,9 +1066,15 @@ public class ScheduleBoardView extends FrameLayout {
 
     private GradientDrawable practiceBannerBg() {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(darkMode ? color("#E620504D") : color("#F2DDF4F0"));
-        drawable.setStroke(dp(1), darkMode ? color("#5B58CFC0") : color("#8044AFA2"));
-        drawable.setCornerRadius(dp(14));
+        if (PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+            drawable.setColor(darkMode ? color("#E620504D") : color("#F2DDF4F0"));
+            drawable.setStroke(dp(1), darkMode ? color("#5B58CFC0") : color("#8044AFA2"));
+            drawable.setCornerRadius(dp(14));
+            return drawable;
+        }
+        drawable.setColor(PolarisVisualTheme.accentSurfaceColor(visualTheme, darkMode));
+        drawable.setStroke(dp(1), PolarisVisualTheme.outlineColor(visualTheme, darkMode));
+        drawable.setCornerRadius(dp(18));
         return drawable;
     }
 
@@ -1069,7 +1107,7 @@ public class ScheduleBoardView extends FrameLayout {
     private void addRowLine(FrameLayout board, int section, int week) {
         View line = new View(getContext());
         int top = sectionTop(section, week);
-        line.setBackgroundColor(darkMode ? color("#465B7A") : color("#D1DCEE"));
+        line.setBackgroundColor(PolarisVisualTheme.gridLineColor(visualTheme, darkMode));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dayWidth * visibleDayCount, dp(1));
         params.leftMargin = timeWidth;
         params.topMargin = top;
@@ -1132,6 +1170,15 @@ public class ScheduleBoardView extends FrameLayout {
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setGravity(Gravity.START | Gravity.TOP);
         view.setBackground(cardBg(fill, conflict));
+        if (!PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+            view.setElevation(dp(darkMode ? 1 : 2));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                view.setOutlineAmbientShadowColor(Color.argb(darkMode ? 64 : 38,
+                        Color.red(fill), Color.green(fill), Color.blue(fill)));
+                view.setOutlineSpotShadowColor(Color.argb(darkMode ? 86 : 52,
+                        Color.red(fill), Color.green(fill), Color.blue(fill)));
+            }
+        }
         view.setContentDescription(courseContentDescription(course, conflict));
         if (showOutOfWeekCourses && !isCourseInWeek(course, week)) {
             view.setAlpha(0.52f);
@@ -1385,8 +1432,14 @@ public class ScheduleBoardView extends FrameLayout {
             }
         }
         for (int i = 0; i < names.size(); i++) {
-            float hue = (i * 137.508f) % 360f;
-            courseColors.put(names.get(i), Color.HSVToColor(new float[]{hue, 0.62f, 0.94f}));
+            if (PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+                float hue = (i * 137.508f) % 360f;
+                courseColors.put(names.get(i),
+                        Color.HSVToColor(new float[]{hue, 0.62f, 0.94f}));
+            } else {
+                int[] palette = PolarisVisualTheme.coursePalette(visualTheme, darkMode);
+                courseColors.put(names.get(i), palette[i % palette.length]);
+            }
         }
     }
 
@@ -1421,14 +1474,39 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private GradientDrawable cardBg(int fill, boolean conflict) {
-        GradientDrawable drawable = new GradientDrawable();
-        int alpha = Math.round(255f * courseBlockOpacity / 100f);
-        drawable.setColor(Color.argb(alpha, Color.red(fill), Color.green(fill), Color.blue(fill)));
+        if (PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+            GradientDrawable drawable = new GradientDrawable();
+            drawable.setColor(courseFill(fill));
+            drawable.setCornerRadius(dp(courseCornerRadius));
+            if (conflict) {
+                drawable.setStroke(dp(2), darkMode ? color("#FF9DA8") : color("#C92840"));
+            }
+            return drawable;
+        }
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{courseFill(mixColor(fill, Color.WHITE, darkMode ? 0.05f : 0.16f)),
+                        courseFill(mixColor(fill, Color.BLACK, darkMode ? 0.10f : 0.03f))});
         drawable.setCornerRadius(dp(courseCornerRadius));
         if (conflict) {
             drawable.setStroke(dp(2), darkMode ? color("#FF9DA8") : color("#C92840"));
+        } else {
+            drawable.setStroke(dp(1), Color.argb(darkMode ? 84 : 150, 255, 255, 255));
         }
         return drawable;
+    }
+
+    private int courseFill(int value) {
+        int alpha = Math.round(255f * courseBlockOpacity / 100f);
+        return Color.argb(alpha, Color.red(value), Color.green(value), Color.blue(value));
+    }
+
+    private int mixColor(int from, int to, float amount) {
+        float bounded = Math.max(0f, Math.min(1f, amount));
+        int red = Math.round(Color.red(from) * (1f - bounded) + Color.red(to) * bounded);
+        int green = Math.round(Color.green(from) * (1f - bounded) + Color.green(to) * bounded);
+        int blue = Math.round(Color.blue(from) * (1f - bounded) + Color.blue(to) * bounded);
+        return Color.rgb(red, green, blue);
     }
 
     private String courseContentDescription(Course course, boolean conflict) {
@@ -1519,15 +1597,15 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private int boardBgColor() {
-        return darkMode ? color("#101827") : color("#EAF3FB");
+        return PolarisVisualTheme.boardSurfaceColor(visualTheme, darkMode);
     }
 
     private int inkColor() {
-        return darkMode ? color("#EEF4FF") : color("#172033");
+        return PolarisVisualTheme.inkColor(visualTheme, darkMode);
     }
 
     private int mutedColor() {
-        return darkMode ? color("#9AA8BE") : color("#667085");
+        return PolarisVisualTheme.mutedColor(visualTheme, darkMode);
     }
 
     private int gridTextColor() {

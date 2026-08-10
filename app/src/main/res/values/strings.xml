@@ -6,4 +6,10 @@
     <string name="widget_tomorrow_empty">明日无课</string>
     <string name="widget_today_preview_title">今天·周一 8/10</string>
     <string name="widget_tomorrow_preview_title">明天·周二 8/11</string>
+    <string name="return_to_current_week">回到本周</string>
+    <string name="week_swipe_hint">左右滑动切换周视图</string>
+    <string name="import_schedule">导入课表</string>
+    <string name="course_saved">已保存</string>
+    <string name="undo">撤销</string>
+    <string name="course_save_undone">已撤销本次保存</string>
 </resources>

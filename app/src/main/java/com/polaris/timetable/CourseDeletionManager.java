@@ -4,6 +4,7 @@ import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
 import com.polaris.timetable.model.StableCourseId;
+import com.polaris.timetable.model.StableMeetingId;
 import com.polaris.timetable.parser.WeekRuleParser;
 import com.polaris.timetable.time.CourseTimeResolver;
 
@@ -64,6 +65,7 @@ public final class CourseDeletionManager {
                         remainingWeeks,
                         compactWeekExpression(remainingWeeks));
                 meetings.set(meetingIndex, new CourseMeeting(
+                        meeting.id,
                         meeting.day,
                         meeting.startSection,
                         meeting.endSection,
@@ -91,6 +93,21 @@ public final class CourseDeletionManager {
     }
 
     private static int findMeetingIndex(StructuredCourse course, Course target) {
+        if (StableMeetingId.isValid(target.meetingId)) {
+            for (int index = 0; index < course.meetings.size(); index++) {
+                CourseMeeting meeting = course.meetings.get(index);
+                if (meeting != null && target.meetingId.equalsIgnoreCase(meeting.id)) {
+                    return index;
+                }
+            }
+            return -1;
+        }
+        return findMeetingIndexByLegacySignature(course, target);
+    }
+
+    /** Compatibility fallback for pre-v2 views and old share/recovery payloads. */
+    private static int findMeetingIndexByLegacySignature(
+            StructuredCourse course, Course target) {
         int slotFallback = -1;
         for (int index = 0; index < course.meetings.size(); index++) {
             CourseMeeting meeting = course.meetings.get(index);
@@ -292,7 +309,8 @@ public final class CourseDeletionManager {
                 source.credit,
                 source.color,
                 source.courseType,
-                source.structuredCourseId);
+                source.structuredCourseId,
+                source.meetingId);
     }
 
     private static String compactWeekExpression(List<Integer> weeks) {

@@ -14,6 +14,7 @@ import android.graphics.Color;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
@@ -46,6 +47,7 @@ import android.widget.DatePicker;
 import android.widget.FrameLayout;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
@@ -56,6 +58,10 @@ import android.widget.Toast;
 
 import com.polaris.timetable.importer.PdfImportCoordinator;
 import com.polaris.timetable.importer.ImportReviewSummary;
+import com.polaris.timetable.importer.ImageImportCommitPolicy;
+import com.polaris.timetable.importer.ImageScheduleImportCoordinator;
+import com.polaris.timetable.importer.ImageScheduleRecognitionResult;
+import com.polaris.timetable.importer.LocalOcrScheduleRecognizer;
 import com.polaris.timetable.export.ExportFileProvider;
 import com.polaris.timetable.export.ScheduleImageExporter;
 import com.polaris.timetable.export.SchedulePdfExporter;
@@ -79,6 +85,8 @@ import com.polaris.timetable.ui.CircleAvatarView;
 import com.polaris.timetable.ui.CourseDetailDialog;
 import com.polaris.timetable.ui.CourseEditorDialog;
 import com.polaris.timetable.ui.CourseConflictSummaryView;
+import com.polaris.timetable.ui.PolarisThemeBackgroundView;
+import com.polaris.timetable.ui.PolarisVisualTheme;
 import com.polaris.timetable.ui.ScheduleBoardView;
 import com.polaris.timetable.ui.TodayOverviewView;
 
@@ -125,6 +133,7 @@ public class MainActivity extends Activity {
     private static final int PICK_PDF = 1001;
     private static final int PICK_BACKGROUND_IMAGE = 1002;
     private static final int PICK_AVATAR_IMAGE = 1003;
+    private static final int PICK_SCHEDULE_IMAGE = 1004;
     private static final int REQUEST_NOTIFICATION_PERMISSION = 2001;
     private static final String TAG_SETTINGS_GROUP = "settings_group";
     private static final String TAG_SECTION_HEADER = "section_header";
@@ -136,16 +145,23 @@ public class MainActivity extends Activity {
     private static final int BOTTOM_NAV_SCROLL_THRESHOLD_DP = 12;
     private static final int BOTTOM_NAV_HIDE_DURATION_MS = 160;
     private static final int BOTTOM_NAV_SHOW_DURATION_MS = 220;
+    private static final int SETTINGS_PAGE_EXIT_DURATION_MS = 170;
+    private static final int SETTINGS_PAGE_REVEAL_OFFSET_DP = 16;
     private static final int ACTION_PANEL_OPACITY_PERCENT = 70;
+    private static final String UI_ONBOARDING_PREFERENCES = "polaris_ui_onboarding";
+    private static final String WEEK_SWIPE_HINT_SHOWN = "week_swipe_hint_shown_v1";
+    private static final String[] APPEARANCE_PRESETS = {"标准", "紧凑", "沉浸"};
     private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
     private final CourseStructureMapper courseStructureMapper = new CourseStructureMapper();
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
     private ScheduleRepository scheduleRepository;
     private PdfImportCoordinator importCoordinator;
+    private ImageScheduleImportCoordinator imageScheduleImportCoordinator;
     private ScheduleBoardView scheduleBoard;
     private FrameLayout contentHost;
     private FrameLayout rootView;
+    private PolarisThemeBackgroundView themeBackgroundView;
     private FrameLayout topPanelContainer;
     private LinearLayout topPanel;
     private View topPanelGlassLayer;
@@ -157,6 +173,7 @@ public class MainActivity extends Activity {
     private TextView myNav;
     private TextView title;
     private TextView subtitle;
+    private TextView returnCurrentWeekButton;
     private Button overflowMenuButton;
     private TodayOverviewView todayOverviewView;
     private CourseConflictSummaryView conflictSummaryView;
@@ -195,6 +212,7 @@ public class MainActivity extends Activity {
     private int bottomNavSideMargin = 10;
     private boolean shellBarsBlurEnabled = true;
     private String timetableBackground = "清爽蓝";
+    private String visualTheme = PolarisVisualTheme.MINIMAL;
     private String backgroundImageUri = "";
     private BackgroundImageCrop backgroundImageCrop = BackgroundImageCrop.full();
     private String accountName = "管理员";
@@ -214,15 +232,19 @@ public class MainActivity extends Activity {
     private boolean suppressSettingsPageAnimation = false;
     private SchoolParserModel selectedParserModel;
     private boolean collapseXautMiddleSections = false;
-    private TextView parserModelValue;
     private LinearLayout courseManageListContainer;
     private View backgroundSettingRow;
+    private View appearancePresetSettingRow;
     private boolean bottomNavHidden;
     private boolean scheduleExportInProgress;
     private boolean pdfImportInProgress;
+    private boolean imageImportInProgress;
     private String lastParseDiagnosticsSummary = "暂无导入记录";
     private String lastParseDiagnosticsText = "";
     private int bottomNavScrollAccumulator;
+    private boolean weekSwipeHintScheduled;
+    private View weekSwipeHintView;
+    private View courseSaveUndoView;
     private final Handler todayOverviewHandler = new Handler(Looper.getMainLooper());
     private final Runnable todayOverviewTicker = new Runnable() {
         @Override
@@ -238,6 +260,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         scheduleRepository = new ScheduleRepository(this);
         importCoordinator = new PdfImportCoordinator(this);
+        imageScheduleImportCoordinator = new ImageScheduleImportCoordinator(
+                this, new LocalOcrScheduleRecognizer());
         activeScheduleId = scheduleRepository.activeScheduleId();
         darkMode = scheduleRepository.loadGlobalDarkMode();
         applyAccountProfile(scheduleRepository.loadAccountProfile());
@@ -264,6 +288,7 @@ public class MainActivity extends Activity {
         }
         startTodayOverviewTicker();
         refreshActiveSettingsPage();
+        scheduleWeekSwipeHintIfNeeded();
     }
 
     @Override
@@ -294,6 +319,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         scheduleExportExecutor.shutdownNow();
+        imageScheduleImportCoordinator.close();
         super.onDestroy();
     }
 
@@ -308,9 +334,14 @@ public class MainActivity extends Activity {
 
     private void buildLayout() {
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+        weekSwipeHintView = null;
+        weekSwipeHintScheduled = false;
+        courseSaveUndoView = null;
 
         rootView = new FrameLayout(this);
         rootView.setBackgroundColor(backgroundColor());
+        themeBackgroundView = new PolarisThemeBackgroundView(this);
+        themeBackgroundView.setVisualTheme(visualTheme, isDarkModeActive());
 
         topPanel = new LinearLayout(this);
         topPanel.setOrientation(LinearLayout.VERTICAL);
@@ -345,6 +376,12 @@ public class MainActivity extends Activity {
         actions.setGravity(Gravity.CENTER_VERTICAL);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         headline.addView(actions);
+        returnCurrentWeekButton = topHeaderAction(
+                getString(R.string.return_to_current_week), v -> returnToCurrentWeek());
+        returnCurrentWeekButton.setContentDescription(
+                getString(R.string.return_to_current_week));
+        returnCurrentWeekButton.setVisibility(View.GONE);
+        actions.addView(returnCurrentWeekButton);
         overflowMenuButton = transparentTopButton("⋯", v -> {
             v.animate().rotationBy(90f).scaleX(0.88f).scaleY(0.88f).setDuration(90)
                     .withEndAction(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(90).start())
@@ -370,6 +407,7 @@ public class MainActivity extends Activity {
         scheduleBoard.setClassTimeSettings(firstClassStartTime, classDurationMinutes, classBreakMinutes,
                 classBigBreakMinutes, afternoonStartTime, lateAfternoonStartTime, classTimeConfig);
         scheduleBoard.setCollapseMiddleSections(isXautCollapseEnabled());
+        scheduleBoard.setVisualTheme(visualTheme);
         scheduleBoard.setDarkMode(isDarkModeActive());
         scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
         scheduleBoard.setShowPracticeBanner(showPracticeBanner);
@@ -380,6 +418,7 @@ public class MainActivity extends Activity {
         scheduleBoard.setCourses(courses);
 
         todayOverviewView = new TodayOverviewView(this);
+        todayOverviewView.setVisualTheme(visualTheme);
         todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
         LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -399,6 +438,8 @@ public class MainActivity extends Activity {
         settingsPage = new FrameLayout(this);
         settingsPage.setVisibility(View.GONE);
         contentHost = new FrameLayout(this);
+        contentHost.addView(themeBackgroundView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         contentHost.addView(scheduleBoard, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         emptyScheduleView = buildEmptyScheduleView();
@@ -433,17 +474,39 @@ public class MainActivity extends Activity {
         updateSystemBarAppearance(getWindow());
         switchTab(activeTab);
         scheduleBoard.post(this::renderSchedule);
+        scheduleWeekSwipeHintIfNeeded();
     }
 
     private void openPdfPicker() {
-        if (courses.isEmpty() && selectedParserModel == null) {
-            Toast.makeText(this, "请先选择学校解析模型", Toast.LENGTH_SHORT).show();
+        if (selectedParserModel == null) {
+            showParserModelDialog(this::launchPdfPicker);
             return;
         }
+        launchPdfPicker();
+    }
+
+    private void launchPdfPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/pdf");
         startActivityForResult(intent, PICK_PDF);
+    }
+
+    private void openScheduleImagePicker() {
+        if (imageImportInProgress) {
+            Toast.makeText(this, "图片正在识别，请稍候", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, PICK_SCHEDULE_IMAGE);
+        } catch (RuntimeException exception) {
+            Toast.makeText(this, "无法打开图片选择器", Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
@@ -454,6 +517,8 @@ public class MainActivity extends Activity {
         }
         if (requestCode == PICK_PDF) {
             startPdfImportFlow(data.getData());
+        } else if (requestCode == PICK_SCHEDULE_IMAGE) {
+            startImageImportFlow(data.getData());
         } else if (requestCode == PICK_BACKGROUND_IMAGE) {
             previewBackgroundImage(data.getData());
         } else if (requestCode == PICK_AVATAR_IMAGE) {
@@ -464,9 +529,200 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void startImageImportFlow(Uri uri) {
+        if (imageImportInProgress) {
+            Toast.makeText(this, "图片正在识别，请稍候", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        imageImportInProgress = true;
+        try {
+            imageScheduleImportCoordinator.prepare(uri,
+                    new ImageScheduleImportCoordinator.Callback() {
+                @Override
+                public void onStarted(String displayName) {
+                    setHeader(displayName, "正在进行本地文字识别…");
+                }
+
+                @Override
+                public void onPreviewReady(String displayName, Bitmap preview,
+                                           ImageScheduleRecognitionResult result) {
+                    imageImportInProgress = false;
+                    if (isFinishing()
+                            || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                            && isDestroyed())) {
+                        if (!preview.isRecycled()) {
+                            preview.recycle();
+                        }
+                        return;
+                    }
+                    updateHeader();
+                    showImageImportPreview(displayName, preview, result);
+                }
+
+                @Override
+                public void onFailed(Exception exception) {
+                    imageImportInProgress = false;
+                    if (isFinishing()
+                            || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                            && isDestroyed())) {
+                        return;
+                    }
+                    updateHeader();
+                    String reason = exception.getMessage() == null
+                            ? "未知原因" : exception.getMessage();
+                    Toast.makeText(MainActivity.this, "本地图片识别失败：" + reason,
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        } catch (RuntimeException exception) {
+            imageImportInProgress = false;
+            updateHeader();
+            String reason = exception.getMessage() == null
+                    ? "未知原因" : exception.getMessage();
+            Toast.makeText(this, "无法准备图片：" + reason, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void showImageImportPreview(String displayName, Bitmap preview,
+                                        ImageScheduleRecognitionResult result) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel("预览课表图片");
+
+        TextView notice = new TextView(this);
+        notice.setText(displayName + "\n" + result.notice);
+        notice.setTextColor(mutedColor());
+        notice.setTextSize(14);
+        notice.setGravity(Gravity.CENTER);
+        notice.setLineSpacing(dp(3), 1f);
+        panel.addView(notice, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        ImageView image = new ImageView(this);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageBitmap(preview);
+        image.setBackground(roundedBg(cardColorHex(), 14));
+        image.setPadding(dp(6), dp(6), dp(6), dp(6));
+        image.setContentDescription("所选课表图片预览：" + displayName);
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(220));
+        imageParams.setMargins(0, dp(12), 0, dp(8));
+        panel.addView(image, imageParams);
+
+        panel.addView(importReviewHeading("本地识别结果"));
+        panel.addView(importReviewLine("识别结果",
+                result.structuredCourses.size() + " 门课程 · "
+                        + result.meetingCount() + " 条上课安排", false));
+        panel.addView(importReviewLine("置信度",
+                Math.round(result.confidence * 100f) + "%",
+                result.confidence < ImageScheduleRecognitionResult.MIN_IMPORT_CONFIDENCE));
+        for (StructuredCourse course : result.structuredCourses) {
+            String teacher = course.teacher.isEmpty() ? "未填写教师" : course.teacher;
+            panel.addView(importReviewLine(course.name,
+                    teacher + " · " + course.meetings.size() + " 条安排", false));
+        }
+        if (!result.warnings.isEmpty()) {
+            panel.addView(importReviewHeading("需要检查"));
+            for (String item : result.warnings) {
+                panel.addView(importReviewLine("提示", item, true));
+            }
+        }
+
+        boolean replacingExisting = !structuredCourses.isEmpty();
+        TextView warning = new TextView(this);
+        warning.setText(replacingExisting
+                ? "确认后将覆盖当前课表。取消不会修改任何课程数据。"
+                : "确认后将保存到当前课表。取消不会修改任何课程数据。");
+        warning.setTextColor(replacingExisting
+                ? Color.parseColor(isDarkModeActive() ? "#FFC266" : "#9A5B00")
+                : mutedColor());
+        warning.setTextSize(14);
+        warning.setLineSpacing(dp(3), 1f);
+        warning.setPadding(0, dp(10), 0, dp(4));
+        panel.addView(warning);
+
+        if (result.isImportable()) {
+            String confirmText = replacingExisting ? "确认并覆盖当前课表" : "确认导入课表";
+            final boolean[] committed = {false};
+            TextView confirm = dialogAction(confirmText, v -> {
+                if (committed[0]) {
+                    return;
+                }
+                committed[0] = true;
+                v.setEnabled(false);
+                dialog.dismiss();
+                applyImageRecognition(result, true);
+            });
+            confirm.setTextColor(Color.WHITE);
+            confirm.setBackground(roundedBg(primaryActionFillHex(), 14));
+            confirm.setContentDescription(confirmText + "，确认后才会写入课程数据");
+            panel.addView(confirm);
+        } else {
+            panel.addView(importReviewLine("导入状态",
+                    "当前结果不满足安全导入条件，当前课表不会改变", true));
+        }
+        panel.addView(dialogAction(result.isImportable() ? "取消导入" : "关闭",
+                v -> dialog.dismiss()));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        scroll.addView(panel, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnDismissListener(ignored -> {
+            image.setImageDrawable(null);
+            if (!preview.isRecycled()) {
+                preview.recycle();
+            }
+        });
+        dialog.setContentView(glassDialogContent(scroll, panel, 22));
+        dialog.show();
+        transparentDialog(dialog);
+    }
+
+    private void applyImageRecognition(ImageScheduleRecognitionResult result,
+                                       boolean confirmed) {
+        if (!ImageImportCommitPolicy.canCommit(confirmed, result)) {
+            Toast.makeText(this, "识别结果为空或置信度不足，已取消写入以保护当前课表",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        replaceCanonicalCourses(result.structuredCourses);
+        semesterWeeks = inferSemesterWeeks(courses);
+        courseSectionCount = inferSectionCount(courses);
+        currentWeek = Math.max(1, Math.min(semesterWeeks, currentWeekFromDate()));
+        lastParseDiagnosticsSummary = "本地图片识别 · "
+                + structuredCourses.size() + " 门课程 · " + result.meetingCount() + " 条安排";
+        lastParseDiagnosticsText = "识别来源：本地 ML Kit OCR\n"
+                + "文件写入：已由用户确认\n"
+                + "课程数量：" + structuredCourses.size() + "\n"
+                + "上课安排：" + result.meetingCount() + "\n"
+                + "置信度：" + Math.round(result.confidence * 100f) + "%\n"
+                + "说明：" + result.notice;
+        scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
+        saveConfig();
+        rescheduleCourseReminders();
+        updateHeader();
+        renderSchedule();
+        updateEmptyScheduleView();
+        refreshCourseManageList();
+        refreshMyPage();
+        switchTab(0);
+        Toast.makeText(this, "图片识别结果已保存并显示在课表中",
+                Toast.LENGTH_LONG).show();
+    }
+
     private void startPdfImportFlow(Uri uri) {
+        if (selectedParserModel == null) {
+            showParserModelDialog(() -> startPdfImportFlow(uri));
+            return;
+        }
         if (courses.isEmpty()) {
-            showImportNameDialog(uri);
+            loadPdf(uri, new ImportDestination(activeScheduleId, scheduleName,
+                    selectedParserModel, false, Collections.<Course>emptyList()));
             return;
         }
         showImportOverwriteDialog(uri);
@@ -545,10 +801,6 @@ public class MainActivity extends Activity {
         params.setMargins(0, dp(6), 0, dp(6));
         item.setLayoutParams(params);
         return item;
-    }
-
-    private void showImportNameDialog(Uri uri) {
-        showImportNameDialog(uri, false, selectedParserModel);
     }
 
     private void showImportNameDialog(Uri uri, boolean createNewSchedule, SchoolParserModel parserModel) {
@@ -841,6 +1093,7 @@ public class MainActivity extends Activity {
         if (subtitle != null) {
             subtitle.setText(subtitleText);
         }
+        updateReturnCurrentWeekAction();
     }
 
     private void renderSchedule() {
@@ -854,6 +1107,7 @@ public class MainActivity extends Activity {
             scheduleBoard.setClassTimeSettings(firstClassStartTime, classDurationMinutes, classBreakMinutes,
                     classBigBreakMinutes, afternoonStartTime, lateAfternoonStartTime, classTimeConfig);
             scheduleBoard.setCollapseMiddleSections(isXautCollapseEnabled());
+            scheduleBoard.setVisualTheme(visualTheme);
             scheduleBoard.setDarkMode(isDarkModeActive());
             scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
             scheduleBoard.setShowPracticeBanner(showPracticeBanner);
@@ -863,9 +1117,13 @@ public class MainActivity extends Activity {
             scheduleBoard.setBackgroundImage(backgroundImageUri, backgroundImageCrop);
             scheduleBoard.setCourses(courses);
         }
+        if (todayOverviewView != null) {
+            todayOverviewView.setVisualTheme(visualTheme);
+        }
         updateTodayOverview();
         updateConflictSummary();
         updateEmptyScheduleView();
+        updateReturnCurrentWeekAction();
     }
 
     private void showCourseDetail(Course course) {
@@ -1041,25 +1299,16 @@ public class MainActivity extends Activity {
     private View buildEmptyScheduleView() {
         FrameLayout layer = new FrameLayout(this);
         layer.setPadding(dp(20), statusBarHeight() + dp(70), dp(20), bottomContentInset() + dp(48));
-        layer.setBackgroundColor(backgroundColor());
+        layer.setBackgroundColor(pageSurfaceColor());
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
         card.setPadding(dp(24), dp(28), dp(24), dp(28));
-        card.setBackground(roundedBg(isDarkModeActive() ? "#182235" : "#F8FBFF", 18));
-
-        TextView plus = new TextView(this);
-        plus.setText("+");
-        plus.setTextColor(color("#1F73E0"));
-        plus.setTextSize(34);
-        plus.setTypeface(Typeface.DEFAULT_BOLD);
-        plus.setGravity(Gravity.CENTER);
-        plus.setBackground(roundedBg(isDarkModeActive() ? "#22304A" : "#DDF4FB", 18));
-        plus.setOnClickListener(v -> openPdfPicker());
-        LinearLayout.LayoutParams plusParams = new LinearLayout.LayoutParams(dp(80), dp(72));
-        plusParams.bottomMargin = dp(18);
-        card.addView(plus, plusParams);
+        card.setBackground(roundedBg(cardColorHex(), isMinimalVisualTheme() ? 18 : 22));
+        if (!isMinimalVisualTheme()) {
+            applyThemeElevation(card, 4);
+        }
 
         TextView titleView = new TextView(this);
         titleView.setText("还没有课程");
@@ -1070,7 +1319,7 @@ public class MainActivity extends Activity {
         card.addView(titleView);
 
         TextView message = new TextView(this);
-        message.setText("点击导入 PDF，可以预览从教务系统课表解析到周课表的完整流程。");
+        message.setText("选择学校后导入教务系统 PDF，Polaris 会解析课程，并在写入前让你检查结果。");
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setGravity(Gravity.CENTER);
@@ -1080,31 +1329,38 @@ public class MainActivity extends Activity {
         messageParams.setMargins(0, dp(10), 0, 0);
         card.addView(message, messageParams);
 
-        parserModelValue = new TextView(this);
-        parserModelValue.setText(parserModelText());
-        parserModelValue.setTextColor(selectedParserModel == null ? mutedColor() : inkColor());
-        parserModelValue.setTextSize(15);
-        parserModelValue.setTypeface(Typeface.DEFAULT_BOLD);
-        parserModelValue.setGravity(Gravity.CENTER);
-        parserModelValue.setBackground(roundedBg(cardColorHex(), 14));
-        parserModelValue.setOnClickListener(v -> showParserModelDialog());
-        LinearLayout.LayoutParams parserParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
-        parserParams.setMargins(0, dp(16), 0, 0);
-        card.addView(parserModelValue, parserParams);
+        TextView importButton = new TextView(this);
+        importButton.setText(R.string.import_schedule);
+        importButton.setContentDescription(getString(R.string.import_schedule));
+        importButton.setTextColor(Color.WHITE);
+        importButton.setTextSize(17);
+        importButton.setTypeface(Typeface.DEFAULT_BOLD);
+        importButton.setGravity(Gravity.CENTER);
+        importButton.setMinHeight(dp(52));
+        importButton.setBackground(roundedBg(primaryActionFillHex(), 15));
+        importButton.setOnClickListener(v -> openPdfPicker());
+        attachPressFeedback(importButton);
+        LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
+        importParams.setMargins(0, dp(20), 0, 0);
+        card.addView(importButton, importParams);
 
         FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, dp(360), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        cardParams.topMargin = dp(120);
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER);
         layer.addView(card, cardParams);
         return layer;
     }
 
     private void showParserModelDialog() {
+        showParserModelDialog(null);
+    }
+
+    private void showParserModelDialog(Runnable onSelected) {
         Dialog dialog = new Dialog(this);
         LinearLayout panel = dialogPanel("选择学校");
         TextView message = new TextView(this);
-        message.setText("新课表导入前必须选择学校，解析器会按学校课表格式读取课程，并使用该学校固定上课时间。");
+        message.setText("选择你的学校后，Polaris 会按对应的课表格式识别课程和上课时间。");
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -1116,22 +1372,17 @@ public class MainActivity extends Activity {
                 applySchoolTimeDefaults(model);
                 saveConfig();
                 renderSchedule();
-                if (parserModelValue != null) {
-                    parserModelValue.setText(parserModelText());
-                    parserModelValue.setTextColor(inkColor());
-                }
                 dialog.dismiss();
                 refreshActiveSettingsPage();
                 refreshMyPage();
+                if (onSelected != null) {
+                    onSelected.run();
+                }
             }));
         }
         dialog.setContentView(glassDialogContent(panel, 22));
         dialog.show();
         transparentDialog(dialog);
-    }
-
-    private String parserModelText() {
-        return selectedParserModel == null ? "选择学校解析模型" : selectedParserModel.label;
     }
 
     private void applySchoolTimeDefaults(SchoolParserModel model) {
@@ -1500,6 +1751,222 @@ public class MainActivity extends Activity {
         return button;
     }
 
+    private TextView topHeaderAction(String text, View.OnClickListener listener) {
+        TextView action = new TextView(this);
+        action.setText(text);
+        action.setTextColor(inkColor());
+        action.setTextSize(13);
+        action.setTypeface(Typeface.DEFAULT_BOLD);
+        action.setGravity(Gravity.CENTER);
+        action.setPadding(dp(12), 0, dp(12), 0);
+        action.setMinHeight(dp(40));
+        action.setBackground(roundedBg(cardColorHex(), 14));
+        action.setOnClickListener(listener);
+        attachPressFeedback(action);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(40));
+        params.rightMargin = dp(4);
+        action.setLayoutParams(params);
+        return action;
+    }
+
+    private void returnToCurrentWeek() {
+        int targetWeek = currentWeekFromDate();
+        if (targetWeek == currentWeek) {
+            updateReturnCurrentWeekAction();
+            return;
+        }
+        int delta = targetWeek - currentWeek;
+        if (scheduleBoard != null) {
+            scheduleBoard.captureCurrentBoardForTransition();
+        }
+        currentWeek = targetWeek;
+        updateHeader();
+        renderSchedule();
+        if (scheduleBoard != null) {
+            scheduleBoard.playWeekTransition(delta);
+        }
+    }
+
+    private void updateReturnCurrentWeekAction() {
+        if (returnCurrentWeekButton == null) {
+            return;
+        }
+        boolean show = !courses.isEmpty() && currentWeek != currentWeekFromDate();
+        returnCurrentWeekButton.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    private void scheduleWeekSwipeHintIfNeeded() {
+        if (weekSwipeHintScheduled || weekSwipeHintView != null || courseSaveUndoView != null
+                || rootView == null
+                || activeTab != 0 || courses.isEmpty()
+                || getSharedPreferences(UI_ONBOARDING_PREFERENCES, MODE_PRIVATE)
+                        .getBoolean(WEEK_SWIPE_HINT_SHOWN, false)) {
+            return;
+        }
+        weekSwipeHintScheduled = true;
+        rootView.postDelayed(() -> {
+            weekSwipeHintScheduled = false;
+            if (rootView == null || activeTab != 0 || courses.isEmpty() || !hasWindowFocus()
+                    || getSharedPreferences(UI_ONBOARDING_PREFERENCES, MODE_PRIVATE)
+                            .getBoolean(WEEK_SWIPE_HINT_SHOWN, false)) {
+                return;
+            }
+            showWeekSwipeHint();
+        }, 700L);
+    }
+
+    private void showWeekSwipeHint() {
+        if (rootView == null || weekSwipeHintView != null) {
+            return;
+        }
+        getSharedPreferences(UI_ONBOARDING_PREFERENCES, MODE_PRIVATE)
+                .edit()
+                .putBoolean(WEEK_SWIPE_HINT_SHOWN, true)
+                .apply();
+
+        TextView hint = new TextView(this);
+        hint.setText(R.string.week_swipe_hint);
+        hint.setContentDescription(getString(R.string.week_swipe_hint));
+        hint.setTextColor(Color.WHITE);
+        hint.setTextSize(14);
+        hint.setTypeface(Typeface.DEFAULT_BOLD);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(dp(18), 0, dp(18), 0);
+        hint.setMinHeight(dp(48));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(isDarkModeActive() ? color("#E61F73E0") : color("#E6172033"));
+        background.setCornerRadius(dp(24));
+        hint.setBackground(background);
+        hint.setAlpha(0f);
+        hint.setTranslationY(dp(8));
+        hint.setOnClickListener(v -> dismissWeekSwipeHint(hint));
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, dp(48),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        params.bottomMargin = bottomContentInset() + dp(18);
+        rootView.addView(hint, params);
+        weekSwipeHintView = hint;
+        hint.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(220L)
+                .start();
+        hint.announceForAccessibility(getString(R.string.week_swipe_hint));
+        hint.postDelayed(() -> dismissWeekSwipeHint(hint), 4200L);
+    }
+
+    private void dismissWeekSwipeHint(View hint) {
+        if (hint == null || weekSwipeHintView != hint) {
+            return;
+        }
+        hint.animate()
+                .alpha(0f)
+                .translationY(dp(8))
+                .setDuration(180L)
+                .withEndAction(() -> {
+                    if (hint.getParent() instanceof ViewGroup) {
+                        ((ViewGroup) hint.getParent()).removeView(hint);
+                    }
+                    if (weekSwipeHintView == hint) {
+                        weekSwipeHintView = null;
+                    }
+                })
+                .start();
+    }
+
+    private void showCourseSavedUndo(List<StructuredCourse> previousCourses) {
+        if (rootView == null || previousCourses == null) {
+            return;
+        }
+        if (courseSaveUndoView != null && courseSaveUndoView.getParent() instanceof ViewGroup) {
+            ((ViewGroup) courseSaveUndoView.getParent()).removeView(courseSaveUndoView);
+        }
+        if (weekSwipeHintView != null) {
+            dismissWeekSwipeHint(weekSwipeHintView);
+        }
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(18), 0, dp(8), 0);
+        bar.setContentDescription("课程已保存，可以撤销本次保存");
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(isDarkModeActive() ? color("#EE1F2D43") : color("#EE172033"));
+        background.setCornerRadius(dp(18));
+        bar.setBackground(background);
+
+        TextView saved = new TextView(this);
+        saved.setText(R.string.course_saved);
+        saved.setTextColor(Color.WHITE);
+        saved.setTextSize(15);
+        saved.setTypeface(Typeface.DEFAULT_BOLD);
+        saved.setGravity(Gravity.CENTER_VERTICAL);
+        bar.addView(saved, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+
+        TextView undo = new TextView(this);
+        undo.setText(R.string.undo);
+        undo.setTextColor(color("#8CC8FF"));
+        undo.setTextSize(15);
+        undo.setTypeface(Typeface.DEFAULT_BOLD);
+        undo.setGravity(Gravity.CENTER);
+        undo.setMinWidth(dp(64));
+        undo.setContentDescription("撤销本次课程保存");
+        undo.setOnClickListener(v -> restoreCoursesFromUndo(previousCourses, bar));
+        bar.addView(undo, new LinearLayout.LayoutParams(dp(72), dp(48)));
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, dp(52),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        params.setMargins(dp(16), 0, dp(16), bottomContentInset() + dp(18));
+        bar.setAlpha(0f);
+        bar.setTranslationY(dp(8));
+        rootView.addView(bar, params);
+        courseSaveUndoView = bar;
+        bar.animate().alpha(1f).translationY(0f).setDuration(180L).start();
+        bar.announceForAccessibility("课程已保存，可以撤销");
+        bar.postDelayed(() -> dismissCourseSaveUndo(bar), 6000L);
+    }
+
+    private void restoreCoursesFromUndo(
+            List<StructuredCourse> previousCourses, View undoBar) {
+        if (courseSaveUndoView != undoBar) {
+            return;
+        }
+        structuredCourses.clear();
+        structuredCourses.addAll(previousCourses);
+        refreshCourseView();
+        scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
+        rescheduleCourseReminders();
+        renderSchedule();
+        updateEmptyScheduleView();
+        refreshCourseManageList();
+        dismissCourseSaveUndo(undoBar);
+        Toast.makeText(this, R.string.course_save_undone, Toast.LENGTH_SHORT).show();
+    }
+
+    private void dismissCourseSaveUndo(View undoBar) {
+        if (undoBar == null || courseSaveUndoView != undoBar) {
+            return;
+        }
+        undoBar.animate()
+                .alpha(0f)
+                .translationY(dp(8))
+                .setDuration(160L)
+                .withEndAction(() -> {
+                    if (undoBar.getParent() instanceof ViewGroup) {
+                        ((ViewGroup) undoBar.getParent()).removeView(undoBar);
+                    }
+                    if (courseSaveUndoView == undoBar) {
+                        courseSaveUndoView = null;
+                    }
+                    scheduleWeekSwipeHintIfNeeded();
+                })
+                .start();
+    }
+
     private void showActionPanel(View anchor) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -1510,6 +1977,10 @@ public class MainActivity extends Activity {
         panel.addView(popupMenuAction("导入 PDF", v -> {
             popup.dismiss();
             openPdfPicker();
+        }));
+        panel.addView(popupMenuAction("导入课表图片", v -> {
+            popup.dismiss();
+            openScheduleImagePicker();
         }));
         panel.addView(popupMenuAction("导入分享链接", v -> {
             popup.dismiss();
@@ -2001,6 +2472,9 @@ public class MainActivity extends Activity {
     }
 
     private void showCourseEditor(Course course) {
+        if (courseSaveUndoView != null) {
+            dismissCourseSaveUndo(courseSaveUndoView);
+        }
         new CourseEditorDialog(
                 this,
                 course,
@@ -2013,6 +2487,7 @@ public class MainActivity extends Activity {
                 new CourseEditorDialog.Listener() {
                     @Override
                     public void onCourseSaved(Course original, Course edited) {
+                        List<StructuredCourse> previousCourses = new ArrayList<>(structuredCourses);
                         if (!CourseEditManager.applyStructuredEdit(
                                 structuredCourses, original, edited)) {
                             Toast.makeText(MainActivity.this,
@@ -2025,6 +2500,7 @@ public class MainActivity extends Activity {
                         rescheduleCourseReminders();
                         renderSchedule();
                         updateEmptyScheduleView();
+                        showCourseSavedUndo(previousCourses);
                         switchTab(0);
                     }
 
@@ -2397,6 +2873,7 @@ public class MainActivity extends Activity {
         }
         if (schedule) {
             updateHeader();
+            scheduleWeekSwipeHintIfNeeded();
         }
         if ("侧边".equals(bottomNavShape) && rootView != null) {
             refreshBottomNavView();
@@ -2422,16 +2899,170 @@ public class MainActivity extends Activity {
 
     private ScrollView buildMyPage() {
         ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(backgroundColor());
+        scrollView.setBackgroundColor(pageSurfaceColor());
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(0, statusBarHeight() + dp(34), 0, bottomContentInset() + dp(48));
         scrollView.addView(page);
-        page.addView(profileHeader());
-        page.addView(mySettingCard("课表设置", "schedule", v -> showScheduleSettings()));
-        page.addView(mySettingCard("全局设置", "settings", v -> showGlobalSettings()));
-        page.addView(mySettingCard("安全设置", "shield", v -> showSecuritySettings()));
+        if (isMinimalVisualTheme()) {
+            page.addView(profileHeader());
+            page.addView(mySettingCard("课表设置", "schedule", v -> showScheduleSettings()));
+            page.addView(mySettingCard("全局设置", "settings", v -> showGlobalSettings()));
+            page.addView(mySettingCard("安全设置", "shield", v -> showSecuritySettings()));
+        } else {
+            page.addView(themedProfileHeader());
+            page.addView(themedMySettingCard("课表设置", "schedule", v -> showScheduleSettings()));
+            page.addView(themedMySettingCard("全局设置", "settings", v -> showGlobalSettings()));
+            page.addView(themedMySettingCard("安全设置", "shield", v -> showSecuritySettings()));
+        }
         return scrollView;
+    }
+
+    private View themedProfileHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(18), dp(18), dp(18), dp(18));
+        header.setBackground(roundedBg(cardColorHex(), 26));
+        applyThemeElevation(header, 4);
+
+        CircleAvatarView avatar = new CircleAvatarView(this);
+        avatar.setProfile(accountName, avatarImageUri, avatarImageCrop);
+        avatar.setPlaceholderColor(PolarisVisualTheme.accentColor(
+                visualTheme, isDarkModeActive()));
+        avatar.setContentDescription("修改账户名称和头像");
+        avatar.setClickable(true);
+        avatar.setFocusable(true);
+        avatar.setOnClickListener(v -> showAccountProfileEditor());
+        header.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
+
+        LinearLayout identity = new LinearLayout(this);
+        identity.setOrientation(LinearLayout.VERTICAL);
+        identity.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams identityParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        identityParams.leftMargin = dp(18);
+        header.addView(identity, identityParams);
+
+        TextView name = new TextView(this);
+        name.setText(accountName);
+        name.setTextColor(inkColor());
+        name.setTextSize(22);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        identity.addView(name);
+
+        TextView school = themedProfileLine(displaySchoolName());
+        LinearLayout.LayoutParams schoolParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        schoolParams.topMargin = dp(6);
+        identity.addView(school, schoolParams);
+
+        TextView semester = themedProfileLine(displaySemesterName());
+        LinearLayout.LayoutParams semesterParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        semesterParams.topMargin = dp(3);
+        identity.addView(semester, semesterParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                Math.round(getResources().getDisplayMetrics().widthPixels * 0.88f),
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.setMargins(0, dp(8), 0, dp(18));
+        header.setLayoutParams(params);
+        return header;
+    }
+
+    private TextView themedProfileLine(String value) {
+        TextView line = new TextView(this);
+        line.setText(value);
+        line.setTextColor(mutedColor());
+        line.setTextSize(13);
+        line.setSingleLine(true);
+        line.setEllipsize(TextUtils.TruncateAt.END);
+        return line;
+    }
+
+    private View themedMySettingCard(String titleText, String iconType,
+                                     View.OnClickListener listener) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(16), dp(10), dp(14), dp(10));
+        card.setBackground(roundedBg(cardColorHex(), 22));
+        applyThemeElevation(card, 3);
+        card.setOnClickListener(listener);
+        attachCardPressFeedback(card, 22);
+
+        FrameLayout iconSurface = new FrameLayout(this);
+        iconSurface.setBackground(roundedBg(PolarisVisualTheme.hex(
+                PolarisVisualTheme.accentSurfaceColor(visualTheme, isDarkModeActive())), 16));
+        applyThemeElevation(iconSurface, 2);
+        MySettingIconView icon = new MySettingIconView(this, iconType,
+                themedIconColor(iconType), mutedColor());
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                dp(27), dp(27), Gravity.CENTER);
+        iconSurface.addView(icon, iconParams);
+        card.addView(iconSurface, new LinearLayout.LayoutParams(dp(46), dp(46)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        copyParams.leftMargin = dp(16);
+        card.addView(copy, copyParams);
+
+        TextView label = new TextView(this);
+        label.setText(titleText);
+        label.setTextColor(inkColor());
+        label.setTextSize(16);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        copy.addView(label);
+
+        TextView description = new TextView(this);
+        description.setText(themedSettingDescription(iconType));
+        description.setTextColor(mutedColor());
+        description.setTextSize(12);
+        LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        descriptionParams.topMargin = dp(3);
+        copy.addView(description, descriptionParams);
+
+        TextView arrow = new TextView(this);
+        arrow.setText("›");
+        arrow.setTextColor(mutedColor());
+        arrow.setTextSize(26);
+        arrow.setGravity(Gravity.CENTER);
+        card.addView(arrow, new LinearLayout.LayoutParams(dp(30), dp(48)));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                Math.round(getResources().getDisplayMetrics().widthPixels * 0.88f), dp(78));
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.setMargins(0, 0, 0, dp(12));
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private String themedSettingDescription(String iconType) {
+        if ("schedule".equals(iconType)) {
+            return "管理课表与上课时间";
+        }
+        if ("settings".equals(iconType)) {
+            return "主题、通知与显示设置";
+        }
+        return "账户与本机数据保护";
+    }
+
+    private int themedIconColor(String iconType) {
+        if ("settings".equals(iconType)) {
+            return color(isDarkModeActive() ? "#70D8F0" : "#238AB4");
+        }
+        if ("shield".equals(iconType)) {
+            return color(isDarkModeActive() ? "#7FE0B5" : "#2E8F68");
+        }
+        return PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
     }
 
     private View profileHeader() {
@@ -2602,6 +3233,17 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void applyThemeElevation(View view, int elevationDp) {
+        view.setElevation(dp(elevationDp));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            int accent = PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
+            view.setOutlineAmbientShadowColor(Color.argb(isDarkModeActive() ? 62 : 42,
+                    Color.red(accent), Color.green(accent), Color.blue(accent)));
+            view.setOutlineSpotShadowColor(Color.argb(isDarkModeActive() ? 88 : 58,
+                    Color.red(accent), Color.green(accent), Color.blue(accent)));
+        }
+    }
+
     private void attachCardPressFeedback(View view, int radius) {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
@@ -2630,7 +3272,8 @@ public class MainActivity extends Activity {
     }
 
     private String pressColorHex() {
-        return isDarkModeActive() ? "#22304A" : "#EAF1FA";
+        return PolarisVisualTheme.hex(
+                PolarisVisualTheme.pressColor(visualTheme, isDarkModeActive()));
     }
 
     private TextView sectionHeader(String text) {
@@ -2648,7 +3291,10 @@ public class MainActivity extends Activity {
         group.setTag(TAG_SETTINGS_GROUP);
         group.setOrientation(LinearLayout.VERTICAL);
         group.setPadding(dp(10), dp(10), dp(10), dp(10));
-        group.setBackground(roundedBg(groupColorHex(), 18));
+        group.setBackground(roundedBg(groupColorHex(), isMinimalVisualTheme() ? 18 : 22));
+        if (!isMinimalVisualTheme()) {
+            applyThemeElevation(group, 2);
+        }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(0, 0, 0, dp(8));
@@ -2966,6 +3612,7 @@ public class MainActivity extends Activity {
         }));
         panel.addView(dialogAction("跳过，使用默认日期", v -> dialog.dismiss()));
         dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnDismissListener(ignored -> scheduleWeekSwipeHintIfNeeded());
         dialog.setContentView(glassDialogContent(panel, 22));
         dialog.show();
         transparentDialog(dialog);
@@ -3270,14 +3917,22 @@ public class MainActivity extends Activity {
         for (Course course : courses) {
             String name = course.name == null || course.name.trim().length() == 0
                     ? "未命名课程" : course.name.trim();
-            CourseGroup group = groups.get(name);
+            String groupKey = course.structuredCourseId == null
+                    || course.structuredCourseId.trim().isEmpty()
+                    ? "legacy|" + name + "|" + normalizeTeacherIdentity(course.teacher)
+                    : "id|" + course.structuredCourseId;
+            CourseGroup group = groups.get(groupKey);
             if (group == null) {
                 group = new CourseGroup(name);
-                groups.put(name, group);
+                groups.put(groupKey, group);
             }
             group.courses.add(course);
         }
         return new ArrayList<>(groups.values());
+    }
+
+    private String normalizeTeacherIdentity(String teacher) {
+        return teacher == null ? "" : teacher.replaceAll("\\s+", "").trim();
     }
 
     private int courseTimeValue(Course course) {
@@ -3597,9 +4252,10 @@ public class MainActivity extends Activity {
         previousSettingsTitle = backTarget == null ? "" : backTarget;
         activeSettingsTitle = headingText;
         boolean settingsAlreadyVisible = settingsPage.getVisibility() == View.VISIBLE;
+        settingsPage.animate().cancel();
         settingsPage.clearAnimation();
         settingsPage.removeAllViews();
-        settingsPage.setBackgroundColor(backgroundColor());
+        settingsPage.setBackgroundColor(pageSurfaceColor());
         settingsPage.setAlpha(1f);
         if (suppressSettingsPageAnimation || settingsAlreadyVisible) {
             settingsPage.setTranslationX(0f);
@@ -3610,7 +4266,7 @@ public class MainActivity extends Activity {
         fixedHeader.setOrientation(LinearLayout.HORIZONTAL);
         fixedHeader.setGravity(Gravity.CENTER_VERTICAL);
         fixedHeader.setPadding(0, statusBarHeight() + dp(8), 0, dp(8));
-        fixedHeader.setBackgroundColor(backgroundColor());
+        fixedHeader.setBackgroundColor(settingsHeaderSurfaceColor());
 
         TextView back = new TextView(this);
         back.setText("‹");
@@ -3632,7 +4288,7 @@ public class MainActivity extends Activity {
         ScrollView contentScroll = new ScrollView(this);
         contentScroll.setTag(TAG_SETTINGS_SCROLL);
         contentScroll.setFillViewport(true);
-        contentScroll.setBackgroundColor(backgroundColor());
+        contentScroll.setBackgroundColor(pageSurfaceColor());
         contentScroll.addView(panel);
         FrameLayout.LayoutParams scrollParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
@@ -3645,9 +4301,15 @@ public class MainActivity extends Activity {
             scheduleBoard.setVisibility(View.GONE);
         }
         if (myPage != null) {
+            myPage.animate().cancel();
+            myPage.setClipBounds(null);
             myPage.setVisibility(View.GONE);
             myPage.setTranslationX(0f);
             myPage.setAlpha(1f);
+        }
+        if (bottomNavView != null) {
+            bottomNavView.animate().cancel();
+            bottomNavView.setClipBounds(null);
         }
         settingsPage.setVisibility(View.VISIBLE);
         if (topPanelContainer != null) {
@@ -3727,14 +4389,14 @@ public class MainActivity extends Activity {
         if (settingsPage == null || settingsPage.getVisibility() != View.VISIBLE) {
             return;
         }
-        settingsPage.setBackgroundColor(backgroundColor());
+        settingsPage.setBackgroundColor(pageSurfaceColor());
         refreshSettingsThemeRecursive(settingsPage);
     }
 
     private void refreshSettingsThemeRecursive(View view) {
         Object tag = view.getTag();
         if (TAG_SETTINGS_GROUP.equals(tag)) {
-            view.setBackground(roundedBg(groupColorHex(), 18));
+            view.setBackground(roundedBg(groupColorHex(), isMinimalVisualTheme() ? 18 : 22));
         } else if (TAG_SECTION_HEADER.equals(tag) && view instanceof TextView) {
             ((TextView) view).setTextColor(mutedColor());
         } else if (TAG_SETTING_LABEL.equals(tag) && view instanceof TextView) {
@@ -3744,9 +4406,9 @@ public class MainActivity extends Activity {
         } else if (TAG_SWITCH_THUMB.equals(tag) && view instanceof SwitchThumbView) {
             ((SwitchThumbView) view).setDark(isDarkModeActive());
         } else if (TAG_SETTINGS_HEADER.equals(tag)) {
-            view.setBackgroundColor(backgroundColor());
+            view.setBackgroundColor(settingsHeaderSurfaceColor());
         } else if (TAG_SETTINGS_SCROLL.equals(tag)) {
-            view.setBackgroundColor(backgroundColor());
+            view.setBackgroundColor(pageSurfaceColor());
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -3800,17 +4462,53 @@ public class MainActivity extends Activity {
             return;
         }
         if (myPage != null) {
+            myPage.animate().cancel();
             myPage.setVisibility(View.VISIBLE);
-            myPage.setTranslationX(0f);
             myPage.setAlpha(1f);
         }
         int width = settingsPage.getWidth() > 0
                 ? settingsPage.getWidth()
                 : getResources().getDisplayMetrics().widthPixels;
+        int revealOffset = dp(SETTINGS_PAGE_REVEAL_OFFSET_DP);
+        int pageHeight = myPage == null ? 0 : Math.max(1, myPage.getHeight());
+        if (myPage != null) {
+            myPage.setTranslationX(-revealOffset);
+            myPage.setClipBounds(new Rect(0, 0, revealOffset, pageHeight));
+        }
+        if (bottomNavView != null) {
+            bottomNavView.animate().cancel();
+            bottomNavView.setTranslationY(0f);
+            bottomNavView.setAlpha(1f);
+            bottomNavView.setClipBounds(new Rect(0, 0, 0,
+                    Math.max(1, bottomNavView.getHeight())));
+            bottomNavView.setVisibility(View.VISIBLE);
+        }
+        settingsPage.animate().cancel();
         settingsPage.animate()
                 .translationX(width)
-                .setDuration(170)
+                .setDuration(SETTINGS_PAGE_EXIT_DURATION_MS)
+                .setInterpolator(new DecelerateInterpolator())
+                .setUpdateListener(animation -> {
+                    int revealedWidth = Math.max(0,
+                            Math.min(width, Math.round(settingsPage.getTranslationX())));
+                    float progress = width == 0 ? 1f : revealedWidth / (float) width;
+                    if (myPage != null) {
+                        float translation = -revealOffset * (1f - progress);
+                        myPage.setTranslationX(translation);
+                        int localRevealRight = Math.round(revealedWidth - translation);
+                        myPage.setClipBounds(new Rect(0, 0,
+                                Math.min(myPage.getWidth(), localRevealRight),
+                                Math.max(1, myPage.getHeight())));
+                    }
+                    if (bottomNavView != null) {
+                        int localRevealRight = Math.max(0, Math.min(bottomNavView.getWidth(),
+                                revealedWidth - bottomNavView.getLeft()));
+                        bottomNavView.setClipBounds(new Rect(0, 0, localRevealRight,
+                                Math.max(1, bottomNavView.getHeight())));
+                    }
+                })
                 .withEndAction(() -> {
+                    settingsPage.animate().setUpdateListener(null);
                     settingsPage.setAlpha(1f);
                     settingsPage.setTranslationX(0f);
                     switchTab(1);
@@ -3818,6 +4516,12 @@ public class MainActivity extends Activity {
                         myPage.setVisibility(View.VISIBLE);
                         myPage.setTranslationX(0f);
                         myPage.setAlpha(1f);
+                        myPage.setClipBounds(null);
+                    }
+                    if (bottomNavView != null) {
+                        bottomNavView.setClipBounds(null);
+                        bottomNavView.setTranslationY(0f);
+                        bottomNavView.setAlpha(1f);
                     }
                 })
                 .start();
@@ -3928,6 +4632,9 @@ public class MainActivity extends Activity {
         panel.addView(sectionHeader("显示"));
         LinearLayout displayCard = settingsGroup();
         displayCard.addView(settingValueRow("课程表", scheduleName, v -> showScheduleSwitchDialog()));
+        displayCard.addView(settingValueRow("视觉主题", visualTheme,
+                v -> showChoiceDialog(v, "视觉主题", PolarisVisualTheme.NAMES,
+                        visualTheme, this::applyVisualTheme)));
         displayCard.addView(settingValueRow("深色模式", darkMode,
                 v -> showChoiceDialog(v, "深色模式", new String[]{"跟随系统", "浅色", "深色"}, darkMode,
                         value -> {
@@ -3964,7 +4671,35 @@ public class MainActivity extends Activity {
         }));
         panel.addView(displayCard);
 
-        panel.addView(sectionHeader("界面"));
+        panel.addView(sectionHeader("外观"));
+        LinearLayout presetCard = settingsGroup();
+        appearancePresetSettingRow = settingValueRow("外观预设", appearancePresetName(),
+                v -> showChoiceDialog(v, "外观预设", APPEARANCE_PRESETS,
+                        appearancePresetName(), this::applyAppearancePreset));
+        presetCard.addView(appearancePresetSettingRow);
+
+        LinearLayout advancedContainer = new LinearLayout(this);
+        advancedContainer.setOrientation(LinearLayout.VERTICAL);
+        advancedContainer.setVisibility(View.GONE);
+        final boolean[] advancedExpanded = {false};
+        final View[] advancedToggle = new View[1];
+        advancedToggle[0] = settingValueRow("高级设置", "已收起", v -> {
+            advancedExpanded[0] = !advancedExpanded[0];
+            advancedContainer.setVisibility(advancedExpanded[0] ? View.VISIBLE : View.GONE);
+            updateSettingValueRow(advancedToggle[0], advancedExpanded[0] ? "已展开" : "已收起");
+        });
+        presetCard.addView(advancedToggle[0]);
+        panel.addView(presetCard);
+
+        advancedContainer.addView(sectionHeader("界面细节"));
+        advancedContainer.addView(buildAdvancedShellSettings());
+        advancedContainer.addView(sectionHeader("课表框架"));
+        advancedContainer.addView(buildAdvancedScheduleFrameSettings());
+        panel.addView(advancedContainer);
+        showSettingsPage("全局设置", panel);
+    }
+
+    private LinearLayout buildAdvancedShellSettings() {
         LinearLayout shellCard = settingsGroup();
         shellCard.addView(settingSwitchRow("全局毛玻璃效果", shellBarsBlurEnabled, value -> {
             shellBarsBlurEnabled = value;
@@ -3976,14 +4711,14 @@ public class MainActivity extends Activity {
                     timetableHeaderOpacity = Math.max(40, Math.min(100, value));
                     saveGlobalAppearance();
                     applyShellAppearance();
-                    refreshActiveSettingsPage();
+                    updateSettingValueRow(v, timetableHeaderOpacity + "%");
                 })));
         shellCard.addView(settingValueRow("课表底部透明度", bottomNavOpacity + "%",
                 v -> showNumberDialog("课表底部透明度", 40, 100, bottomNavOpacity, value -> {
                     bottomNavOpacity = Math.max(40, Math.min(100, value));
                     saveGlobalAppearance();
                     applyShellAppearance();
-                    refreshActiveSettingsPage();
+                    updateSettingValueRow(v, bottomNavOpacity + "%");
                 })));
         shellCard.addView(settingValueRow("底部切换栏高度", bottomNavHeight + " dp",
                 v -> showNumberDialog("底部切换栏高度", 56, 120, bottomNavHeight, 1, value -> {
@@ -3992,11 +4727,11 @@ public class MainActivity extends Activity {
                     applyShellAppearance();
                     refreshMyPageBehindSettings();
                     renderSchedule();
-                    refreshActiveSettingsPage();
+                    updateSettingValueRow(v, bottomNavHeight + " dp");
                 })));
         shellCard.addView(settingValueRow("底部切换栏形状", bottomNavShape,
-                v -> showChoiceDialog(v, "底部切换栏形状", new String[]{"矩形", "分散", "侧边"}, bottomNavShape,
-                        value -> {
+                v -> showChoiceDialog(v, "底部切换栏形状",
+                        new String[]{"矩形", "分散", "侧边"}, bottomNavShape, value -> {
                             bottomNavShape = normalizeBottomNavShape(value);
                             saveGlobalAppearance();
                             applyShellAppearance();
@@ -4016,33 +4751,108 @@ public class MainActivity extends Activity {
                     applyShellAppearance();
                     updateSettingValueRow(v, bottomNavSideMargin + " dp");
                 })));
-        panel.addView(shellCard);
+        return shellCard;
+    }
 
-        panel.addView(sectionHeader("课表框架"));
+    private LinearLayout buildAdvancedScheduleFrameSettings() {
         LinearLayout frameCard = settingsGroup();
         frameCard.addView(settingValueRow("课程格子高度", courseCellHeight + " dp",
                 v -> showNumberDialog("课程格子高度", 56, 120, courseCellHeight, value -> {
-                    courseCellHeight = value;
+                    courseCellHeight = Math.max(56, Math.min(120, value));
                     saveGlobalAppearance();
                     renderSchedule();
-                    refreshActiveSettingsPage();
+                    updateSettingValueRow(v, courseCellHeight + " dp");
                 })));
         frameCard.addView(settingValueRow("格子圆角半径", courseCornerRadius + " dp",
                 v -> showNumberDialog("格子圆角半径", 0, 24, courseCornerRadius, value -> {
-                    courseCornerRadius = value;
+                    courseCornerRadius = Math.max(0, Math.min(24, value));
                     saveGlobalAppearance();
                     renderSchedule();
-                    refreshActiveSettingsPage();
+                    updateSettingValueRow(v, courseCornerRadius + " dp");
                 })));
         frameCard.addView(settingValueRow("格子不透明度", courseBlockOpacity + "%",
                 v -> showNumberDialog("格子不透明度", 45, 100, courseBlockOpacity, value -> {
                     courseBlockOpacity = Math.max(45, Math.min(100, value));
                     saveGlobalAppearance();
                     renderSchedule();
-                    refreshActiveSettingsPage();
+                    updateSettingValueRow(v, courseBlockOpacity + "%");
                 })));
-        panel.addView(frameCard);
-        showSettingsPage("全局设置", panel);
+        return frameCard;
+    }
+
+    private String appearancePresetName() {
+        if (matchesAppearancePreset(78, 86, 60, 58, 10, 76, 9, 70)) {
+            return "标准";
+        }
+        if (matchesAppearancePreset(90, 94, 56, 22, 8, 64, 7, 88)) {
+            return "紧凑";
+        }
+        if (matchesAppearancePreset(55, 64, 64, 32, 14, 82, 14, 62)) {
+            return "沉浸";
+        }
+        return "自定义";
+    }
+
+    private boolean matchesAppearancePreset(
+            int headerOpacity, int navOpacity, int navHeight, int navRadius,
+            int navMargin, int cellHeight, int cellRadius, int cellOpacity) {
+        return timetableHeaderOpacity == headerOpacity
+                && bottomNavOpacity == navOpacity
+                && bottomNavHeight == navHeight
+                && bottomNavRadius() == navRadius
+                && bottomNavSideMargin == navMargin
+                && courseCellHeight == cellHeight
+                && courseCornerRadius == cellRadius
+                && courseBlockOpacity == cellOpacity;
+    }
+
+    private void applyAppearancePreset(String preset) {
+        if ("紧凑".equals(preset)) {
+            setAppearanceValues(90, 94, 56, 22, 8, 64, 7, 88);
+        } else if ("沉浸".equals(preset)) {
+            setAppearanceValues(55, 64, 64, 32, 14, 82, 14, 62);
+        } else {
+            setAppearanceValues(78, 86, 60, 58, 10, 76, 9, 70);
+        }
+        saveGlobalAppearance();
+        applyShellAppearance();
+        refreshMyPageBehindSettings();
+        renderSchedule();
+        refreshActiveSettingsPage();
+        Toast.makeText(this, "已应用“" + appearancePresetName() + "”外观", Toast.LENGTH_SHORT).show();
+    }
+
+    private void applyVisualTheme(String value) {
+        String nextTheme = PolarisVisualTheme.normalize(value);
+        if (nextTheme.equals(visualTheme)) {
+            return;
+        }
+        visualTheme = nextTheme;
+        if (!PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+            darkMode = PolarisVisualTheme.defaultDark(visualTheme) ? "深色" : "浅色";
+            scheduleRepository.saveGlobalDarkMode(darkMode);
+        }
+        saveGlobalAppearance();
+        applyShellAppearance();
+        refreshMyPageBehindSettings();
+        renderSchedule();
+        refreshActiveSettingsPage();
+        Toast.makeText(this, "已切换为“" + visualTheme + "”", Toast.LENGTH_SHORT).show();
+    }
+
+    private void setAppearanceValues(
+            int headerOpacity, int navOpacity, int navHeight, int navRadius,
+            int navMargin, int cellHeight, int cellRadius, int cellOpacity) {
+        timetableHeaderOpacity = headerOpacity;
+        bottomNavOpacity = navOpacity;
+        bottomNavHeight = navHeight;
+        bottomNavRectCornerRadius = navRadius;
+        bottomNavSplitCornerRadius = navRadius;
+        bottomNavSideCornerRadius = navRadius;
+        bottomNavSideMargin = navMargin;
+        courseCellHeight = cellHeight;
+        courseCornerRadius = cellRadius;
+        courseBlockOpacity = cellOpacity;
     }
 
     private void applyShellAppearance() {
@@ -4054,8 +4864,18 @@ public class MainActivity extends Activity {
         if (rootView != null) {
             rootView.setBackgroundColor(backgroundColor());
         }
+        if (themeBackgroundView != null) {
+            themeBackgroundView.setVisualTheme(visualTheme, isDarkModeActive());
+        }
+        if (scheduleBoard != null) {
+            scheduleBoard.setVisualTheme(visualTheme);
+            scheduleBoard.setDarkMode(isDarkModeActive());
+        }
         if (topPanelGlassLayer != null) {
             updateGlassLayer(topPanelGlassLayer, liquidGlassBg(timetableHeaderOpacity), 24);
+        }
+        if (topPanelContainer != null) {
+            topPanelContainer.setElevation(0f);
         }
         if (bottomNavView != null) {
             refreshBottomNavView();
@@ -4069,6 +4889,10 @@ public class MainActivity extends Activity {
         if (overflowMenuButton != null) {
             overflowMenuButton.setTextColor(inkColor());
         }
+        if (returnCurrentWeekButton != null) {
+            returnCurrentWeekButton.setTextColor(inkColor());
+            returnCurrentWeekButton.setBackground(roundedBg(cardColorHex(), 14));
+        }
         updateTodayOverview();
         updateConflictSummary();
         if (scheduleNav != null) {
@@ -4080,7 +4904,7 @@ public class MainActivity extends Activity {
             myNav.setTextColor(active ? inkColor() : mutedColor());
         }
         if (settingsPage != null) {
-            settingsPage.setBackgroundColor(backgroundColor());
+            settingsPage.setBackgroundColor(pageSurfaceColor());
         }
         refreshEmptyScheduleAppearance();
     }
@@ -4410,6 +5234,7 @@ public class MainActivity extends Activity {
         lateAfternoonStartTime = normalizedTimeText(config.lateAfternoonStartTime);
         firstWeekDay = config.firstWeekDay;
         timetableBackground = config.timetableBackground;
+        visualTheme = PolarisVisualTheme.normalize(config.visualTheme);
         backgroundImageUri = config.backgroundImageUri;
         backgroundImageCrop = BackgroundImageCrop.of(
                 config.backgroundCropLeft,
@@ -4464,6 +5289,7 @@ public class MainActivity extends Activity {
         config.semesterName = semesterName;
         config.schoolName = schoolName;
         config.timetableBackground = timetableBackground;
+        config.visualTheme = visualTheme;
         config.backgroundImageUri = backgroundImageUri;
         config.backgroundCropLeft = backgroundImageCrop.left;
         config.backgroundCropTop = backgroundImageCrop.top;
@@ -4649,11 +5475,15 @@ public class MainActivity extends Activity {
         for (ScheduleRepository.ScheduleEntry entry : schedules) {
             copyGlobalAppearanceToSchedule(entry.id);
         }
+        if (appearancePresetSettingRow != null) {
+            updateSettingValueRow(appearancePresetSettingRow, appearancePresetName());
+        }
     }
 
     private void copyGlobalAppearanceToSchedule(String scheduleId) {
         ScheduleRepository.Config config = scheduleRepository.loadConfig(scheduleId);
         config.timetableBackground = timetableBackground;
+        config.visualTheme = visualTheme;
         config.backgroundImageUri = backgroundImageUri;
         config.backgroundCropLeft = backgroundImageCrop.left;
         config.backgroundCropTop = backgroundImageCrop.top;
@@ -4767,6 +5597,9 @@ public class MainActivity extends Activity {
     }
 
     private int backgroundColor() {
+        if (!isMinimalVisualTheme()) {
+            return PolarisVisualTheme.pageColor(visualTheme, isDarkModeActive());
+        }
         if (isDarkModeActive()) {
             return color("#0D1422");
         }
@@ -4791,27 +5624,34 @@ public class MainActivity extends Activity {
     }
 
     private int inkColor() {
-        return isDarkModeActive() ? color("#EEF4FF") : color("#172033");
+        return PolarisVisualTheme.inkColor(visualTheme, isDarkModeActive());
     }
 
     private int mutedColor() {
-        return isDarkModeActive() ? color("#9AA8BE") : color("#667085");
+        return PolarisVisualTheme.mutedColor(visualTheme, isDarkModeActive());
     }
 
     private String cardColorHex() {
-        return isDarkModeActive() ? "#182235" : "#F8FBFF";
+        return PolarisVisualTheme.hex(
+                PolarisVisualTheme.cardColor(visualTheme, isDarkModeActive()));
     }
 
     private String groupColorHex() {
-        return isDarkModeActive() ? "#141E30" : "#F2F0FA";
+        return PolarisVisualTheme.hex(
+                PolarisVisualTheme.groupColor(visualTheme, isDarkModeActive()));
     }
 
     private String selectedFillHex() {
+        if (!isMinimalVisualTheme()) {
+            return PolarisVisualTheme.hex(
+                    PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+        }
         return isDarkModeActive() ? "#FFFFFF" : "#172033";
     }
 
     private String primaryActionFillHex() {
-        return isDarkModeActive() ? "#1F73E0" : "#172033";
+        return PolarisVisualTheme.hex(
+                PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
     }
 
     private int bottomNavRadius() {
@@ -4843,7 +5683,29 @@ public class MainActivity extends Activity {
     }
 
     private int selectedTextColor() {
+        if (!isMinimalVisualTheme()) {
+            return Color.WHITE;
+        }
         return isDarkModeActive() ? color("#172033") : Color.WHITE;
+    }
+
+    private boolean isMinimalVisualTheme() {
+        return PolarisVisualTheme.MINIMAL.equals(
+                PolarisVisualTheme.normalize(visualTheme));
+    }
+
+    private int pageSurfaceColor() {
+        return isMinimalVisualTheme() ? backgroundColor() : Color.TRANSPARENT;
+    }
+
+    private int settingsHeaderSurfaceColor() {
+        if (isMinimalVisualTheme()) {
+            return backgroundColor();
+        }
+        int surface = PolarisVisualTheme.cardColor(visualTheme, isDarkModeActive());
+        int alpha = isDarkModeActive() ? 220 : 226;
+        return Color.argb(Math.min(alpha, Color.alpha(surface)),
+                Color.red(surface), Color.green(surface), Color.blue(surface));
     }
 
     private int color(String hex) {
@@ -4934,12 +5796,27 @@ public class MainActivity extends Activity {
             alphaPercent = boundedOpacity;
         }
         int alpha = Math.round(255f * alphaPercent / 100f);
-        if (isDarkModeActive()) {
-            drawable.setColor(Color.argb(alpha, 24, 34, 53));
-            drawable.setStroke(dp(1), Color.argb(shellBarsBlurEnabled ? 90 : 130, 255, 255, 255));
+        boolean dark = isDarkModeActive();
+        int neutralSurface = dark ? Color.rgb(24, 34, 53) : Color.rgb(248, 251, 255);
+        int neutralStroke = dark
+                ? Color.argb(shellBarsBlurEnabled ? 90 : 130, 255, 255, 255)
+                : Color.argb(shellBarsBlurEnabled ? 150 : 190, 103, 116, 138);
+        if (isMinimalVisualTheme()) {
+            drawable.setColor(Color.argb(alpha,
+                    Color.red(neutralSurface), Color.green(neutralSurface), Color.blue(neutralSurface)));
+            drawable.setStroke(dp(1), neutralStroke);
         } else {
-            drawable.setColor(Color.argb(alpha, 248, 251, 255));
-            drawable.setStroke(dp(1), Color.argb(shellBarsBlurEnabled ? 150 : 190, 103, 116, 138));
+            int[] themeTints = PolarisVisualTheme.glassTintColors(
+                    visualTheme, dark, neutralSurface);
+            drawable.setColors(new int[]{
+                    Color.argb(alpha, Color.red(themeTints[0]),
+                            Color.green(themeTints[0]), Color.blue(themeTints[0])),
+                    Color.argb(alpha, Color.red(themeTints[1]),
+                            Color.green(themeTints[1]), Color.blue(themeTints[1]))
+            });
+            drawable.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
+            drawable.setStroke(dp(1),
+                    PolarisVisualTheme.glassStrokeColor(visualTheme, dark, neutralStroke));
         }
         drawable.setCornerRadius(dp(radius));
         return drawable;
@@ -4959,9 +5836,14 @@ public class MainActivity extends Activity {
     private GradientDrawable roundedBg(String hex, int radius) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color(hex));
-        drawable.setStroke(dp(1), isDarkModeActive()
-                ? Color.argb(42, 255, 255, 255)
-                : Color.argb(130, 255, 255, 255));
+        if (isMinimalVisualTheme()) {
+            drawable.setStroke(dp(1), isDarkModeActive()
+                    ? Color.argb(42, 255, 255, 255)
+                    : Color.argb(130, 255, 255, 255));
+        } else {
+            drawable.setStroke(dp(1),
+                    PolarisVisualTheme.outlineColor(visualTheme, isDarkModeActive()));
+        }
         drawable.setCornerRadius(dp(radius));
         return drawable;
     }

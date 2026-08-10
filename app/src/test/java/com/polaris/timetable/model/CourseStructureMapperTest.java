@@ -162,6 +162,22 @@ public class CourseStructureMapperTest {
     }
 
     @Test
+    public void sameSlotAndNameWithDifferentTeachersBecomeDifferentStructuredCourses() {
+        Course first = new Course(
+                0, 1, 2, "大学英语", "1-16周", "A101", "张老师", "");
+        Course second = new Course(
+                0, 1, 2, "大学英语", "1-16周", "A101", "李老师", "");
+
+        List<StructuredCourse> structured = new CourseStructureMapper()
+                .fromLegacyCourses(Arrays.asList(first, second));
+
+        assertEquals(2, structured.size());
+        assertEquals("张老师", structured.get(0).teacher);
+        assertEquals("李老师", structured.get(1).teacher);
+        assertNotEquals(structured.get(0).id, structured.get(1).id);
+    }
+
+    @Test
     public void distinctStableIdsKeepOtherwiseIdenticalCoursesSeparate() {
         String firstId = "11111111-1111-4111-8111-111111111111";
         String secondId = "22222222-2222-4222-8222-222222222222";

@@ -11,6 +11,7 @@ import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseStructureMapper;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableCourseId;
+import com.polaris.timetable.model.StableMeetingId;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
 
@@ -95,7 +96,8 @@ public class ScheduleRepositoryCanonicalTest {
     public void corruptedStructuredData_recoversFromLegacyCompatibilityJson() throws Exception {
         InMemorySharedPreferences preferences = new InMemorySharedPreferences();
         ScheduleRepository repository = new ScheduleRepository(preferences);
-        repository.saveStructuredCourses("semester", Collections.singletonList(course()));
+        StructuredCourse original = course();
+        repository.saveStructuredCourses("semester", Collections.singletonList(original));
         preferences.edit().putString("structured_courses_semester", "[{broken]").apply();
 
         List<StructuredCourse> restored = new ScheduleRepository(preferences)
@@ -105,10 +107,59 @@ public class ScheduleRepositoryCanonicalTest {
         assertEquals(ID, restored.get(0).id);
         CourseStructureMapper mapper = new CourseStructureMapper();
         assertCourseViewsEqual(
-                mapper.toLegacyCourses(Collections.singletonList(course())),
+                mapper.toLegacyCourses(Collections.singletonList(original)),
                 mapper.toLegacyCourses(restored));
         assertTrue(preferences.getString("structured_courses_semester", "")
                 .contains("\"id\":\"" + ID + "\""));
+    }
+
+    @Test
+    public void versionOneJsonWithoutMeetingId_isPersistedOnceAndStableAfterRestart()
+            throws Exception {
+        InMemorySharedPreferences preferences = new InMemorySharedPreferences();
+        String v1Json = "[{\"id\":\"" + ID + "\",\"name\":\"高等数学\","
+                + "\"teacher\":\"李老师\",\"defaultLocation\":\"A101\","
+                + "\"meetings\":[{\"day\":0,\"startSection\":1,\"endSection\":2,"
+                + "\"location\":\"A101\",\"teacher\":\"李老师\","
+                + "\"weekRule\":{\"type\":\"RANGE\",\"startWeek\":1,"
+                + "\"endWeek\":16,\"rawText\":\"1-16周\"}}]}]";
+        preferences.edit()
+                .putString("structured_courses_v1", v1Json)
+                .putInt("schema_version_v1", ScheduleStorageSchema.STRUCTURED_COURSE_ID_VERSION)
+                .apply();
+
+        List<StructuredCourse> firstRead = new ScheduleRepository(preferences)
+                .loadStructuredCourses("v1");
+        String generatedId = firstRead.get(0).meetings.get(0).id;
+        List<StructuredCourse> secondRead = new ScheduleRepository(preferences)
+                .loadStructuredCourses("v1");
+
+        assertTrue(StableMeetingId.isValid(generatedId));
+        assertEquals(generatedId, secondRead.get(0).meetings.get(0).id);
+        assertEquals(ScheduleStorageSchema.CURRENT_VERSION,
+                preferences.getInt("schema_version_v1", -1));
+        assertTrue(preferences.getString("structured_courses_v1", "")
+                .contains("\"id\":\"" + generatedId + "\""));
+    }
+
+    @Test
+    public void corruptedStructuredJsonWithoutLegacyRecovery_isNeverOverwrittenWithEmptyData() {
+        InMemorySharedPreferences preferences = new InMemorySharedPreferences();
+        String corrupted = "[{broken]";
+        preferences.edit()
+                .putString("structured_courses_broken", corrupted)
+                .putInt("schema_version_broken",
+                        ScheduleStorageSchema.STRUCTURED_COURSE_ID_VERSION)
+                .apply();
+
+        List<StructuredCourse> restored = new ScheduleRepository(preferences)
+                .loadStructuredCourses("broken");
+
+        assertTrue(restored.isEmpty());
+        assertEquals(corrupted,
+                preferences.getString("structured_courses_broken", ""));
+        assertEquals(ScheduleStorageSchema.STRUCTURED_COURSE_ID_VERSION,
+                preferences.getInt("schema_version_broken", -1));
     }
 
     private StructuredCourse course() {
@@ -141,6 +192,7 @@ public class ScheduleRepositoryCanonicalTest {
         for (int index = 0; index < expected.meetings.size(); index++) {
             CourseMeeting first = expected.meetings.get(index);
             CourseMeeting second = actual.meetings.get(index);
+            assertEquals(first.id, second.id);
             assertEquals(first.day, second.day);
             assertEquals(first.startSection, second.startSection);
             assertEquals(first.endSection, second.endSection);
@@ -161,6 +213,7 @@ public class ScheduleRepositoryCanonicalTest {
             Course first = expected.get(index);
             Course second = actual.get(index);
             assertEquals(first.structuredCourseId, second.structuredCourseId);
+            assertEquals(first.meetingId, second.meetingId);
             assertEquals(first.name, second.name);
             assertEquals(first.day, second.day);
             assertEquals(first.startSection, second.startSection);

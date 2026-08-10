@@ -15,6 +15,7 @@ public class Course {
     public final String color;
     public final CourseType courseType;
     public final String structuredCourseId;
+    public final String meetingId;
 
     public Course(int day, int startSection, int endSection, String name, String weeks,
                   String location, String teacher, String raw) {
@@ -42,6 +43,13 @@ public class Course {
     public Course(int day, int startSection, int endSection, String name, String weeks,
                   String location, String teacher, String raw, String credit, String color,
                   CourseType courseType, String structuredCourseId) {
+        this(day, startSection, endSection, name, weeks, location, teacher, raw,
+                credit, color, courseType, structuredCourseId, "");
+    }
+
+    public Course(int day, int startSection, int endSection, String name, String weeks,
+                  String location, String teacher, String raw, String credit, String color,
+                  CourseType courseType, String structuredCourseId, String meetingId) {
         this.day = day;
         this.startSection = startSection;
         this.endSection = endSection;
@@ -54,6 +62,7 @@ public class Course {
         this.color = color == null ? "" : color;
         this.courseType = courseType == null ? CourseType.LECTURE : courseType;
         this.structuredCourseId = structuredCourseId == null ? "" : structuredCourseId;
+        this.meetingId = meetingId == null ? "" : meetingId;
     }
 
     public boolean hasFixedTime() {

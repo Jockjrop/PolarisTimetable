@@ -52,7 +52,7 @@ public class ScheduleStorageSchemaTest {
         ScheduleStorageSchema.MigrationResult first = ScheduleStorageSchema.migrate(
                 0, oldCourses, sequence(FIRST_UUID, SECOND_UUID));
         ScheduleStorageSchema.MigrationResult second = ScheduleStorageSchema.migrate(
-                1, first.courses, sequence(
+                ScheduleStorageSchema.CURRENT_VERSION, first.courses, sequence(
                         "33333333-3333-4333-8333-333333333333"));
 
         assertEquals(2, first.courses.size());

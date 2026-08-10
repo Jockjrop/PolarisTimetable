@@ -7,9 +7,9 @@ import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
-import android.text.InputType;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.ContextThemeWrapper;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsetsController;
@@ -17,6 +17,7 @@ import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.NumberPicker;
 import android.widget.ScrollView;
 import android.widget.Space;
 import android.widget.TextView;
@@ -26,11 +27,15 @@ import com.polaris.timetable.Course;
 import com.polaris.timetable.CourseDeletionScope;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableCourseId;
+import com.polaris.timetable.model.WeekRule;
+import com.polaris.timetable.parser.WeekRuleParser;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public final class CourseEditorDialog {
+    private static final int MAX_SELECTABLE_WEEK = 20;
+    private static final WeekRuleParser WEEK_RULE_PARSER = new WeekRuleParser();
     public interface Listener {
         void onCourseSaved(Course original, Course edited);
 
@@ -125,20 +130,53 @@ public final class CourseEditorDialog {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         EditText name = input("课程名称", original.name);
-        EditText weeks = input("第1-20周", original.weeks.isEmpty() ? defaultWeeks() : original.weeks);
-        EditText day = input("周几 1-7", original.hasFixedTime() ? String.valueOf(original.day + 1) : "");
-        EditText start = input("开始节次", original.hasFixedTime() ? String.valueOf(original.startSection) : "");
-        EditText end = input("结束节次", original.hasFixedTime() ? String.valueOf(original.endSection) : "");
         EditText teacher = input("授课老师（可不填）", original.teacher);
         EditText location = input("上课地点（可不填）", original.location);
-        day.setInputType(InputType.TYPE_CLASS_NUMBER);
-        start.setInputType(InputType.TYPE_CLASS_NUMBER);
-        end.setInputType(InputType.TYPE_CLASS_NUMBER);
 
         final String[] selectedColor = {normalizeColor(original.color)};
         final CourseType[] selectedType = {original.courseType};
         final boolean[] bannerOnly = {original.isBannerOnlyCourse()};
-        View timeInputRow = timeRow(day, start, end);
+        final int[] selectedDay = {
+                original.hasFixedTime() ? Math.max(0, Math.min(6, original.day)) : 0};
+        final int[] selectedStart = {
+                original.hasFixedTime() ? Math.max(1, original.startSection) : 1};
+        final int[] selectedEnd = {
+                original.hasFixedTime()
+                        ? Math.max(selectedStart[0], original.endSection)
+                        : Math.min(2, sectionCount)};
+        final WeekSelection[] selectedWeeks = {
+                WeekSelection.from(original.weeks.isEmpty() ? defaultWeeks() : original.weeks)};
+
+        View weeksAction = actionRow("周", "#12B8A6", selectedWeeks[0].displayText());
+        weeksAction.setContentDescription("选择周次，当前" + selectedWeeks[0].displayText());
+        weeksAction.setOnClickListener(v -> showWeekSelectionDialog(selectedWeeks[0], value -> {
+            selectedWeeks[0] = value;
+            updateActionRow(weeksAction, value.displayText());
+            weeksAction.setContentDescription("选择周次，当前" + value.displayText());
+        }));
+        View dayAction = actionRow("日", "#168FE4", dayLabel(selectedDay[0]));
+        dayAction.setContentDescription("选择星期，当前" + dayLabel(selectedDay[0]));
+        dayAction.setOnClickListener(v -> showDayDialog(selectedDay[0], value -> {
+            selectedDay[0] = value;
+            updateActionRow(dayAction, dayLabel(value));
+            dayAction.setContentDescription("选择星期，当前" + dayLabel(value));
+        }));
+        View sectionAction = actionRow(
+                "节", "#FFB000", sectionLabel(selectedStart[0], selectedEnd[0]));
+        sectionAction.setContentDescription(
+                "选择节次，当前" + sectionLabel(selectedStart[0], selectedEnd[0]));
+        sectionAction.setOnClickListener(v -> showSectionDialog(
+                selectedStart[0], selectedEnd[0], (start, end) -> {
+                    selectedStart[0] = start;
+                    selectedEnd[0] = end;
+                    updateActionRow(sectionAction, sectionLabel(start, end));
+                    sectionAction.setContentDescription(
+                            "选择节次，当前" + sectionLabel(start, end));
+                }));
+        LinearLayout timeSelectionRows = new LinearLayout(activity);
+        timeSelectionRows.setOrientation(LinearLayout.VERTICAL);
+        timeSelectionRows.addView(dayAction);
+        timeSelectionRows.addView(sectionAction);
         View placementAction = actionRow("位", "#FFB000", bannerOnly[0] ? "顶部横幅" : "固定节次");
         View typeAction = actionRow("类", "#168FE4", selectedType[0].displayName);
         typeAction.setOnClickListener(v -> showCourseTypeDialog(selectedType[0], value -> {
@@ -146,7 +184,7 @@ public final class CourseEditorDialog {
             if (!value.supportsBannerOnly() && bannerOnly[0]) {
                 bannerOnly[0] = false;
                 updatePlacementRow(placementAction, false);
-                timeInputRow.setVisibility(View.VISIBLE);
+                timeSelectionRows.setVisibility(View.VISIBLE);
             }
             updateTypeRow(typeAction, value);
         }));
@@ -157,9 +195,9 @@ public final class CourseEditorDialog {
                 updateTypeRow(typeAction, selectedType[0]);
             }
             updatePlacementRow(placementAction, value);
-            timeInputRow.setVisibility(value ? View.GONE : View.VISIBLE);
+            timeSelectionRows.setVisibility(value ? View.GONE : View.VISIBLE);
         }));
-        timeInputRow.setVisibility(bannerOnly[0] ? View.GONE : View.VISIBLE);
+        timeSelectionRows.setVisibility(bannerOnly[0] ? View.GONE : View.VISIBLE);
         View colorAction = actionRow("●", editorColor(selectedColor[0]), colorLabel(selectedColor[0]));
         colorAction.setOnClickListener(v -> showColorDialog(selectedColor[0], value -> {
             selectedColor[0] = value;
@@ -174,10 +212,9 @@ public final class CourseEditorDialog {
                 colorAction));
         panel.addView(sectionTitle("时间段"));
         panel.addView(group(
-                editorRow("▣", "#12B8A6", weeks),
+                weeksAction,
                 placementAction,
-                timeInputRow,
-                chipRow(new String[]{"1-20周", "单周", "双周"}, weeks)));
+                timeSelectionRows));
         panel.addView(group(
                 editorRow("♙", "#168FE4", teacher),
                 editorRow("▯", "#F0334B", location)));
@@ -197,11 +234,11 @@ public final class CourseEditorDialog {
         save.setOnClickListener(v -> {
             String nextName = name.getText().toString().trim();
             int nextDay = bannerOnly[0]
-                    ? -1 : parseBounded(day.getText().toString(), 1, 7, -1) - 1;
+                    ? -1 : selectedDay[0];
             int nextStart = bannerOnly[0]
-                    ? 0 : parseBounded(start.getText().toString(), 1, sectionCount, -1);
+                    ? 0 : selectedStart[0];
             int nextEnd = bannerOnly[0]
-                    ? 0 : parseBounded(end.getText().toString(), nextStart, sectionCount, -1);
+                    ? 0 : selectedEnd[0];
             if (nextName.isEmpty()) {
                 Toast.makeText(activity, "请填写课程名称", Toast.LENGTH_SHORT).show();
                 return;
@@ -215,7 +252,7 @@ public final class CourseEditorDialog {
                     nextStart,
                     nextEnd,
                     nextName,
-                    normalizeWeeks(weeks.getText().toString()),
+                    selectedWeeks[0].toCourseText(),
                     location.getText().toString().trim(),
                     teacher.getText().toString().trim(),
                     "",
@@ -224,7 +261,8 @@ public final class CourseEditorDialog {
                     bannerOnly[0] && !selectedType[0].supportsBannerOnly()
                             ? CourseType.PRACTICE : selectedType[0],
                     StableCourseId.isValid(original.structuredCourseId)
-                            ? original.structuredCourseId : StableCourseId.create());
+                            ? original.structuredCourseId : StableCourseId.create(),
+                    original.meetingId);
             listener.onCourseSaved(original, edited);
             dialog.dismiss();
         });
@@ -384,32 +422,260 @@ public final class CourseEditorDialog {
         return row;
     }
 
-    private View timeRow(EditText day, EditText start, EditText end) {
-        day.setGravity(Gravity.CENTER);
-        start.setGravity(Gravity.CENTER);
-        end.setGravity(Gravity.CENTER);
-        LinearLayout row = row();
-        addFixedText(row, "◷", "#FFB000", 42, 24, true);
-        addFixedText(row, "周", null, 32, 17, false);
-        row.addView(day, new LinearLayout.LayoutParams(dp(36), dp(46)));
-        addFixedText(row, "第", null, 28, 17, false);
-        row.addView(start, new LinearLayout.LayoutParams(dp(40), dp(46)));
-        addFixedText(row, "-", null, 16, 17, false).setTextColor(mutedColor);
-        row.addView(end, new LinearLayout.LayoutParams(dp(40), dp(46)));
-        TextView suffix = text("节", inkColor, 17, false);
-        suffix.setGravity(Gravity.CENTER);
-        suffix.setIncludeFontPadding(false);
-        row.addView(suffix, new LinearLayout.LayoutParams(0, dp(46), 1f));
+    private void updateActionRow(View row, String value) {
+        if (row instanceof LinearLayout && ((LinearLayout) row).getChildCount() > 1) {
+            ((TextView) ((LinearLayout) row).getChildAt(1)).setText(value);
+        }
+    }
+
+    private String dayLabel(int day) {
+        String[] labels = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+        return labels[Math.max(0, Math.min(labels.length - 1, day))];
+    }
+
+    private String sectionLabel(int start, int end) {
+        return "第 " + start + "–" + end + " 节";
+    }
+
+    private void showDayDialog(int currentDay, IntSetter setter) {
+        Dialog dialog = new Dialog(activity);
+        LinearLayout panel = compactDialogPanel("选择星期");
+        for (int day = 0; day < 7; day++) {
+            final int value = day;
+            TextView item = dialogChoice(dayLabel(day), day == currentDay);
+            item.setOnClickListener(v -> {
+                setter.set(value);
+                dialog.dismiss();
+            });
+            panel.addView(item);
+        }
+        showCompactDialog(dialog, panel, 320);
+    }
+
+    private void showSectionDialog(int currentStart, int currentEnd, SectionSetter setter) {
+        Dialog dialog = new Dialog(activity);
+        LinearLayout panel = compactDialogPanel("选择节次");
+
+        LinearLayout pickers = new LinearLayout(activity);
+        pickers.setOrientation(LinearLayout.HORIZONTAL);
+        pickers.setGravity(Gravity.CENTER);
+        pickers.setPadding(0, dp(6), 0, dp(8));
+        NumberPicker startPicker = sectionPicker(currentStart);
+        NumberPicker endPicker = sectionPicker(currentEnd);
+        pickers.addView(labeledPicker("开始", startPicker),
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        pickers.addView(labeledPicker("结束", endPicker),
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        startPicker.setOnValueChangedListener((picker, oldValue, newValue) -> {
+            if (endPicker.getValue() < newValue) {
+                endPicker.setValue(newValue);
+            }
+        });
+        panel.addView(pickers);
+
+        TextView confirm = dialogChoice("确定", true);
+        confirm.setContentDescription("确定节次范围");
+        confirm.setOnClickListener(v -> {
+            int start = startPicker.getValue();
+            int end = Math.max(start, endPicker.getValue());
+            setter.set(start, end);
+            dialog.dismiss();
+        });
+        panel.addView(confirm);
+        showCompactDialog(dialog, panel, 340);
+    }
+
+    private NumberPicker sectionPicker(int value) {
+        int pickerTheme = darkMode
+                ? android.R.style.Theme_Material
+                : android.R.style.Theme_Material_Light;
+        NumberPicker picker = new NumberPicker(new ContextThemeWrapper(activity, pickerTheme));
+        picker.setMinValue(1);
+        picker.setMaxValue(sectionCount);
+        picker.setValue(Math.max(1, Math.min(sectionCount, value)));
+        picker.setWrapSelectorWheel(false);
+        picker.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
+        picker.setBackgroundColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            picker.setTextColor(inkColor);
+        }
+        for (int index = 0; index < picker.getChildCount(); index++) {
+            View child = picker.getChildAt(index);
+            if (child instanceof TextView) {
+                ((TextView) child).setTextColor(inkColor);
+            }
+        }
+        picker.setContentDescription("节次");
+        return picker;
+    }
+
+    private LinearLayout labeledPicker(String label, NumberPicker picker) {
+        LinearLayout group = new LinearLayout(activity);
+        group.setOrientation(LinearLayout.VERTICAL);
+        group.setGravity(Gravity.CENTER);
+        TextView title = text(label, mutedColor, 13, true);
+        title.setGravity(Gravity.CENTER);
+        group.addView(title, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
+        group.addView(picker, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(124)));
+        return group;
+    }
+
+    private void showWeekSelectionDialog(WeekSelection current, WeekSelectionSetter setter) {
+        Dialog dialog = new Dialog(activity);
+        LinearLayout panel = compactDialogPanel("选择周次");
+        TextView help = text("选择实际上课周，可使用快捷方式后继续微调。", mutedColor, 13, false);
+        help.setPadding(0, 0, 0, dp(8));
+        panel.addView(help);
+
+        WeekSelection working = current.copy();
+        List<TextView> weekChips = new ArrayList<>();
+        final Runnable[] refresh = new Runnable[1];
+
+        LinearLayout quickPrimary = weightedRow();
+        TextView all = weekSelectChip("全周");
+        TextView odd = weekSelectChip("单周");
+        TextView even = weekSelectChip("双周");
+        quickPrimary.addView(all, weightedChipParams());
+        quickPrimary.addView(odd, weightedChipParams());
+        quickPrimary.addView(even, weightedChipParams());
+        panel.addView(quickPrimary);
+
+        LinearLayout quickSpecial = weightedRow();
+        TextView project = weekSelectChip("项目周");
+        TextView unknown = weekSelectChip("待确认");
+        quickSpecial.addView(project, weightedChipParams());
+        quickSpecial.addView(unknown, weightedChipParams());
+        panel.addView(quickSpecial);
+
+        for (int rowIndex = 0; rowIndex < 4; rowIndex++) {
+            LinearLayout weekRow = weightedRow();
+            for (int column = 0; column < 5; column++) {
+                int week = rowIndex * 5 + column + 1;
+                TextView chip = weekSelectChip(String.valueOf(week));
+                chip.setContentDescription("第" + week + "周");
+                chip.setOnClickListener(v -> {
+                    working.toggleWeek(week);
+                    refresh[0].run();
+                });
+                weekChips.add(chip);
+                weekRow.addView(chip, weightedChipParams());
+            }
+            panel.addView(weekRow);
+        }
+
+        all.setOnClickListener(v -> {
+            working.selectAll();
+            refresh[0].run();
+        });
+        odd.setOnClickListener(v -> {
+            working.selectOdd();
+            refresh[0].run();
+        });
+        even.setOnClickListener(v -> {
+            working.selectEven();
+            refresh[0].run();
+        });
+        project.setOnClickListener(v -> {
+            working.selectSpecial(WeekSelection.SPECIAL_PROJECT);
+            refresh[0].run();
+        });
+        unknown.setOnClickListener(v -> {
+            working.selectSpecial(WeekSelection.SPECIAL_UNKNOWN);
+            refresh[0].run();
+        });
+        refresh[0] = () -> {
+            applyWeekChipState(all, working.isAll());
+            applyWeekChipState(odd, working.isOdd());
+            applyWeekChipState(even, working.isEven());
+            applyWeekChipState(project, working.isSpecial(WeekSelection.SPECIAL_PROJECT));
+            applyWeekChipState(unknown, working.isSpecial(WeekSelection.SPECIAL_UNKNOWN));
+            for (int index = 0; index < weekChips.size(); index++) {
+                applyWeekChipState(weekChips.get(index), working.contains(index + 1));
+            }
+        };
+        refresh[0].run();
+
+        TextView confirm = dialogChoice("确定", true);
+        confirm.setOnClickListener(v -> {
+            setter.set(working.copy());
+            dialog.dismiss();
+        });
+        LinearLayout.LayoutParams confirmParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        confirmParams.topMargin = dp(8);
+        panel.addView(confirm, confirmParams);
+        showCompactDialog(dialog, panel, 360);
+    }
+
+    private LinearLayout compactDialogPanel(String title) {
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(16), dp(18), dp(14));
+        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        TextView heading = text(title, inkColor, 20, true);
+        LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        headingParams.bottomMargin = dp(8);
+        panel.addView(heading, headingParams);
+        return panel;
+    }
+
+    private TextView dialogChoice(String label, boolean selected) {
+        TextView item = text(label, selected ? color("#168FE4") : inkColor, 16, selected);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(dp(14), 0, dp(14), 0);
+        item.setMinHeight(dp(48));
+        item.setBackground(roundedBg(darkMode ? "#141E30" : "#F2F0FA", 14));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        params.bottomMargin = dp(6);
+        item.setLayoutParams(params);
+        return item;
+    }
+
+    private LinearLayout weightedRow() {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
         return row;
     }
 
-    private TextView addFixedText(
-            LinearLayout row, String value, String colorHex, int widthDp, int sizeSp, boolean bold) {
-        TextView text = text(value, colorHex == null ? inkColor : color(colorHex), sizeSp, bold);
-        text.setGravity(Gravity.CENTER);
-        text.setIncludeFontPadding(false);
-        row.addView(text, new LinearLayout.LayoutParams(dp(widthDp), dp(46)));
-        return text;
+    private LinearLayout.LayoutParams weightedChipParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        params.setMargins(dp(3), dp(3), dp(3), dp(3));
+        return params;
+    }
+
+    private TextView weekSelectChip(String label) {
+        TextView chip = text(label, inkColor, 14, true);
+        chip.setGravity(Gravity.CENTER);
+        chip.setMinHeight(dp(48));
+        return chip;
+    }
+
+    private void applyWeekChipState(TextView chip, boolean selected) {
+        chip.setTextColor(selected ? Color.WHITE : inkColor);
+        chip.setBackground(selected
+                ? roundedBg(darkMode ? "#1F73E0" : "#172033", 14)
+                : roundedStrokeBg("transparent", darkMode ? "#66758C" : "#B4BDCA", 14));
+        chip.setSelected(selected);
+    }
+
+    private void showCompactDialog(Dialog dialog, View content, int maxWidthDp) {
+        dialog.setContentView(content);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(darkMode ? 0.68f : 0.42f);
+            window.setLayout(
+                    Math.min(dp(maxWidthDp), activity.getResources().getDisplayMetrics().widthPixels - dp(32)),
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            disableWindowAnimations(window);
+        }
     }
 
     private View chipRow(String[] values, EditText target) {
@@ -703,19 +969,6 @@ public final class CourseEditorDialog {
         return Color.parseColor(value);
     }
 
-    private int parseBounded(String value, int min, int max, int fallback) {
-        try {
-            return Math.max(min, Math.min(max, Integer.parseInt(value.trim())));
-        } catch (NumberFormatException exception) {
-            return fallback;
-        }
-    }
-
-    private String normalizeWeeks(String value) {
-        String normalized = value == null ? "" : value.trim();
-        return normalized.isEmpty() ? defaultWeeks() : normalized;
-    }
-
     private String defaultWeeks() {
         return "1-20周";
     }
@@ -744,6 +997,209 @@ public final class CourseEditorDialog {
     private String editorColor(String value) {
         String normalized = normalizeColor(value);
         return normalized.isEmpty() ? "#10CFAE" : normalized;
+    }
+
+    private static final class WeekSelection {
+        static final String SPECIAL_PROJECT = "project";
+        static final String SPECIAL_UNKNOWN = "unknown";
+
+        private final boolean[] selected = new boolean[MAX_SELECTABLE_WEEK + 1];
+        private String special = "";
+
+        static WeekSelection from(String text) {
+            WeekSelection selection = new WeekSelection();
+            WeekRule rule = WEEK_RULE_PARSER.parse(text);
+            if (rule.type == WeekRule.Type.PROJECT) {
+                selection.special = SPECIAL_PROJECT;
+                return selection;
+            }
+            if (rule.type == WeekRule.Type.UNKNOWN) {
+                selection.special = SPECIAL_UNKNOWN;
+                return selection;
+            }
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                selection.selected[week] = rule.containsWeek(week);
+            }
+            if (selection.countSelected() == 0) {
+                selection.special = SPECIAL_UNKNOWN;
+            }
+            return selection;
+        }
+
+        WeekSelection copy() {
+            WeekSelection copy = new WeekSelection();
+            System.arraycopy(selected, 0, copy.selected, 0, selected.length);
+            copy.special = special;
+            return copy;
+        }
+
+        void toggleWeek(int week) {
+            if (week < 1 || week > MAX_SELECTABLE_WEEK) {
+                return;
+            }
+            special = "";
+            selected[week] = !selected[week];
+            if (countSelected() == 0) {
+                special = SPECIAL_UNKNOWN;
+            }
+        }
+
+        void selectAll() {
+            special = "";
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                selected[week] = true;
+            }
+        }
+
+        void selectOdd() {
+            selectParity(true);
+        }
+
+        void selectEven() {
+            selectParity(false);
+        }
+
+        private void selectParity(boolean odd) {
+            special = "";
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                selected[week] = odd ? week % 2 == 1 : week % 2 == 0;
+            }
+        }
+
+        void selectSpecial(String value) {
+            special = value == null ? SPECIAL_UNKNOWN : value;
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                selected[week] = false;
+            }
+        }
+
+        boolean contains(int week) {
+            return week >= 1 && week <= MAX_SELECTABLE_WEEK && selected[week];
+        }
+
+        boolean isSpecial(String value) {
+            return value != null && value.equals(special);
+        }
+
+        boolean isAll() {
+            if (!special.isEmpty()) {
+                return false;
+            }
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                if (!selected[week]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        boolean isOdd() {
+            return matchesParity(true);
+        }
+
+        boolean isEven() {
+            return matchesParity(false);
+        }
+
+        private boolean matchesParity(boolean odd) {
+            if (!special.isEmpty()) {
+                return false;
+            }
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                if (selected[week] != (odd ? week % 2 == 1 : week % 2 == 0)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        String displayText() {
+            if (SPECIAL_PROJECT.equals(special)) {
+                return "项目周";
+            }
+            if (SPECIAL_UNKNOWN.equals(special)) {
+                return "周次待确认";
+            }
+            return numberedWeeksText();
+        }
+
+        String toCourseText() {
+            if (SPECIAL_PROJECT.equals(special)) {
+                return "项目周";
+            }
+            if (SPECIAL_UNKNOWN.equals(special)) {
+                return "周次见PDF";
+            }
+            return numberedWeeksText();
+        }
+
+        private String numberedWeeksText() {
+            if (isAll()) {
+                return "1-20周";
+            }
+            if (isOdd()) {
+                return "1-20周(单)";
+            }
+            if (isEven()) {
+                return "1-20周(双)";
+            }
+            int first = firstSelected();
+            int last = lastSelected();
+            if (first > 0 && countSelected() == last - first + 1) {
+                return first == last ? "第" + first + "周" : first + "-" + last + "周";
+            }
+            StringBuilder text = new StringBuilder("第");
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                if (!selected[week]) {
+                    continue;
+                }
+                if (text.length() > 1) {
+                    text.append('、');
+                }
+                text.append(week);
+            }
+            return text.length() == 1 ? "周次待确认" : text.append('周').toString();
+        }
+
+        private int countSelected() {
+            int count = 0;
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                if (selected[week]) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private int firstSelected() {
+            for (int week = 1; week <= MAX_SELECTABLE_WEEK; week++) {
+                if (selected[week]) {
+                    return week;
+                }
+            }
+            return 0;
+        }
+
+        private int lastSelected() {
+            for (int week = MAX_SELECTABLE_WEEK; week >= 1; week--) {
+                if (selected[week]) {
+                    return week;
+                }
+            }
+            return 0;
+        }
+    }
+
+    private interface IntSetter {
+        void set(int value);
+    }
+
+    private interface SectionSetter {
+        void set(int start, int end);
+    }
+
+    private interface WeekSelectionSetter {
+        void set(WeekSelection value);
     }
 
     private interface ColorSetter {

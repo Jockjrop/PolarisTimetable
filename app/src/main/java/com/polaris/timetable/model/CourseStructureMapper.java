@@ -28,14 +28,25 @@ public class CourseStructureMapper {
                         course.color, course.courseType);
                 builders.put(key, builder);
             }
-            builder.addMeeting(new CourseMeeting(
-                    course.day,
-                    course.startSection,
-                    course.endSection,
-                    weekRuleParser.parse(course.weeks),
-                    course.location,
-                    course.teacher,
-                    course.raw));
+            CourseMeeting meeting = StableMeetingId.isValid(course.meetingId)
+                    ? new CourseMeeting(
+                            course.meetingId,
+                            course.day,
+                            course.startSection,
+                            course.endSection,
+                            weekRuleParser.parse(course.weeks),
+                            course.location,
+                            course.teacher,
+                            course.raw)
+                    : new CourseMeeting(
+                            course.day,
+                            course.startSection,
+                            course.endSection,
+                            weekRuleParser.parse(course.weeks),
+                            course.location,
+                            course.teacher,
+                            course.raw);
+            builder.addMeeting(meeting);
         }
 
         List<StructuredCourse> structuredCourses = new ArrayList<>();
@@ -79,7 +90,8 @@ public class CourseStructureMapper {
                         course.credit,
                         course.color,
                         course.courseType,
-                        course.id));
+                        course.id,
+                        meeting.id));
             }
         }
         return legacyCourses;

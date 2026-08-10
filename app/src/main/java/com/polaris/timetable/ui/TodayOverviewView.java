@@ -26,6 +26,7 @@ public final class TodayOverviewView extends LinearLayout {
     private CourseTimeResolver.TodayOverview overview;
     private OnCourseClickListener courseClickListener;
     private boolean darkMode;
+    private String visualTheme = PolarisVisualTheme.MINIMAL;
 
     public TodayOverviewView(Context context) {
         super(context);
@@ -74,6 +75,17 @@ public final class TodayOverviewView extends LinearLayout {
 
     public void setOnCourseClickListener(OnCourseClickListener listener) {
         courseClickListener = listener;
+    }
+
+    public void setVisualTheme(String theme) {
+        String nextTheme = PolarisVisualTheme.normalize(theme);
+        if (nextTheme.equals(visualTheme)) {
+            return;
+        }
+        visualTheme = nextTheme;
+        CourseTimeResolver.TodayStatus status = overview == null
+                ? CourseTimeResolver.TodayStatus.NO_COURSES : overview.status;
+        applyColors(status);
     }
 
     public void setOverview(CourseTimeResolver.TodayOverview value, boolean useDarkMode) {
@@ -177,6 +189,10 @@ public final class TodayOverviewView extends LinearLayout {
     }
 
     private void applyColors(CourseTimeResolver.TodayStatus status) {
+        if (!PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+            applyThemeColors(status);
+            return;
+        }
         int title = darkMode ? Color.rgb(242, 247, 255) : Color.rgb(16, 35, 62);
         int detail = darkMode ? Color.rgb(178, 194, 217) : Color.rgb(83, 105, 137);
         int accent;
@@ -194,6 +210,22 @@ public final class TodayOverviewView extends LinearLayout {
                 accent = darkMode ? Color.rgb(190, 201, 219) : Color.rgb(78, 96, 121);
                 accentSurface = darkMode ? Color.rgb(48, 61, 80) : Color.rgb(232, 238, 247);
                 break;
+        }
+        titleView.setTextColor(title);
+        detailView.setTextColor(detail);
+        statusView.setTextColor(accent);
+        statusView.setBackground(pillBackground(accentSurface));
+    }
+
+    private void applyThemeColors(CourseTimeResolver.TodayStatus status) {
+        int title = PolarisVisualTheme.inkColor(visualTheme, darkMode);
+        int detail = PolarisVisualTheme.mutedColor(visualTheme, darkMode);
+        int accent = PolarisVisualTheme.accentColor(visualTheme, darkMode);
+        int accentSurface = PolarisVisualTheme.accentSurfaceColor(visualTheme, darkMode);
+        if (status == CourseTimeResolver.TodayStatus.ONGOING) {
+            accent = darkMode ? Color.rgb(126, 226, 180) : Color.rgb(35, 130, 86);
+            accentSurface = darkMode ? Color.argb(112, 32, 92, 66)
+                    : Color.argb(160, 216, 246, 232);
         }
         titleView.setTextColor(title);
         detailView.setTextColor(detail);
