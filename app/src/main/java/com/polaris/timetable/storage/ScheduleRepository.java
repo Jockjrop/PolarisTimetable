@@ -8,6 +8,7 @@ import android.util.Log;
 import com.polaris.timetable.Course;
 import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseStructureMapper;
+import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
@@ -348,6 +349,9 @@ public class ScheduleRepository {
             object.put("day", meeting.day);
             object.put("startSection", meeting.startSection);
             object.put("endSection", meeting.endSection);
+            object.put("timeMode", meeting.timeMode.name());
+            object.put("startMinuteOfDay", meeting.startMinuteOfDay);
+            object.put("endMinuteOfDay", meeting.endMinuteOfDay);
             object.put("location", meeting.location);
             object.put("teacher", meeting.teacher);
             object.put("rawText", meeting.rawText);
@@ -503,7 +507,16 @@ public class ScheduleRepository {
                 weekRuleFromJson(object.optJSONObject("weekRule")),
                 object.optString("location", ""),
                 object.optString("teacher", ""),
-                object.optString("rawText", ""));
+                object.optString("rawText", ""),
+                CourseTimeMode.fromStorage(
+                        object.optString("timeMode", ""),
+                        object.optInt("day", -1),
+                        object.optInt("startSection", 1),
+                        object.optInt("endSection", 1),
+                        object.optInt("startMinuteOfDay", -1),
+                        object.optInt("endMinuteOfDay", -1)),
+                object.optInt("startMinuteOfDay", -1),
+                object.optInt("endMinuteOfDay", -1));
     }
 
     private static WeekRule weekRuleFromJson(JSONObject object) {
@@ -551,6 +564,9 @@ public class ScheduleRepository {
             object.put("courseType", course.courseType.name());
             object.put("structuredCourseId", course.structuredCourseId);
             object.put("meetingId", course.meetingId);
+            object.put("timeMode", course.timeMode.name());
+            object.put("startMinuteOfDay", course.startMinuteOfDay);
+            object.put("endMinuteOfDay", course.endMinuteOfDay);
         } catch (JSONException exception) {
             Log.e(TAG, "Unable to serialize course", exception);
         }
@@ -571,7 +587,16 @@ public class ScheduleRepository {
                 object.optString("color", ""),
                 CourseType.fromStorage(object.optString("courseType", "")),
                 object.optString("structuredCourseId", ""),
-                object.optString("meetingId", ""));
+                object.optString("meetingId", ""),
+                CourseTimeMode.fromStorage(
+                        object.optString("timeMode", ""),
+                        object.optInt("day", -1),
+                        object.optInt("startSection", 1),
+                        object.optInt("endSection", 1),
+                        object.optInt("startMinuteOfDay", -1),
+                        object.optInt("endMinuteOfDay", -1)),
+                object.optInt("startMinuteOfDay", -1),
+                object.optInt("endMinuteOfDay", -1));
     }
 
     public static class AccountProfile {
@@ -612,6 +637,7 @@ public class ScheduleRepository {
         public boolean showSunday = false;
         public boolean showOutOfWeekCourses = true;
         public boolean showPracticeBanner = true;
+        public boolean collapseLunchBreak = false;
         public boolean collapseXautMiddleSections = false;
         public int courseCellHeight = 76;
         public int courseCornerRadius = 9;
@@ -658,6 +684,7 @@ public class ScheduleRepository {
                 object.put("showSunday", showSunday);
                 object.put("showOutOfWeekCourses", showOutOfWeekCourses);
                 object.put("showPracticeBanner", showPracticeBanner);
+                object.put("collapseLunchBreak", collapseLunchBreak);
                 object.put("collapseXautMiddleSections", collapseXautMiddleSections);
                 object.put("courseCellHeight", courseCellHeight);
                 object.put("courseCornerRadius", courseCornerRadius);
@@ -725,6 +752,8 @@ public class ScheduleRepository {
             config.showSunday = object.optBoolean("showSunday", config.showSunday);
             config.showOutOfWeekCourses = object.optBoolean("showOutOfWeekCourses", config.showOutOfWeekCourses);
             config.showPracticeBanner = object.optBoolean("showPracticeBanner", config.showPracticeBanner);
+            config.collapseLunchBreak = object.optBoolean(
+                    "collapseLunchBreak", config.collapseLunchBreak);
             config.collapseXautMiddleSections = object.optBoolean("collapseXautMiddleSections", config.collapseXautMiddleSections);
             config.courseCellHeight = object.optInt("courseCellHeight", config.courseCellHeight);
             config.courseCornerRadius = object.optInt("courseCornerRadius", config.courseCornerRadius);

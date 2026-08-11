@@ -37,7 +37,10 @@ public class CourseStructureMapper {
                             weekRuleParser.parse(course.weeks),
                             course.location,
                             course.teacher,
-                            course.raw)
+                            course.raw,
+                            course.timeMode,
+                            course.startMinuteOfDay,
+                            course.endMinuteOfDay)
                     : new CourseMeeting(
                             course.day,
                             course.startSection,
@@ -45,7 +48,10 @@ public class CourseStructureMapper {
                             weekRuleParser.parse(course.weeks),
                             course.location,
                             course.teacher,
-                            course.raw);
+                            course.raw,
+                            course.timeMode,
+                            course.startMinuteOfDay,
+                            course.endMinuteOfDay);
             builder.addMeeting(meeting);
         }
 
@@ -91,7 +97,10 @@ public class CourseStructureMapper {
                         course.color,
                         course.courseType,
                         course.id,
-                        meeting.id));
+                        meeting.id,
+                        meeting.timeMode,
+                        meeting.startMinuteOfDay,
+                        meeting.endMinuteOfDay));
             }
         }
         return legacyCourses;

@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseStructureMapper;
+import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableMeetingId;
 import com.polaris.timetable.model.StructuredCourse;
@@ -141,6 +142,27 @@ public class CourseMeetingIdentityTest {
         assertEquals("新教师", courses.get(0).meetings.get(1).teacher);
         assertEquals("新地点", courses.get(0).meetings.get(1).location);
         assertEquals(second.id, courses.get(0).meetings.get(1).id);
+    }
+
+    @Test
+    public void editingMeetingToExactClockTime_preservesIdentityAndMinutes() {
+        CourseMeeting meeting = meeting();
+        List<StructuredCourse> courses = new ArrayList<>(Collections.singletonList(
+                course(Collections.singletonList(meeting))));
+        Course original = new CourseStructureMapper().toLegacyCourses(courses).get(0);
+        Course edited = new Course(
+                0, 0, 0, original.name, original.weeks, original.location, original.teacher,
+                original.raw, original.credit, original.color, original.courseType,
+                original.structuredCourseId, original.meetingId, CourseTimeMode.CLOCK,
+                9 * 60 + 10, 10 * 60 + 35);
+
+        assertTrue(CourseEditManager.applyStructuredEdit(courses, original, edited));
+
+        CourseMeeting restored = courses.get(0).meetings.get(0);
+        assertEquals(meeting.id, restored.id);
+        assertEquals(CourseTimeMode.CLOCK, restored.timeMode);
+        assertEquals(9 * 60 + 10, restored.startMinuteOfDay);
+        assertEquals(10 * 60 + 35, restored.endMinuteOfDay);
     }
 
     @Test

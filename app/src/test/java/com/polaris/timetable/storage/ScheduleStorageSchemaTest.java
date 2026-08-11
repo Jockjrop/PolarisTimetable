@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import com.polaris.timetable.Course;
 import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseStructureMapper;
+import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableCourseId;
 import com.polaris.timetable.model.StructuredCourse;
@@ -163,6 +164,29 @@ public class ScheduleStorageSchemaTest {
         assertFalse(result.changed);
         assertEquals(FIRST_UUID, result.courses.get(0).id);
         assertEquals(ScheduleStorageSchema.CURRENT_VERSION + 1, result.version);
+    }
+
+    @Test
+    public void exactClockTime_survivesStructuredJsonRoundTrip() throws Exception {
+        WeekRule weeks = new WeekRule(
+                WeekRule.Type.RANGE, 1, 16, Collections.emptyList(), "1-16周");
+        CourseMeeting meeting = new CourseMeeting(
+                1, 0, 0, weeks, "A101", "教师", "raw",
+                CourseTimeMode.CLOCK, 9 * 60 + 10, 10 * 60 + 35);
+        StructuredCourse source = new StructuredCourse(
+                FIRST_UUID, "讨论课", "教师", "A101",
+                Collections.singletonList(meeting), "raw", "", "", CourseType.LECTURE);
+
+        String json = ScheduleRepository.structuredCoursesToJson(
+                Collections.singletonList(source)).toString();
+        CourseMeeting restored = ScheduleRepository.structuredCoursesFromJson(json)
+                .get(0).meetings.get(0);
+
+        assertEquals(CourseTimeMode.CLOCK, restored.timeMode);
+        assertEquals(9 * 60 + 10, restored.startMinuteOfDay);
+        assertEquals(10 * 60 + 35, restored.endMinuteOfDay);
+        assertEquals(0, restored.startSection);
+        assertEquals(0, restored.endSection);
     }
 
     private StructuredCourse course(String id, String name) {

@@ -72,7 +72,10 @@ public final class CourseDeletionManager {
                         remainingRule,
                         meeting.location,
                         meeting.teacher,
-                        meeting.rawText));
+                        meeting.rawText,
+                        meeting.timeMode,
+                        meeting.startMinuteOfDay,
+                        meeting.endMinuteOfDay));
             }
         } else {
             return 0;
@@ -113,7 +116,10 @@ public final class CourseDeletionManager {
             CourseMeeting meeting = course.meetings.get(index);
             if (meeting.day != target.day
                     || meeting.startSection != target.startSection
-                    || meeting.endSection != target.endSection) {
+                    || meeting.endSection != target.endSection
+                    || meeting.timeMode != target.timeMode
+                    || meeting.startMinuteOfDay != target.startMinuteOfDay
+                    || meeting.endMinuteOfDay != target.endMinuteOfDay) {
                 continue;
             }
             if (slotFallback < 0) {
@@ -289,7 +295,10 @@ public final class CourseDeletionManager {
     private static boolean sameMeeting(Course first, Course second) {
         return first.day == second.day
                 && first.startSection == second.startSection
-                && first.endSection == second.endSection;
+                && first.endSection == second.endSection
+                && first.timeMode == second.timeMode
+                && first.startMinuteOfDay == second.startMinuteOfDay
+                && first.endMinuteOfDay == second.endMinuteOfDay;
     }
 
     private static String normalizedName(String value) {
@@ -310,7 +319,10 @@ public final class CourseDeletionManager {
                 source.color,
                 source.courseType,
                 source.structuredCourseId,
-                source.meetingId);
+                source.meetingId,
+                source.timeMode,
+                source.startMinuteOfDay,
+                source.endMinuteOfDay);
     }
 
     private static String compactWeekExpression(List<Integer> weeks) {
@@ -348,7 +360,9 @@ public final class CourseDeletionManager {
     }
 
     private static String matchingFieldsKey(Course course) {
-        return course.day + "|" + course.startSection + "|" + course.endSection + "|"
+        return course.day + "|" + course.timeMode + "|"
+                + course.startSection + "|" + course.endSection + "|"
+                + course.startMinuteOfDay + "|" + course.endMinuteOfDay + "|"
                 + safe(course.name) + "|" + safe(course.location) + "|" + safe(course.teacher) + "|"
                 + safe(course.raw) + "|" + safe(course.credit) + "|" + safe(course.color) + "|"
                 + course.courseType.name() + "|" + safe(course.structuredCourseId);

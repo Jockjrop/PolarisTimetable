@@ -1,6 +1,7 @@
 package com.polaris.timetable;
 
 import com.polaris.timetable.model.CourseType;
+import com.polaris.timetable.model.CourseTimeMode;
 
 import org.junit.Test;
 
@@ -35,5 +36,18 @@ public class CourseTest {
 
         assertTrue(course.isBannerOnlyCourse());
         assertFalse(course.isPracticeBannerOnly());
+    }
+
+    @Test
+    public void exactClockPracticeIsScheduledInsteadOfBannerOnly() {
+        Course course = new Course(2, 0, 0, "工程训练", "1-2周", "", "", "",
+                "", "", CourseType.PRACTICE, "", "", CourseTimeMode.CLOCK,
+                9 * 60 + 10, 10 * 60 + 35);
+
+        assertFalse(course.hasFixedTime());
+        assertTrue(course.hasExactTime());
+        assertTrue(course.hasScheduledTime());
+        assertFalse(course.isPracticeBannerOnly());
+        assertFalse(course.isBannerOnlyCourse());
     }
 }

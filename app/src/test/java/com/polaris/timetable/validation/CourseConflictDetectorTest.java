@@ -2,6 +2,7 @@ package com.polaris.timetable.validation;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.model.CourseType;
+import com.polaris.timetable.model.CourseTimeMode;
 
 import org.junit.Test;
 
@@ -38,6 +39,33 @@ public class CourseConflictDetectorTest {
 
         assertTrue(CourseConflictDetector.findAll(
                 Arrays.asList(first, second), 20).isEmpty());
+    }
+
+    @Test
+    public void exactClockCourses_useMinuteOverlapAndAllowTouchingEndpoints() {
+        Course first = exactCourse(0, 9 * 60 + 10, 10 * 60 + 35, "研讨课");
+        Course touching = exactCourse(0, 10 * 60 + 35, 11 * 60, "答疑");
+        Course overlapping = exactCourse(0, 10 * 60 + 34, 11 * 60, "实验");
+
+        assertTrue(CourseConflictDetector.findAll(
+                Arrays.asList(first, touching), 20).isEmpty());
+        CourseConflictDetector.Conflict conflict = CourseConflictDetector.findAll(
+                Arrays.asList(first, overlapping), 20).get(0);
+        assertEquals(10 * 60 + 34, conflict.overlapStartMinutes);
+        assertEquals(10 * 60 + 35, conflict.overlapEndMinutes);
+        assertEquals("10:34–10:35", conflict.overlapTimeText());
+    }
+
+    @Test
+    public void exactClockCourseConflictsWithResolvedSectionCourse() {
+        Course sectionCourse = course(0, 1, 1, "高等数学", "1-20周");
+        Course exactCourse = exactCourse(0, 8 * 60 + 45, 9 * 60 + 5, "答疑");
+
+        CourseConflictDetector.Conflict conflict = CourseConflictDetector.findAll(
+                Arrays.asList(sectionCourse, exactCourse), 20).get(0);
+
+        assertEquals(8 * 60 + 45, conflict.overlapStartMinutes);
+        assertEquals(8 * 60 + 50, conflict.overlapEndMinutes);
     }
 
     @Test
@@ -99,5 +127,11 @@ public class CourseConflictDetectorTest {
 
     private Course course(int day, int start, int end, String name, String weeks) {
         return new Course(day, start, end, name, weeks, "A101", "教师", "");
+    }
+
+    private Course exactCourse(int day, int startMinute, int endMinute, String name) {
+        return new Course(day, 0, 0, name, "1-20周", "A101", "教师", "", "", "",
+                CourseType.LECTURE, "", "", CourseTimeMode.CLOCK,
+                startMinute, endMinute);
     }
 }

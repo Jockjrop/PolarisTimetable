@@ -26,7 +26,7 @@ public class ScheduleMeetingIdMigrationTest {
     private static final String UNUSED_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
     @Test
-    public void versionOneWithoutMeetingId_migratesToVersionTwo() {
+    public void versionOneWithoutMeetingId_migratesToCurrentVersion() {
         StructuredCourse v1 = course(COURSE_ID, Collections.singletonList(meeting("")));
 
         ScheduleStorageSchema.MigrationResult migration = ScheduleStorageSchema.migrate(
@@ -35,7 +35,7 @@ public class ScheduleMeetingIdMigrationTest {
                 sequence(UNUSED_ID),
                 sequence(MEETING_ID_1));
 
-        assertEquals(ScheduleStorageSchema.COURSE_MEETING_ID_VERSION, migration.version);
+        assertEquals(ScheduleStorageSchema.CURRENT_VERSION, migration.version);
         assertTrue(migration.changed);
         assertEquals(COURSE_ID, migration.courses.get(0).id);
         assertEquals(MEETING_ID_1, migration.courses.get(0).meetings.get(0).id);

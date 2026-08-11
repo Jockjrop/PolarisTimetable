@@ -62,6 +62,11 @@ import com.polaris.timetable.importer.ImageImportCommitPolicy;
 import com.polaris.timetable.importer.ImageScheduleImportCoordinator;
 import com.polaris.timetable.importer.ImageScheduleRecognitionResult;
 import com.polaris.timetable.importer.LocalOcrScheduleRecognizer;
+import com.polaris.timetable.importer.ScheduleImportConfirmation;
+import com.polaris.timetable.importer.ScheduleImportPreviewData;
+import com.polaris.timetable.importer.ai.AiImportIssueFormatter;
+import com.polaris.timetable.importer.ai.AiScheduleImportWorkflow;
+import com.polaris.timetable.importer.ai.PolarisAiPromptV1;
 import com.polaris.timetable.export.ExportFileProvider;
 import com.polaris.timetable.export.ScheduleImageExporter;
 import com.polaris.timetable.export.SchedulePdfExporter;
@@ -69,6 +74,9 @@ import com.polaris.timetable.export.SemesterPdfExporter;
 import com.polaris.timetable.model.ParseError;
 import com.polaris.timetable.model.ParseResult;
 import com.polaris.timetable.model.CourseStructureMapper;
+import com.polaris.timetable.model.CourseMeeting;
+import com.polaris.timetable.model.CourseTimeMode;
+import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.parser.ParseDiagnosticsReport;
@@ -154,6 +162,8 @@ public class MainActivity extends Activity {
     private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
     private final CourseStructureMapper courseStructureMapper = new CourseStructureMapper();
+    private final AiScheduleImportWorkflow aiScheduleImportWorkflow =
+            new AiScheduleImportWorkflow();
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
     private ScheduleRepository scheduleRepository;
     private PdfImportCoordinator importCoordinator;
@@ -199,6 +209,7 @@ public class MainActivity extends Activity {
     private boolean showSunday = false;
     private boolean showOutOfWeekCourses = true;
     private boolean showPracticeBanner = true;
+    private boolean collapseLunchBreak = false;
     private int courseCellHeight = 76;
     private int courseCornerRadius = 9;
     private int courseBlockOpacity = 100;
@@ -406,7 +417,7 @@ public class MainActivity extends Activity {
         scheduleBoard.setFirstWeekStartMillis(firstWeekStartMillis());
         scheduleBoard.setClassTimeSettings(firstClassStartTime, classDurationMinutes, classBreakMinutes,
                 classBigBreakMinutes, afternoonStartTime, lateAfternoonStartTime, classTimeConfig);
-        scheduleBoard.setCollapseMiddleSections(isXautCollapseEnabled());
+        scheduleBoard.setCollapseLunchBreak(collapseLunchBreak);
         scheduleBoard.setVisualTheme(visualTheme);
         scheduleBoard.setDarkMode(isDarkModeActive());
         scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
@@ -509,6 +520,145 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showAiImportDialog() {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel("AI 识别导入");
+
+        TextView instruction = new TextView(this);
+        instruction.setText("1. 复制识别指令\n"
+                + "2. 在任意支持图片的 AI 中发送指令和课表截图\n"
+                + "3. 复制 AI 返回结果\n"
+                + "4. 回到 Polaris 粘贴并预览");
+        instruction.setTextColor(mutedColor());
+        instruction.setTextSize(14);
+        instruction.setLineSpacing(dp(3), 1f);
+        instruction.setPadding(0, 0, 0, dp(6));
+        panel.addView(instruction);
+
+        panel.addView(dialogAction("复制 AI 识别指令", v -> copyAiRecognitionPrompt()));
+
+        EditText input = new EditText(this);
+        input.setHint("将 AI 返回内容粘贴到这里");
+        input.setTextColor(inkColor());
+        input.setHintTextColor(mutedColor());
+        input.setTextSize(15);
+        input.setGravity(Gravity.TOP | Gravity.LEFT);
+        input.setSingleLine(false);
+        input.setHorizontallyScrolling(false);
+        input.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        input.setBackground(roundedBg(groupColorHex(), 12));
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200_000)});
+        input.setContentDescription("AI 返回内容输入框");
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(190));
+        inputParams.setMargins(0, dp(8), 0, dp(4));
+        panel.addView(input, inputParams);
+
+        TextView errorView = new TextView(this);
+        errorView.setTextColor(Color.parseColor(
+                isDarkModeActive() ? "#FFC266" : "#8A4B00"));
+        errorView.setTextSize(14);
+        errorView.setLineSpacing(dp(3), 1f);
+        errorView.setPadding(dp(12), dp(10), dp(12), dp(10));
+        errorView.setBackground(roundedBg(groupColorHex(), 12));
+        errorView.setTextIsSelectable(true);
+        errorView.setVisibility(View.GONE);
+        panel.addView(errorView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        panel.addView(dialogAction("从剪贴板粘贴",
+                v -> pasteAiTextFromClipboard(input, errorView)));
+
+        TextView parse = dialogAction("解析并预览", v -> {
+            String aiText = input.getText() == null
+                    ? "" : input.getText().toString();
+            if (aiText.trim().isEmpty()) {
+                showAiImportErrors(errorView,
+                        Collections.singletonList("请先粘贴或输入 AI 返回内容"));
+                return;
+            }
+            v.setEnabled(false);
+            AiScheduleImportWorkflow.PrepareResult prepared =
+                    aiScheduleImportWorkflow.prepare(aiText);
+            if (prepared instanceof AiScheduleImportWorkflow.PrepareFailure) {
+                List<String> messages = AiImportIssueFormatter.formatAll(
+                        ((AiScheduleImportWorkflow.PrepareFailure) prepared).errors);
+                showAiImportErrors(errorView, messages);
+                v.setEnabled(true);
+                return;
+            }
+            dialog.dismiss();
+            showAiImportPreview((AiScheduleImportWorkflow.PrepareSuccess) prepared);
+        });
+        parse.setTextColor(Color.WHITE);
+        parse.setBackground(roundedBg(primaryActionFillHex(), 14));
+        parse.setContentDescription("解析 AI 返回内容并打开课程预览");
+        panel.addView(parse);
+        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        scroll.addView(panel, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setContentView(glassDialogContent(scroll, panel, 22));
+        dialog.show();
+        transparentDialog(dialog);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+    }
+
+    private void copyAiRecognitionPrompt() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(
+                Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            Toast.makeText(this, "无法访问系统剪贴板", Toast.LENGTH_LONG).show();
+            return;
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText(
+                "Polaris AI 识别指令", PolarisAiPromptV1.getPrompt()));
+        Toast.makeText(this, "AI 识别指令已复制", Toast.LENGTH_SHORT).show();
+    }
+
+    private void pasteAiTextFromClipboard(EditText input, TextView errorView) {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(
+                Context.CLIPBOARD_SERVICE);
+        ClipData clip = clipboard == null ? null : clipboard.getPrimaryClip();
+        CharSequence text = clip == null || clip.getItemCount() == 0
+                ? null : clip.getItemAt(0).getText();
+        if (text == null || text.toString().trim().isEmpty()) {
+            Toast.makeText(this, "剪贴板中没有可用文本", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        input.setText(text);
+        input.setSelection(input.length());
+        errorView.setVisibility(View.GONE);
+        input.announceForAccessibility("已从剪贴板粘贴 AI 返回内容");
+    }
+
+    private void showAiImportErrors(TextView errorView, List<String> messages) {
+        StringBuilder text = new StringBuilder("请检查以下问题：");
+        if (messages == null || messages.isEmpty()) {
+            text.append("\nAI 识别结果无法解析");
+        } else {
+            for (String message : messages) {
+                text.append("\n\n").append(message);
+            }
+        }
+        errorView.setText(text.toString());
+        errorView.setContentDescription("AI 导入错误，" + text);
+        errorView.setVisibility(View.VISIBLE);
+        errorView.announceForAccessibility(text);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -587,6 +737,9 @@ public class MainActivity extends Activity {
                                         ImageScheduleRecognitionResult result) {
         Dialog dialog = new Dialog(this);
         LinearLayout panel = dialogPanel("预览课表图片");
+        ScheduleImportPreviewData previewData = ScheduleImportPreviewData.basic(
+                "本地图片识别", null, result.structuredCourses, result.warnings);
+        ScheduleImportConfirmation confirmation = new ScheduleImportConfirmation();
 
         TextView notice = new TextView(this);
         notice.setText(displayName + "\n" + result.notice);
@@ -610,24 +763,10 @@ public class MainActivity extends Activity {
         imageParams.setMargins(0, dp(12), 0, dp(8));
         panel.addView(image, imageParams);
 
-        panel.addView(importReviewHeading("本地识别结果"));
-        panel.addView(importReviewLine("识别结果",
-                result.structuredCourses.size() + " 门课程 · "
-                        + result.meetingCount() + " 条上课安排", false));
         panel.addView(importReviewLine("置信度",
                 Math.round(result.confidence * 100f) + "%",
                 result.confidence < ImageScheduleRecognitionResult.MIN_IMPORT_CONFIDENCE));
-        for (StructuredCourse course : result.structuredCourses) {
-            String teacher = course.teacher.isEmpty() ? "未填写教师" : course.teacher;
-            panel.addView(importReviewLine(course.name,
-                    teacher + " · " + course.meetings.size() + " 条安排", false));
-        }
-        if (!result.warnings.isEmpty()) {
-            panel.addView(importReviewHeading("需要检查"));
-            for (String item : result.warnings) {
-                panel.addView(importReviewLine("提示", item, true));
-            }
-        }
+        addScheduleImportCandidatePreview(panel, previewData);
 
         boolean replacingExisting = !structuredCourses.isEmpty();
         TextView warning = new TextView(this);
@@ -644,15 +783,12 @@ public class MainActivity extends Activity {
 
         if (result.isImportable()) {
             String confirmText = replacingExisting ? "确认并覆盖当前课表" : "确认导入课表";
-            final boolean[] committed = {false};
             TextView confirm = dialogAction(confirmText, v -> {
-                if (committed[0]) {
-                    return;
-                }
-                committed[0] = true;
                 v.setEnabled(false);
-                dialog.dismiss();
-                applyImageRecognition(result, true);
+                confirmation.confirm(previewData, candidates -> {
+                    dialog.dismiss();
+                    applyImageRecognition(result, true);
+                });
             });
             confirm.setTextColor(Color.WHITE);
             confirm.setBackground(roundedBg(primaryActionFillHex(), 14));
@@ -662,8 +798,10 @@ public class MainActivity extends Activity {
             panel.addView(importReviewLine("导入状态",
                     "当前结果不满足安全导入条件，当前课表不会改变", true));
         }
-        panel.addView(dialogAction(result.isImportable() ? "取消导入" : "关闭",
-                v -> dialog.dismiss()));
+        panel.addView(dialogAction(result.isImportable() ? "取消导入" : "关闭", v -> {
+            confirmation.cancel();
+            dialog.dismiss();
+        }));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -672,7 +810,9 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
         dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnCancelListener(ignored -> confirmation.cancel());
         dialog.setOnDismissListener(ignored -> {
+            confirmation.cancel();
             image.setImageDrawable(null);
             if (!preview.isRecycled()) {
                 preview.recycle();
@@ -690,18 +830,213 @@ public class MainActivity extends Activity {
                     Toast.LENGTH_LONG).show();
             return;
         }
-        replaceCanonicalCourses(result.structuredCourses);
+        applyCurrentScheduleImport(
+                result.structuredCourses,
+                "本地图片识别 · " + result.structuredCourses.size()
+                        + " 门课程 · " + result.meetingCount() + " 条安排",
+                "识别来源：本地 ML Kit OCR\n"
+                + "文件写入：已由用户确认\n"
+                + "课程数量：" + result.structuredCourses.size() + "\n"
+                + "上课安排：" + result.meetingCount() + "\n"
+                + "置信度：" + Math.round(result.confidence * 100f) + "%\n"
+                + "说明：" + result.notice,
+                "图片识别结果已保存并显示在课表中");
+    }
+
+    private void showAiImportPreview(AiScheduleImportWorkflow.PrepareSuccess prepared) {
+        ScheduleImportPreviewData preview = prepared.preview;
+        if (preview == null || preview.isEmpty()) {
+            Toast.makeText(this, "没有识别到可导入课程", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel("检查 AI 识别结果");
+        addScheduleImportCandidatePreview(panel, preview);
+
+        boolean replacingExisting = !structuredCourses.isEmpty();
+        TextView replacementNotice = new TextView(this);
+        replacementNotice.setText(replacingExisting
+                ? "确认后将覆盖当前正在查看的课表。识别学期和教学班仅用于本次预览。"
+                : "确认后将导入当前正在查看的课表。识别学期和教学班仅用于本次预览。");
+        replacementNotice.setTextColor(replacingExisting
+                ? Color.parseColor(isDarkModeActive() ? "#FFC266" : "#8A4B00")
+                : mutedColor());
+        replacementNotice.setTextSize(14);
+        replacementNotice.setLineSpacing(dp(3), 1f);
+        replacementNotice.setPadding(0, dp(12), 0, dp(4));
+        panel.addView(replacementNotice);
+
+        ScheduleImportConfirmation confirmation = new ScheduleImportConfirmation();
+        String confirmText = replacingExisting ? "确认并覆盖当前课表" : "确认导入";
+        TextView confirm = dialogAction(confirmText, v -> {
+            if (isFinishing()
+                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                    && isDestroyed())) {
+                confirmation.cancel();
+                dialog.dismiss();
+                return;
+            }
+            v.setEnabled(false);
+            confirmation.confirm(preview, candidates -> {
+                dialog.dismiss();
+                int courseCount = candidates.size();
+                applyCurrentScheduleImport(
+                        candidates,
+                        "外部 AI 识别 · " + courseCount + " 门课程 · "
+                                + preview.meetingCount() + " 条安排",
+                        "识别来源：外部多模态 AI\n"
+                                + "协议：Polaris Schedule JSON v1\n"
+                                + "文件写入：已由用户预览并确认\n"
+                                + "课程数量：" + courseCount + "\n"
+                                + "上课安排：" + preview.meetingCount(),
+                        "课表导入成功，共 " + courseCount + " 门课程");
+            });
+        });
+        confirm.setTextColor(Color.WHITE);
+        confirm.setBackground(roundedBg(primaryActionFillHex(), 14));
+        confirm.setContentDescription(confirmText + "，确认后才会覆盖当前课表数据");
+        panel.addView(confirm);
+        panel.addView(dialogAction("取消", v -> {
+            confirmation.cancel();
+            dialog.dismiss();
+        }));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        scroll.addView(panel, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnCancelListener(ignored -> confirmation.cancel());
+        dialog.setOnDismissListener(ignored -> confirmation.cancel());
+        dialog.setContentView(glassDialogContent(scroll, panel, 22));
+        dialog.show();
+        transparentDialog(dialog);
+    }
+
+    private void addScheduleImportCandidatePreview(
+            LinearLayout panel, ScheduleImportPreviewData preview) {
+        panel.addView(importReviewHeading("课程候选"));
+        panel.addView(importReviewLine("识别到",
+                preview.regularCourseCount() + " 门普通课程 · "
+                        + preview.practiceCourseCount() + " 门实践课程",
+                false));
+        if (preview.semester != null && !preview.semester.trim().isEmpty()) {
+            panel.addView(importReviewLine("识别学期", preview.semester, false));
+        }
+
+        for (StructuredCourse course : preview.courses) {
+            if (course != null) {
+                panel.addView(scheduleImportCourseCard(course, preview));
+            }
+        }
+
+        if (!preview.warnings.isEmpty()) {
+            panel.addView(importReviewHeading("需要检查"));
+            for (String warning : preview.warnings) {
+                panel.addView(importReviewLine("提示", warning, true));
+            }
+        }
+    }
+
+    private View scheduleImportCourseCard(StructuredCourse course,
+                                          ScheduleImportPreviewData preview) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(roundedBg(groupColorHex(), 14));
+        card.setContentDescription("待导入课程，" + course.name);
+
+        TextView name = new TextView(this);
+        name.setText(course.name);
+        name.setTextColor(inkColor());
+        name.setTextSize(16);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setSingleLine(false);
+        card.addView(name);
+
+        if (!course.teacher.trim().isEmpty()) {
+            card.addView(scheduleImportDetail("教师：" + course.teacher, false));
+        }
+        if (!course.credit.trim().isEmpty()) {
+            card.addView(scheduleImportDetail("学分：" + course.credit, false));
+        }
+        for (ScheduleImportPreviewData.Detail detail : preview.detailsFor(course)) {
+            String note = detail.note.isEmpty() ? "" : "（" + detail.note + "）";
+            card.addView(scheduleImportDetail(
+                    detail.label + "：" + detail.value + note, false));
+        }
+
+        for (CourseMeeting meeting : course.meetings) {
+            if (meeting == null) {
+                continue;
+            }
+            card.addView(scheduleImportDetail(
+                    scheduleImportMeetingText(course, meeting), true));
+        }
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(6), 0, dp(6));
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private TextView scheduleImportDetail(String text, boolean meeting) {
+        TextView detail = new TextView(this);
+        detail.setText(text);
+        detail.setTextColor(meeting ? inkColor() : mutedColor());
+        detail.setTextSize(meeting ? 14 : 13);
+        detail.setLineSpacing(dp(2), 1f);
+        detail.setSingleLine(false);
+        detail.setPadding(0, meeting ? dp(8) : dp(3), 0, 0);
+        return detail;
+    }
+
+    private String scheduleImportMeetingText(StructuredCourse course,
+                                             CourseMeeting meeting) {
+        String weeks = meeting.weekRule == null
+                ? "周次待确认" : meeting.weekRule.displayText();
+        if (course.courseType == CourseType.PRACTICE
+                && meeting.timeMode == CourseTimeMode.NONE) {
+            return weeks + "\n无固定上课时间";
+        }
+
+        StringBuilder text = new StringBuilder();
+        text.append(dayName(meeting.day)).append(' ');
+        if (meeting.hasExactTime()) {
+            text.append(twoDigits(meeting.startMinuteOfDay / 60)).append(':')
+                    .append(twoDigits(meeting.startMinuteOfDay % 60)).append('-')
+                    .append(twoDigits(meeting.endMinuteOfDay / 60)).append(':')
+                    .append(twoDigits(meeting.endMinuteOfDay % 60));
+        } else {
+            text.append(meeting.startSection).append('-')
+                    .append(meeting.endSection).append("节");
+        }
+        text.append('\n').append(weeks);
+        if (!meeting.location.trim().isEmpty()) {
+            text.append('\n').append(meeting.location);
+        }
+        return text.toString();
+    }
+
+    private void applyCurrentScheduleImport(List<StructuredCourse> importedCourses,
+                                            String diagnosticsSummary,
+                                            String diagnosticsText,
+                                            String successMessage) {
+        if (importedCourses == null || importedCourses.isEmpty()) {
+            Toast.makeText(this, "没有识别到可导入课程", Toast.LENGTH_LONG).show();
+            return;
+        }
+        replaceCanonicalCourses(importedCourses);
         semesterWeeks = inferSemesterWeeks(courses);
         courseSectionCount = inferSectionCount(courses);
         currentWeek = Math.max(1, Math.min(semesterWeeks, currentWeekFromDate()));
-        lastParseDiagnosticsSummary = "本地图片识别 · "
-                + structuredCourses.size() + " 门课程 · " + result.meetingCount() + " 条安排";
-        lastParseDiagnosticsText = "识别来源：本地 ML Kit OCR\n"
-                + "文件写入：已由用户确认\n"
-                + "课程数量：" + structuredCourses.size() + "\n"
-                + "上课安排：" + result.meetingCount() + "\n"
-                + "置信度：" + Math.round(result.confidence * 100f) + "%\n"
-                + "说明：" + result.notice;
+        lastParseDiagnosticsSummary = diagnosticsSummary == null ? "" : diagnosticsSummary;
+        lastParseDiagnosticsText = diagnosticsText == null ? "" : diagnosticsText;
         scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
         saveConfig();
         rescheduleCourseReminders();
@@ -711,8 +1046,7 @@ public class MainActivity extends Activity {
         refreshCourseManageList();
         refreshMyPage();
         switchTab(0);
-        Toast.makeText(this, "图片识别结果已保存并显示在课表中",
-                Toast.LENGTH_LONG).show();
+        Toast.makeText(this, successMessage, Toast.LENGTH_LONG).show();
     }
 
     private void startPdfImportFlow(Uri uri) {
@@ -1106,7 +1440,7 @@ public class MainActivity extends Activity {
             scheduleBoard.setFirstWeekStartMillis(firstWeekStartMillis());
             scheduleBoard.setClassTimeSettings(firstClassStartTime, classDurationMinutes, classBreakMinutes,
                     classBigBreakMinutes, afternoonStartTime, lateAfternoonStartTime, classTimeConfig);
-            scheduleBoard.setCollapseMiddleSections(isXautCollapseEnabled());
+            scheduleBoard.setCollapseLunchBreak(collapseLunchBreak);
             scheduleBoard.setVisualTheme(visualTheme);
             scheduleBoard.setDarkMode(isDarkModeActive());
             scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
@@ -1130,7 +1464,7 @@ public class MainActivity extends Activity {
         if (course == null) {
             return;
         }
-        new CourseDetailDialog(this, isDarkModeActive(), dialogBlurSource())
+        new CourseDetailDialog(this, isDarkModeActive(), dialogBlurSource(), courseTimeSettings())
                 .show(course, this::showCourseEditor);
     }
 
@@ -1168,13 +1502,13 @@ public class MainActivity extends Activity {
             return;
         }
         int count = CourseConflictDetector.forWeek(
-                courses, semesterWeeks, currentWeek).size();
+                courses, semesterWeeks, currentWeek, courseTimeSettings()).size();
         conflictSummaryView.setConflictCount(count, currentWeek, isDarkModeActive());
     }
 
     private void showCurrentWeekConflicts() {
         List<CourseConflictDetector.Conflict> conflicts = CourseConflictDetector.forWeek(
-                courses, semesterWeeks, currentWeek);
+                courses, semesterWeeks, currentWeek, courseTimeSettings());
         if (conflicts.isEmpty()) {
             updateConflictSummary();
             return;
@@ -1218,10 +1552,7 @@ public class MainActivity extends Activity {
                                         View.OnClickListener listener) {
         String firstName = safeCourseName(conflict.first);
         String secondName = safeCourseName(conflict.second);
-        String section = conflict.overlapStartSection == conflict.overlapEndSection
-                ? "第" + conflict.overlapStartSection + "节"
-                : "第" + conflict.overlapStartSection + "–"
-                + conflict.overlapEndSection + "节";
+        String section = conflict.overlapTimeText();
         TextView item = dialogAction(
                 firstName + "  ×  " + secondName + "\n"
                         + dayText(conflict.day) + " " + section + " · "
@@ -1982,6 +2313,10 @@ public class MainActivity extends Activity {
             popup.dismiss();
             openScheduleImagePicker();
         }));
+        panel.addView(popupMenuAction("AI 识别导入", v -> {
+            popup.dismiss();
+            showAiImportDialog();
+        }));
         panel.addView(popupMenuAction("导入分享链接", v -> {
             popup.dismiss();
             showSharedLinkInputDialog();
@@ -2480,6 +2815,7 @@ public class MainActivity extends Activity {
                 course,
                 courses,
                 courseSectionCount,
+                courseTimeSettings(),
                 backgroundColor(),
                 inkColor(),
                 mutedColor(),
@@ -2563,7 +2899,7 @@ public class MainActivity extends Activity {
                     ? "未命名实践" : course.name.trim();
             TextView item = dialogAction(name + " · " + time, v -> {
                 dialog.dismiss();
-                new CourseDetailDialog(this, isDarkModeActive(), dialogBlurSource())
+                new CourseDetailDialog(this, isDarkModeActive(), dialogBlurSource(), courseTimeSettings())
                         .show(course, this::showCourseEditor);
             });
             item.setSingleLine(false);
@@ -3937,7 +4273,9 @@ public class MainActivity extends Activity {
 
     private int courseTimeValue(Course course) {
         int day = course.day < 0 ? 99 : course.day;
-        return day * 100 + Math.max(1, course.startSection);
+        CourseTimeResolver.TimeRange range = CourseTimeResolver.timeRange(
+                course, courseTimeSettings());
+        return day * 24 * 60 + (range == null ? 0 : range.startMinutes);
     }
 
     private int courseGroupTimeValue(CourseGroup group) {
@@ -4043,14 +4381,18 @@ public class MainActivity extends Activity {
         if (course.isBannerOnlyCourse()) {
             return "顶部横幅";
         }
-        return dayName(course.day) + course.startSection + "-" + course.endSection + "节";
+        return dayName(course.day) + (course.hasExactTime()
+                ? CourseTimeResolver.format(course, courseTimeSettings())
+                : course.startSection + "-" + course.endSection + "节");
     }
 
     private String courseTimeText(Course course) {
         if (course.isBannerOnlyCourse()) {
             return "顶部横幅\n无固定节次";
         }
-        return dayName(course.day) + "\n" + course.startSection + "-" + course.endSection + "节";
+        return dayName(course.day) + "\n" + (course.hasExactTime()
+                ? CourseTimeResolver.format(course, courseTimeSettings())
+                : course.startSection + "-" + course.endSection + "节");
     }
 
     private String groupTimeText(CourseGroup group) {
@@ -4065,7 +4407,9 @@ public class MainActivity extends Activity {
                 builder.append("顶部横幅 · 无固定节次");
             } else {
                 builder.append(dayName(course.day)).append(' ')
-                        .append(course.startSection).append('-').append(course.endSection).append("节");
+                        .append(course.hasExactTime()
+                                ? CourseTimeResolver.format(course, courseTimeSettings())
+                                : course.startSection + "-" + course.endSection + "节");
             }
         }
         return builder.toString();
@@ -4669,6 +5013,11 @@ public class MainActivity extends Activity {
             saveGlobalAppearance();
             renderSchedule();
         }));
+        displayCard.addView(settingSwitchRow("折叠午休时间", collapseLunchBreak, value -> {
+            collapseLunchBreak = value;
+            saveGlobalAppearance();
+            renderSchedule();
+        }));
         panel.addView(displayCard);
 
         panel.addView(sectionHeader("外观"));
@@ -5249,6 +5598,7 @@ public class MainActivity extends Activity {
         showSunday = config.showSunday;
         showOutOfWeekCourses = config.showOutOfWeekCourses;
         showPracticeBanner = config.showPracticeBanner;
+        collapseLunchBreak = config.collapseLunchBreak;
         courseCellHeight = Math.max(56, Math.min(120, config.courseCellHeight));
         courseCornerRadius = Math.max(0, Math.min(24, config.courseCornerRadius));
         courseBlockOpacity = Math.max(45, Math.min(100, config.courseBlockOpacity));
@@ -5304,6 +5654,7 @@ public class MainActivity extends Activity {
         config.showSunday = showSunday;
         config.showOutOfWeekCourses = showOutOfWeekCourses;
         config.showPracticeBanner = showPracticeBanner;
+        config.collapseLunchBreak = collapseLunchBreak;
         config.collapseXautMiddleSections = collapseXautMiddleSections;
         config.courseCellHeight = courseCellHeight;
         config.courseCornerRadius = courseCornerRadius;
@@ -5493,6 +5844,7 @@ public class MainActivity extends Activity {
         config.courseCornerRadius = courseCornerRadius;
         config.courseBlockOpacity = courseBlockOpacity;
         config.showPracticeBanner = showPracticeBanner;
+        config.collapseLunchBreak = collapseLunchBreak;
         config.timetableHeaderOpacity = timetableHeaderOpacity;
         config.bottomNavOpacity = bottomNavOpacity;
         config.bottomNavShape = bottomNavShape;

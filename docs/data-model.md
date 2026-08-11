@@ -2,7 +2,7 @@
 
 ## 1. 设计目标
 
-新的数据模型只做设计，不立即改代码。目标是解决当前 `Course.java` 的限制：
+新的数据模型采用渐进落地方式，目标是解决当前 `Course.java` 的限制：
 
 - 一门课支持多个上课时间。
 - 周次规则结构化，支持范围、单双周、项目周和未知周次。
@@ -75,8 +75,11 @@ class CourseMeeting {
     String id;
     String courseId;
     int dayOfWeek;
+    CourseTimeMode timeMode;
     int startSection;
     int endSection;
+    int startMinuteOfDay;
+    int endMinuteOfDay;
     WeekRule weekRule;
     String location;
     String campus;
@@ -92,7 +95,9 @@ class CourseMeeting {
 字段说明：
 
 - `dayOfWeek`：建议使用 1-7 表示周一到周日，避免当前 0-5 与自然星期混淆。
+- `timeMode`：`SECTION` 使用学校节次配置换算时间，`CLOCK` 使用当天精确分钟，`NONE` 表示无固定时间。
 - `startSection` / `endSection`：第几节到第几节。
+- `startMinuteOfDay` / `endMinuteOfDay`：具体时间模式下的当天分钟区间；非具体时间模式为 `-1`。
 - `weekRule`：结构化周次。
 - `sourceBounds`：来源坐标，后续可在调试页高亮 PDF 区域。
 - `rawText`：该上课安排的原始文本。
@@ -294,6 +299,7 @@ class UserSettings {
 
 - 新 `CourseMeeting` 可转换成旧 `Course`。
 - 一门课程多个 meeting 会展开成多个旧 `Course`。
+- PDF 导入继续写入 `SECTION`，用户手动选择具体时间后写入 `CLOCK`；两种模式统一由时间解析器转换成分钟区间供课表绘制、冲突检测和提醒使用。
 - `WeekRule.displayText()` 填入旧 `weeks` 字符串。
 - `rawText` 填入旧 `raw`。
 

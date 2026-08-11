@@ -15,7 +15,8 @@ public final class ScheduleStorageSchema {
     public static final int LEGACY_VERSION = 0;
     public static final int STRUCTURED_COURSE_ID_VERSION = 1;
     public static final int COURSE_MEETING_ID_VERSION = 2;
-    public static final int CURRENT_VERSION = COURSE_MEETING_ID_VERSION;
+    public static final int COURSE_CLOCK_TIME_VERSION = 3;
+    public static final int CURRENT_VERSION = COURSE_CLOCK_TIME_VERSION;
     private static final String VERSION_KEY_PREFIX = "schema_version_";
 
     interface IdGenerator {
@@ -135,7 +136,10 @@ public final class ScheduleStorageSchema {
                 meeting.weekRule,
                 meeting.location,
                 meeting.teacher,
-                meeting.rawText);
+                meeting.rawText,
+                meeting.timeMode,
+                meeting.startMinuteOfDay,
+                meeting.endMinuteOfDay);
     }
 
     public static final class MigrationResult {

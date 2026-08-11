@@ -49,7 +49,7 @@ public final class CourseReminderPlanner {
         int leadMinutes = Math.max(0, Math.min(180, minutesBefore));
         List<Entry> result = new ArrayList<>();
         for (Course course : courses) {
-            if (course == null || !course.hasFixedTime()) {
+            if (course == null || !course.hasScheduledTime()) {
                 continue;
             }
             CourseTimeResolver.TimeRange range = CourseTimeResolver.timeRange(
@@ -87,7 +87,13 @@ public final class CourseReminderPlanner {
                 if (byName != 0) {
                     return byName;
                 }
-                return Integer.compare(first.course.startSection, second.course.startSection);
+                CourseTimeResolver.TimeRange firstRange = CourseTimeResolver.timeRange(
+                        first.course, timeSettings);
+                CourseTimeResolver.TimeRange secondRange = CourseTimeResolver.timeRange(
+                        second.course, timeSettings);
+                return Integer.compare(
+                        firstRange == null ? Integer.MAX_VALUE : firstRange.startMinutes,
+                        secondRange == null ? Integer.MAX_VALUE : secondRange.startMinutes);
             }
         });
         if (result.size() > maxReminders) {

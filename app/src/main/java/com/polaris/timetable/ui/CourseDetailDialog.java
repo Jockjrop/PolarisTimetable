@@ -18,6 +18,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.time.CourseTimeResolver;
 
 public class CourseDetailDialog {
     public interface OnEditListener {
@@ -29,19 +30,27 @@ public class CourseDetailDialog {
     private final Context context;
     private final Boolean darkOverride;
     private final View blurSource;
+    private final CourseTimeResolver.Settings timeSettings;
 
     public CourseDetailDialog(Context context) {
-        this(context, null, null);
+        this(context, null, null, null);
     }
 
     public CourseDetailDialog(Context context, Boolean darkOverride) {
-        this(context, darkOverride, null);
+        this(context, darkOverride, null, null);
     }
 
     public CourseDetailDialog(Context context, Boolean darkOverride, View blurSource) {
+        this(context, darkOverride, blurSource, null);
+    }
+
+    public CourseDetailDialog(Context context, Boolean darkOverride, View blurSource,
+                              CourseTimeResolver.Settings timeSettings) {
         this.context = context;
         this.darkOverride = darkOverride;
         this.blurSource = blurSource;
+        this.timeSettings = timeSettings == null
+                ? CourseTimeResolver.defaultSettings() : timeSettings;
     }
 
     public void show(Course course, OnEditListener editListener) {
@@ -98,7 +107,7 @@ public class CourseDetailDialog {
 
         addRow(content, "时间", course.isBannerOnlyCourse()
                 ? "顶部横幅 · 无固定节次"
-                : dayText(course.day) + " · " + course.startSection + "-" + course.endSection + "节");
+                : dayText(course.day) + " · " + CourseTimeResolver.format(course, timeSettings));
         addRow(content, "周次", emptyText(course.weeks, "周次见PDF"));
         addRow(content, "类型", course.courseType.displayName);
         addRow(content, "学分", creditText(course.credit));

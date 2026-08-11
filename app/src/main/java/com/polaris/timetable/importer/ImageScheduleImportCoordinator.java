@@ -14,8 +14,9 @@ import com.polaris.timetable.ui.BackgroundImageLoader;
 
 public final class ImageScheduleImportCoordinator implements AutoCloseable {
     private static final String TAG = "ImageScheduleImport";
-    private static final int PREVIEW_WIDTH = 1080;
-    private static final int PREVIEW_HEIGHT = 1440;
+    // Keep small timetable text legible. BackgroundImageLoader still caps decoding at 4 MP.
+    private static final int OCR_TARGET_WIDTH = 2160;
+    private static final int OCR_TARGET_HEIGHT = 2880;
 
     public interface Callback {
         void onStarted(String displayName);
@@ -50,7 +51,7 @@ public final class ImageScheduleImportCoordinator implements AutoCloseable {
     private void decodeAndRecognize(Uri uri, String displayName, Callback callback) {
         try {
             Bitmap preview = BackgroundImageLoader.decode(
-                    context, uri, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+                    context, uri, OCR_TARGET_WIDTH, OCR_TARGET_HEIGHT);
             if (preview == null) {
                 throw new IllegalArgumentException("所选文件不是可读取的图片");
             }

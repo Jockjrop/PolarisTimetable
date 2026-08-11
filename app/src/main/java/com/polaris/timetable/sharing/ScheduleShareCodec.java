@@ -4,6 +4,7 @@ import android.net.Uri;
 import android.util.Base64;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 
 import org.json.JSONException;
@@ -42,7 +43,10 @@ public class ScheduleShareCodec {
                         .append(escape(safeText(course.name))).append('\t')
                         .append(escape(safeText(course.credit))).append('\t')
                         .append(escape(safeText(course.color))).append('\t')
-                        .append(course.courseType.name());
+                        .append(course.courseType.name()).append('\t')
+                        .append(course.timeMode.name()).append('\t')
+                        .append(course.startMinuteOfDay).append('\t')
+                        .append(course.endMinuteOfDay);
             }
         }
         String payload = "z" + Base64.encodeToString(deflate(builder.toString().getBytes(StandardCharsets.UTF_8)),
@@ -102,18 +106,24 @@ public class ScheduleShareCodec {
             int day = item.optInt("d", -1);
             int start = item.optInt("s", 1);
             int end = item.optInt("e", start);
+            int startMinute = item.optInt("sm", -1);
+            int endMinute = item.optInt("em", -1);
+            CourseTimeMode timeMode = CourseTimeMode.fromStorage(
+                    item.optString("m", ""), day, start, end, startMinute, endMinute);
             CourseType courseType = CourseType.fromStorage(
                     item.optString("courseType", item.optString("type", "")));
-            boolean bannerOnly = courseType.supportsBannerOnly()
-                    && day < 0 && start <= 0 && end <= 0;
-            if (!bannerOnly && (day < 0 || day > 6 || start < 1 || end < start)) {
+            boolean bannerOnly = courseType.supportsBannerOnly() && timeMode == CourseTimeMode.NONE;
+            boolean scheduled = timeMode == CourseTimeMode.CLOCK
+                    ? day >= 0 && day <= 6 && startMinute >= 0 && startMinute < endMinute
+                    : day >= 0 && day <= 6 && start >= 1 && end >= start;
+            if (!bannerOnly && !scheduled) {
                 continue;
             }
             courses.add(new Course(day, start, end, name, item.optString("w", "周次见PDF"),
                     item.optString("l", ""), item.optString("t", ""), "",
                     item.optString("credit", item.optString("c", "")),
                     item.optString("color", ""),
-                    courseType));
+                    courseType, "", "", timeMode, startMinute, endMinute));
         }
         return courses;
     }
@@ -142,15 +152,22 @@ public class ScheduleShareCodec {
             CourseType courseType = parts.length > 9
                     ? CourseType.fromStorage(unescape(parts[9]))
                     : CourseType.LECTURE;
-            boolean bannerOnly = courseType.supportsBannerOnly()
-                    && day < 0 && start <= 0 && end <= 0;
+            int startMinute = parts.length > 11 ? parseInt(parts[11], -1) : -1;
+            int endMinute = parts.length > 12 ? parseInt(parts[12], -1) : -1;
+            CourseTimeMode timeMode = CourseTimeMode.fromStorage(
+                    parts.length > 10 ? unescape(parts[10]) : "",
+                    day, start, end, startMinute, endMinute);
+            boolean bannerOnly = courseType.supportsBannerOnly() && timeMode == CourseTimeMode.NONE;
+            boolean scheduled = timeMode == CourseTimeMode.CLOCK
+                    ? day >= 0 && day <= 6 && startMinute >= 0 && startMinute < endMinute
+                    : day >= 0 && day <= 6 && start >= 1 && end >= start;
             if (name.length() == 0
-                    || (!bannerOnly && (day < 0 || day > 6 || start < 1 || end < start))) {
+                    || (!bannerOnly && !scheduled)) {
                 continue;
             }
             courses.add(new Course(day, start, end, name,
                     unescape(parts[3]), unescape(parts[4]), unescape(parts[5]), "",
-                    credit, color, courseType));
+                    credit, color, courseType, "", "", timeMode, startMinute, endMinute));
         }
         return courses;
     }

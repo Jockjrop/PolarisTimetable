@@ -55,7 +55,10 @@ public final class CourseEditManager {
                 WEEK_RULE_PARSER.parse(edited.weeks),
                 edited.location,
                 edited.teacher,
-                previousMeeting.rawText));
+                previousMeeting.rawText,
+                edited.timeMode,
+                edited.startMinuteOfDay,
+                edited.endMinuteOfDay));
         structuredCourses.set(courseIndex, new StructuredCourse(
                 source.id,
                 edited.name,
@@ -149,7 +152,10 @@ public final class CourseEditManager {
                 WEEK_RULE_PARSER.parse(edited.weeks),
                 edited.location,
                 edited.teacher,
-                edited.raw);
+                edited.raw,
+                edited.timeMode,
+                edited.startMinuteOfDay,
+                edited.endMinuteOfDay);
         structuredCourses.add(new StructuredCourse(
                 stableId,
                 edited.name,
@@ -202,7 +208,10 @@ public final class CourseEditManager {
             CourseMeeting meeting = course.meetings.get(index);
             if (meeting.day != target.day
                     || meeting.startSection != target.startSection
-                    || meeting.endSection != target.endSection) {
+                    || meeting.endSection != target.endSection
+                    || meeting.timeMode != target.timeMode
+                    || meeting.startMinuteOfDay != target.startMinuteOfDay
+                    || meeting.endMinuteOfDay != target.endMinuteOfDay) {
                 continue;
             }
             if (slotFallback < 0) {
@@ -231,7 +240,10 @@ public final class CourseEditManager {
                 meeting.weekRule,
                 meeting.location,
                 meeting.teacher,
-                meeting.rawText);
+                meeting.rawText,
+                meeting.timeMode,
+                meeting.startMinuteOfDay,
+                meeting.endMinuteOfDay);
     }
 
     private static StructuredCourse copyWithMeetings(
@@ -321,7 +333,10 @@ public final class CourseEditManager {
                 course.color,
                 course.courseType,
                 stableId,
-                course.meetingId);
+                course.meetingId,
+                course.timeMode,
+                course.startMinuteOfDay,
+                course.endMinuteOfDay);
     }
 
     private static Course copyCourseLevelFields(
@@ -339,6 +354,9 @@ public final class CourseEditManager {
                 edited.color,
                 edited.courseType,
                 stableId,
-                meeting.meetingId);
+                meeting.meetingId,
+                meeting.timeMode,
+                meeting.startMinuteOfDay,
+                meeting.endMinuteOfDay);
     }
 }

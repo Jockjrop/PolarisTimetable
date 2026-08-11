@@ -52,6 +52,23 @@ public class ScheduleImageParserTest {
     }
 
     @Test
+    public void mapsPairedSectionLabelsUsedByRenderedTimetables() {
+        List<OcrTextBlock> blocks = pairedSectionGridBlocks();
+        blocks.add(courseBlock(110, 110, 190, 190,
+                "移动应用开发◆\n(1-2节)1-4周\n场地:A101\n教师:陈晨"));
+
+        ImageScheduleRecognitionResult result = parser.parse(blocks, 700, 800);
+
+        assertTrue(result.isImportable());
+        StructuredCourse course = result.structuredCourses.get(0);
+        assertEquals("移动应用开发", course.name);
+        assertEquals("陈晨", course.teacher);
+        assertEquals("A101", course.defaultLocation);
+        assertEquals(1, course.meetings.get(0).startSection);
+        assertEquals(2, course.meetings.get(0).endSection);
+    }
+
+    @Test
     public void recognizesCourseSpanningTwoSections() {
         ImageScheduleRecognitionResult result = parseCourse(
                 courseBlock(110, 110, 190, 290,
@@ -127,6 +144,56 @@ public class ScheduleImageParserTest {
     }
 
     @Test
+    public void mergesNearbyOcrLinesFromTheSameSourceParagraph() {
+        List<OcrTextBlock> blocks = gridBlocks();
+        blocks.add(ocrLine(110, 115, 190, 145, "高等数学", 42));
+        blocks.add(ocrLine(120, 155, 185, 180, "张老师", 42));
+        blocks.add(ocrLine(120, 190, 180, 215, "A101", 42));
+        blocks.add(ocrLine(115, 225, 185, 250, "1-16周", 42));
+
+        ImageScheduleRecognitionResult result = parser.parse(blocks, 700, 800);
+
+        assertTrue(result.isImportable());
+        assertEquals(1, result.structuredCourses.size());
+        StructuredCourse course = result.structuredCourses.get(0);
+        assertEquals("高等数学", course.name);
+        assertEquals("张老师", course.teacher);
+        assertEquals("A101", course.defaultLocation);
+        assertEquals(1, course.meetings.get(0).startSection);
+        assertEquals(2, course.meetings.get(0).endSection);
+    }
+
+    @Test
+    public void splitsOneOcrParagraphAcrossWeekdayColumns() {
+        List<OcrTextBlock> blocks = gridBlocks();
+        blocks.add(ocrLine(110, 115, 190, 145, "高等数学", 73));
+        blocks.add(ocrLine(110, 155, 190, 180, "张老师 A101 1-16周", 73));
+        blocks.add(ocrLine(210, 115, 290, 145, "大学英语", 73));
+        blocks.add(ocrLine(210, 155, 290, 180, "李老师 B202 1-16周", 73));
+
+        ImageScheduleRecognitionResult result = parser.parse(blocks, 700, 800);
+
+        assertEquals(2, result.structuredCourses.size());
+        assertEquals(0, result.structuredCourses.get(0).meetings.get(0).day);
+        assertEquals(1, result.structuredCourses.get(1).meetings.get(0).day);
+    }
+
+    @Test
+    public void splitsDistantCoursesFromTheSameOcrParagraph() {
+        List<OcrTextBlock> blocks = gridBlocks();
+        blocks.add(ocrLine(110, 115, 190, 145, "高等数学", 91));
+        blocks.add(ocrLine(110, 155, 190, 180, "张老师 A101 1-16周", 91));
+        blocks.add(ocrLine(110, 415, 190, 445, "大学英语", 91));
+        blocks.add(ocrLine(110, 455, 190, 480, "李老师 B202 1-16周", 91));
+
+        ImageScheduleRecognitionResult result = parser.parse(blocks, 700, 800);
+
+        assertEquals(2, result.structuredCourses.size());
+        assertEquals(1, result.structuredCourses.get(0).meetings.get(0).startSection);
+        assertEquals(4, result.structuredCourses.get(1).meetings.get(0).startSection);
+    }
+
+    @Test
     public void emptyOcrResultCannotBeCommitted() {
         ImageScheduleRecognitionResult result = parser.parse(
                 Collections.emptyList(), 700, 800);
@@ -188,7 +255,30 @@ public class ScheduleImageParserTest {
         return blocks;
     }
 
+    private List<OcrTextBlock> pairedSectionGridBlocks() {
+        List<OcrTextBlock> blocks = new ArrayList<>();
+        String[] weekdays = {"周一", "周二", "周三", "周四", "周五"};
+        for (int day = 0; day < weekdays.length; day++) {
+            int centerX = 150 + day * 100;
+            blocks.add(new OcrTextBlock(
+                    weekdays[day], centerX - 35, 20, centerX + 35, 60, 0.98f));
+        }
+        for (int band = 0; band < 6; band++) {
+            int startSection = band * 2 + 1;
+            int centerY = 150 + band * 100;
+            blocks.add(new OcrTextBlock(
+                    startSection + "-" + (startSection + 1) + "节",
+                    10, centerY - 20, 70, centerY + 20, 0.98f));
+        }
+        return blocks;
+    }
+
     private OcrTextBlock courseBlock(int left, int top, int right, int bottom, String text) {
         return new OcrTextBlock(text, left, top, right, bottom, 0.95f);
+    }
+
+    private OcrTextBlock ocrLine(int left, int top, int right, int bottom,
+                                 String text, int sourceGroupId) {
+        return new OcrTextBlock(text, left, top, right, bottom, 0.95f, sourceGroupId);
     }
 }

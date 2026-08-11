@@ -27,6 +27,8 @@ public final class CourseTimeResolver {
             "(\\d{1,2})\\s+((?:\\d{1,2})[:：](?:\\d{2}))\\s*-\\s*(?:\\d{1,2})[:：](?:\\d{2})");
     private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
     private static final WeekRuleParser WEEK_RULE_PARSER = new WeekRuleParser();
+    private static final Settings DEFAULT_SETTINGS = new Settings(
+            "08:00", 50, 10, 30, "14:30", "16:35", "");
 
     private CourseTimeResolver() {
     }
@@ -112,7 +114,13 @@ public final class CourseTimeResolver {
     }
 
     public static TimeRange timeRange(Course course, Settings settings) {
-        if (course == null || settings == null || !course.hasFixedTime()) {
+        if (course == null || !course.hasScheduledTime()) {
+            return null;
+        }
+        if (course.hasExactTime()) {
+            return new TimeRange(course.startMinuteOfDay, course.endMinuteOfDay);
+        }
+        if (settings == null || !course.hasSectionTime()) {
             return null;
         }
         int count = Math.max(20, course.endSection);
@@ -155,6 +163,23 @@ public final class CourseTimeResolver {
         return labels;
     }
 
+    public static TimeRange sectionTimeRange(Settings settings, int section) {
+        if (section < 1) {
+            return null;
+        }
+        TimeRange[] ranges = buildRanges(settings == null ? DEFAULT_SETTINGS : settings,
+                section, true);
+        return ranges[section];
+    }
+
+    public static Settings defaultSettings() {
+        return DEFAULT_SETTINGS;
+    }
+
+    public static String formatMinuteOfDay(int minutes) {
+        return timeText(minutes);
+    }
+
     public static TodayOverview resolveToday(List<Course> source, Settings settings,
                                               long firstWeekStartMillis, int semesterWeeks,
                                               Calendar now) {
@@ -168,7 +193,7 @@ public final class CourseTimeResolver {
         List<CourseWithTime> todayCourses = new ArrayList<>();
         if (source != null) {
             for (Course course : source) {
-                if (course == null || !course.hasFixedTime() || course.day != day
+                if (course == null || !course.hasScheduledTime() || course.day != day
                         || !isActiveInWeek(course, week)) {
                     continue;
                 }
@@ -353,6 +378,9 @@ public final class CourseTimeResolver {
     }
 
     private static String timeText(int minutes) {
+        if (minutes == MINUTES_PER_DAY) {
+            return "24:00";
+        }
         int normalized = ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
         return twoDigits(normalized / 60) + ":" + twoDigits(normalized % 60);
     }
@@ -362,8 +390,11 @@ public final class CourseTimeResolver {
     }
 
     private static String sectionFallback(Course course) {
-        if (course == null || !course.hasFixedTime()) {
+        if (course == null || !course.hasScheduledTime()) {
             return "时间待定";
+        }
+        if (course.hasExactTime()) {
+            return timeText(course.startMinuteOfDay) + "–" + timeText(course.endMinuteOfDay);
         }
         return "第" + course.startSection + "–" + course.endSection + "节";
     }

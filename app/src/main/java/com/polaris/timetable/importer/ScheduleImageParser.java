@@ -21,10 +21,11 @@ import java.util.regex.Pattern;
 
 /** Pure Java first-stage parser for upright grid timetable screenshots. */
 public final class ScheduleImageParser {
-    private static final Pattern SECTION_PATTERN =
-            Pattern.compile("(?:第)?([1-9]|1[0-9]|20)(?:节)?");
     private static final String RANGE_CONNECTOR = "[-‐‑‒–—﹘﹣－~～〜∼]|至";
     private static final String LIST_CONNECTOR = "[、,，;；]";
+    private static final Pattern SECTION_RANGE_PATTERN = Pattern.compile(
+            "(?:第)?([1-9]|1[0-9]|20)(?:\\s*(?:" + RANGE_CONNECTOR
+                    + ")\\s*([1-9]|1[0-9]|20))?(?:节)?");
     private static final Pattern WEEK_EXPRESSION = Pattern.compile(
             "(\\d+(?:\\s*(?:" + RANGE_CONNECTOR + ")\\s*\\d+)?"
                     + "(?:\\s*" + LIST_CONNECTOR + "\\s*\\d+"
@@ -69,11 +70,9 @@ public final class ScheduleImageParser {
         List<String> warnings = new ArrayList<>(layout.warnings);
         List<ParsedCell> cells = new ArrayList<>();
         int ignoredContentBlocks = 0;
-        for (OcrTextBlock block : blocks) {
-            if (isLayoutLabel(block, layout)) {
-                continue;
-            }
-            int day = layout.dayAt(block.centerX());
+        List<OcrTextBlock> courseBlocks = groupCourseContentBlocks(blocks, layout);
+        for (OcrTextBlock block : courseBlocks) {
+            int day = layout.dayOverlapping(block.left, block.right);
             List<Integer> sections = layout.sectionsOverlapping(block.top, block.bottom);
             if (day < 0 || sections.isEmpty()) {
                 continue;
@@ -113,7 +112,107 @@ public final class ScheduleImageParser {
         }
         return new ImageScheduleRecognitionResult(
                 status, courses, blocks, warnings, confidence,
-                "本地 OCR 识别；请在确认前检查课程、教师、地点和周次");
+                "本地 OCR 识别 · " + imageWidth + "×" + imageHeight
+                        + " · " + blocks.size() + " 行文字；"
+                        + "请在确认前检查课程、教师、地点和周次");
+    }
+
+    /**
+     * ML Kit paragraphs are useful hints, but they are not timetable cells. Split every
+     * paragraph by the detected weekday column, then merge only nearby lines from the same
+     * source paragraph. Blocks created by tests or other recognizers keep their old behavior.
+     */
+    private List<OcrTextBlock> groupCourseContentBlocks(
+            List<OcrTextBlock> blocks, Layout layout) {
+        List<OcrTextBlock> groupedBlocks = new ArrayList<>();
+        Map<String, List<OcrTextBlock>> linesBySourceAndDay = new LinkedHashMap<>();
+        for (OcrTextBlock block : blocks) {
+            if (isLayoutLabel(block, layout)) {
+                continue;
+            }
+            int day = layout.dayOverlapping(block.left, block.right);
+            if (day < 0 || layout.sectionsOverlapping(block.top, block.bottom).isEmpty()) {
+                continue;
+            }
+            if (block.sourceGroupId == OcrTextBlock.SOURCE_GROUP_UNKNOWN) {
+                groupedBlocks.add(block);
+                continue;
+            }
+            String key = block.sourceGroupId + "|" + day;
+            List<OcrTextBlock> lines = linesBySourceAndDay.get(key);
+            if (lines == null) {
+                lines = new ArrayList<>();
+                linesBySourceAndDay.put(key, lines);
+            }
+            lines.add(block);
+        }
+        for (List<OcrTextBlock> lines : linesBySourceAndDay.values()) {
+            groupedBlocks.addAll(mergeNearbyOcrLines(lines, layout));
+        }
+        groupedBlocks.sort(Comparator
+                .comparingInt((OcrTextBlock block) -> block.top)
+                .thenComparingInt(block -> block.left));
+        return groupedBlocks;
+    }
+
+    private List<OcrTextBlock> mergeNearbyOcrLines(
+            List<OcrTextBlock> sourceLines, Layout layout) {
+        if (sourceLines.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<OcrTextBlock> lines = new ArrayList<>(sourceLines);
+        lines.sort(Comparator
+                .comparingInt((OcrTextBlock block) -> block.top)
+                .thenComparingInt(block -> block.left));
+        float splitGap = Math.max(8f, layout.averageSectionHeight() * 0.34f);
+        List<OcrTextBlock> merged = new ArrayList<>();
+        List<OcrTextBlock> current = new ArrayList<>();
+        int currentBottom = Integer.MIN_VALUE;
+        for (OcrTextBlock line : lines) {
+            if (!current.isEmpty() && line.top - currentBottom > splitGap) {
+                merged.add(mergeOcrLines(current));
+                current.clear();
+                currentBottom = Integer.MIN_VALUE;
+            }
+            current.add(line);
+            currentBottom = Math.max(currentBottom, line.bottom);
+        }
+        if (!current.isEmpty()) {
+            merged.add(mergeOcrLines(current));
+        }
+        return merged;
+    }
+
+    private OcrTextBlock mergeOcrLines(List<OcrTextBlock> lines) {
+        StringBuilder text = new StringBuilder();
+        int left = Integer.MAX_VALUE;
+        int top = Integer.MAX_VALUE;
+        int right = Integer.MIN_VALUE;
+        int bottom = Integer.MIN_VALUE;
+        float confidenceTotal = 0f;
+        int confidenceWeight = 0;
+        int sourceGroupId = OcrTextBlock.SOURCE_GROUP_UNKNOWN;
+        for (OcrTextBlock line : lines) {
+            if (text.length() > 0) {
+                text.append('\n');
+            }
+            text.append(line.text);
+            left = Math.min(left, line.left);
+            top = Math.min(top, line.top);
+            right = Math.max(right, line.right);
+            bottom = Math.max(bottom, line.bottom);
+            sourceGroupId = line.sourceGroupId;
+            if (line.confidence >= 0f) {
+                int weight = Math.max(1, line.text.length());
+                confidenceTotal += line.confidence * weight;
+                confidenceWeight += weight;
+            }
+        }
+        float confidence = confidenceWeight == 0
+                ? OcrTextBlock.CONFIDENCE_UNKNOWN
+                : confidenceTotal / confidenceWeight;
+        return new OcrTextBlock(text.toString(), left, top, right, bottom,
+                confidence, sourceGroupId);
     }
 
     public Layout analyzeLayout(List<OcrTextBlock> source,
@@ -174,45 +273,48 @@ public final class ScheduleImageParser {
         }
 
         float firstCourseLeft = columns.get(0).left;
-        Map<Integer, OcrTextBlock> sectionLabels = new LinkedHashMap<>();
+        Map<Integer, AxisSectionLabel> sectionLabels = new LinkedHashMap<>();
         for (OcrTextBlock block : blocks) {
             if (block.centerX() >= firstCourseLeft || block.top <= headerBottom) {
                 continue;
             }
-            int section = sectionNumber(block.text);
-            if (section <= 0) {
+            SectionSpan span = sectionSpan(block.text);
+            if (span == null) {
                 continue;
             }
-            OcrTextBlock previous = sectionLabels.get(section);
-            if (previous == null || block.left < previous.left) {
-                sectionLabels.put(section, block);
+            AxisSectionLabel previous = sectionLabels.get(span.start);
+            if (previous == null || block.left < previous.block.left) {
+                sectionLabels.put(span.start, new AxisSectionLabel(span, block));
             }
         }
         if (sectionLabels.size() < 2) {
             warnings.add("未识别到足够的节次纵轴");
             return Layout.invalid(warnings);
         }
-        List<Map.Entry<Integer, OcrTextBlock>> orderedSections =
-                new ArrayList<>(sectionLabels.entrySet());
-        orderedSections.sort(Comparator.comparingDouble(entry -> entry.getValue().centerY()));
+        List<AxisSectionLabel> orderedSections = new ArrayList<>(sectionLabels.values());
+        orderedSections.sort(Comparator.comparingDouble(label -> label.block.centerY()));
         for (int index = 1; index < orderedSections.size(); index++) {
-            if (orderedSections.get(index).getKey() <= orderedSections.get(index - 1).getKey()) {
+            if (orderedSections.get(index).span.start
+                    <= orderedSections.get(index - 1).span.end) {
                 warnings.add("节次纵向顺序异常");
                 return Layout.invalid(warnings);
             }
         }
         List<SectionRange> sections = new ArrayList<>();
         for (int index = 0; index < orderedSections.size(); index++) {
-            float center = orderedSections.get(index).getValue().centerY();
+            AxisSectionLabel label = orderedSections.get(index);
+            float center = label.block.centerY();
             float top = index == 0
-                    ? center - (orderedSections.get(1).getValue().centerY() - center) / 2f
-                    : (orderedSections.get(index - 1).getValue().centerY() + center) / 2f;
+                    ? center - (orderedSections.get(1).block.centerY() - center) / 2f
+                    : (orderedSections.get(index - 1).block.centerY() + center) / 2f;
             float bottom = index == orderedSections.size() - 1
-                    ? center + (center - orderedSections.get(index - 1).getValue().centerY()) / 2f
-                    : (center + orderedSections.get(index + 1).getValue().centerY()) / 2f;
-            sections.add(new SectionRange(
-                    orderedSections.get(index).getKey(),
-                    Math.max(headerBottom, top), Math.min(imageHeight, bottom)));
+                    ? center + (center - orderedSections.get(index - 1).block.centerY()) / 2f
+                    : (center + orderedSections.get(index + 1).block.centerY()) / 2f;
+            float rangeTop = Math.max(headerBottom, top);
+            float rangeBottom = Math.min(imageHeight, bottom);
+            for (int section = label.span.start; section <= label.span.end; section++) {
+                sections.add(new SectionRange(section, rangeTop, rangeBottom));
+            }
         }
         float dayScore = dayCount == 7 ? 1f : 0.9f;
         float sectionScore = Math.min(1f, sections.size() / 6f);
@@ -295,15 +397,23 @@ public final class ScheduleImageParser {
     }
 
     private int sectionNumber(String text) {
+        SectionSpan span = sectionSpan(text);
+        return span == null ? -1 : span.start;
+    }
+
+    private SectionSpan sectionSpan(String text) {
         String value = firstLine(text).replaceAll("\\s+", "");
-        Matcher matcher = SECTION_PATTERN.matcher(value);
+        Matcher matcher = SECTION_RANGE_PATTERN.matcher(value);
         if (!matcher.matches()) {
-            return -1;
+            return null;
         }
         try {
-            return Integer.parseInt(matcher.group(1));
+            int start = Integer.parseInt(matcher.group(1));
+            int end = matcher.group(2) == null
+                    ? start : Integer.parseInt(matcher.group(2));
+            return end < start ? null : new SectionSpan(start, end);
         } catch (NumberFormatException exception) {
-            return -1;
+            return null;
         }
     }
 
@@ -361,7 +471,7 @@ public final class ScheduleImageParser {
                     || ROOM_CODE.matcher(value).matches()) {
                 continue;
             }
-            return value;
+            return value.replaceAll("[○●◆◇◯◉□■]+$", "").trim();
         }
         return "";
     }
@@ -484,6 +594,33 @@ public final class ScheduleImageParser {
             return -1;
         }
 
+        public int dayOverlapping(int left, int right) {
+            if (right <= left) {
+                return dayAt((left + right) / 2f);
+            }
+            int bestDay = -1;
+            float bestOverlap = 0f;
+            for (ColumnRange column : columns) {
+                float overlap = Math.min(right, column.right) - Math.max(left, column.left);
+                if (overlap > bestOverlap) {
+                    bestOverlap = overlap;
+                    bestDay = column.day;
+                }
+            }
+            return bestOverlap > 0f ? bestDay : dayAt((left + right) / 2f);
+        }
+
+        float averageSectionHeight() {
+            if (sections.isEmpty()) {
+                return 1f;
+            }
+            float total = 0f;
+            for (SectionRange section : sections) {
+                total += Math.max(1f, section.bottom - section.top);
+            }
+            return total / sections.size();
+        }
+
         public List<Integer> sectionsOverlapping(int top, int bottom) {
             if (bottom <= top) {
                 return Collections.emptyList();
@@ -523,6 +660,26 @@ public final class ScheduleImageParser {
             this.endSection = endSection;
             this.weekRule = weekRule;
             this.rawText = rawText;
+        }
+    }
+
+    private static final class SectionSpan {
+        final int start;
+        final int end;
+
+        SectionSpan(int start, int end) {
+            this.start = start;
+            this.end = end;
+        }
+    }
+
+    private static final class AxisSectionLabel {
+        final SectionSpan span;
+        final OcrTextBlock block;
+
+        AxisSectionLabel(SectionSpan span, OcrTextBlock block) {
+            this.span = span;
+            this.block = block;
         }
     }
 

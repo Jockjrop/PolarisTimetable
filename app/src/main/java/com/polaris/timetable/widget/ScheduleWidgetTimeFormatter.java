@@ -16,6 +16,11 @@ final class ScheduleWidgetTimeFormatter {
         return CourseTimeResolver.endMinutes(course, settings(config));
     }
 
+    static int startMinutes(Course course, ScheduleRepository.Config config) {
+        CourseTimeResolver.TimeRange range = CourseTimeResolver.timeRange(course, settings(config));
+        return range == null ? -1 : range.startMinutes;
+    }
+
     private static CourseTimeResolver.Settings settings(ScheduleRepository.Config config) {
         if (config == null) {
             return null;

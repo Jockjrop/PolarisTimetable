@@ -1,6 +1,8 @@
 package com.polaris.timetable.time;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.model.CourseTimeMode;
+import com.polaris.timetable.model.CourseType;
 
 import org.junit.Test;
 
@@ -24,6 +26,17 @@ public class CourseTimeResolverTest {
         assertEquals(8 * 60, range.startMinutes);
         assertEquals(9 * 60 + 50, range.endMinutes);
         assertEquals("08:00–09:50", range.displayText());
+    }
+
+    @Test
+    public void timeRange_exactClockTimeOverridesSectionSettings() {
+        Course course = exactCourse(0, 9 * 60 + 10, 10 * 60 + 35, "讨论课", "1-20周");
+
+        CourseTimeResolver.TimeRange range = CourseTimeResolver.timeRange(course, null);
+
+        assertEquals(9 * 60 + 10, range.startMinutes);
+        assertEquals(10 * 60 + 35, range.endMinutes);
+        assertEquals("09:10–10:35", CourseTimeResolver.format(course, settings()));
     }
 
     @Test
@@ -116,6 +129,13 @@ public class CourseTimeResolverTest {
 
     private Course course(int day, int start, int end, String name, String weeks) {
         return new Course(day, start, end, name, weeks, "A101", "教师", "");
+    }
+
+    private Course exactCourse(int day, int startMinute, int endMinute,
+                               String name, String weeks) {
+        return new Course(day, 0, 0, name, weeks, "A101", "教师", "", "", "",
+                CourseType.LECTURE, "", "", CourseTimeMode.CLOCK,
+                startMinute, endMinute);
     }
 
     private long mondayMillis(Calendar template, int year, int month, int day) {

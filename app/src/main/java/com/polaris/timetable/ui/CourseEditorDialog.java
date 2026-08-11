@@ -21,14 +21,17 @@ import android.widget.NumberPicker;
 import android.widget.ScrollView;
 import android.widget.Space;
 import android.widget.TextView;
+import android.widget.TimePicker;
 import android.widget.Toast;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.CourseDeletionScope;
+import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableCourseId;
 import com.polaris.timetable.model.WeekRule;
 import com.polaris.timetable.parser.WeekRuleParser;
+import com.polaris.timetable.time.CourseTimeResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +58,7 @@ public final class CourseEditorDialog {
     private final Course original;
     private final List<Course> courses;
     private final int sectionCount;
+    private final CourseTimeResolver.Settings timeSettings;
     private final int backgroundColor;
     private final int inkColor;
     private final int mutedColor;
@@ -66,6 +70,7 @@ public final class CourseEditorDialog {
             Course original,
             List<Course> courses,
             int sectionCount,
+            CourseTimeResolver.Settings timeSettings,
             int backgroundColor,
             int inkColor,
             int mutedColor,
@@ -75,6 +80,8 @@ public final class CourseEditorDialog {
         this.original = original;
         this.courses = courses == null ? new ArrayList<>() : new ArrayList<>(courses);
         this.sectionCount = Math.max(1, sectionCount);
+        this.timeSettings = timeSettings == null
+                ? CourseTimeResolver.defaultSettings() : timeSettings;
         this.backgroundColor = backgroundColor;
         this.inkColor = inkColor;
         this.mutedColor = mutedColor;
@@ -137,13 +144,22 @@ public final class CourseEditorDialog {
         final CourseType[] selectedType = {original.courseType};
         final boolean[] bannerOnly = {original.isBannerOnlyCourse()};
         final int[] selectedDay = {
-                original.hasFixedTime() ? Math.max(0, Math.min(6, original.day)) : 0};
+                original.hasScheduledTime() ? Math.max(0, Math.min(6, original.day)) : 0};
         final int[] selectedStart = {
-                original.hasFixedTime() ? Math.max(1, original.startSection) : 1};
+                original.hasSectionTime() ? Math.max(1, original.startSection) : 1};
         final int[] selectedEnd = {
-                original.hasFixedTime()
+                original.hasSectionTime()
                         ? Math.max(selectedStart[0], original.endSection)
                         : Math.min(2, sectionCount)};
+        CourseTimeResolver.TimeRange initialRange = CourseTimeResolver.timeRange(original, timeSettings);
+        final int[] selectedStartMinute = {
+                original.hasExactTime() ? original.startMinuteOfDay
+                        : initialRange == null ? 8 * 60 : initialRange.startMinutes};
+        final int[] selectedEndMinute = {
+                original.hasExactTime() ? original.endMinuteOfDay
+                        : initialRange == null ? 9 * 60 : initialRange.endMinutes};
+        final CourseTimeMode[] selectedTimeMode = {
+                original.hasExactTime() ? CourseTimeMode.CLOCK : CourseTimeMode.SECTION};
         final WeekSelection[] selectedWeeks = {
                 WeekSelection.from(original.weeks.isEmpty() ? defaultWeeks() : original.weeks)};
 
@@ -173,10 +189,73 @@ public final class CourseEditorDialog {
                     sectionAction.setContentDescription(
                             "选择节次，当前" + sectionLabel(start, end));
                 }));
+
+        View startTimeAction = actionRow(
+                "起", "#FFB000", "开始 " + minuteText(selectedStartMinute[0]));
+        View endTimeAction = actionRow(
+                "止", "#FFB000", "结束 " + minuteText(selectedEndMinute[0]));
+        startTimeAction.setContentDescription(
+                "选择开始时间，当前" + minuteText(selectedStartMinute[0]));
+        endTimeAction.setContentDescription(
+                "选择结束时间，当前" + minuteText(selectedEndMinute[0]));
+        startTimeAction.setOnClickListener(v -> showTimeDialog(
+                "选择开始时间", selectedStartMinute[0], value -> {
+                    int previousDuration = Math.max(15,
+                            selectedEndMinute[0] - selectedStartMinute[0]);
+                    selectedStartMinute[0] = value;
+                    if (selectedEndMinute[0] <= value) {
+                        selectedEndMinute[0] = Math.min(23 * 60 + 59,
+                                value + previousDuration);
+                    }
+                    updateActionRow(startTimeAction,
+                            "开始 " + minuteText(selectedStartMinute[0]));
+                    updateActionRow(endTimeAction,
+                            "结束 " + minuteText(selectedEndMinute[0]));
+                    startTimeAction.setContentDescription(
+                            "选择开始时间，当前" + minuteText(selectedStartMinute[0]));
+                    endTimeAction.setContentDescription(
+                            "选择结束时间，当前" + minuteText(selectedEndMinute[0]));
+                }));
+        endTimeAction.setOnClickListener(v -> showTimeDialog(
+                "选择结束时间", selectedEndMinute[0], value -> {
+                    if (value <= selectedStartMinute[0]) {
+                        Toast.makeText(activity, "结束时间必须晚于开始时间", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    selectedEndMinute[0] = value;
+                    updateActionRow(endTimeAction,
+                            "结束 " + minuteText(selectedEndMinute[0]));
+                    endTimeAction.setContentDescription(
+                            "选择结束时间，当前" + minuteText(selectedEndMinute[0]));
+                }));
+
+        LinearLayout clockTimeRows = new LinearLayout(activity);
+        clockTimeRows.setOrientation(LinearLayout.VERTICAL);
+        clockTimeRows.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        clockTimeRows.addView(startTimeAction);
+        clockTimeRows.addView(endTimeAction);
+        View timeModeAction = actionRow(
+                "时", "#FFB000", timeModeLabel(selectedTimeMode[0]));
+        timeModeAction.setContentDescription(
+                "选择时间方式，当前" + timeModeLabel(selectedTimeMode[0]));
+        timeModeAction.setOnClickListener(v -> showTimeModeDialog(selectedTimeMode[0], value -> {
+            selectedTimeMode[0] = value;
+            updateActionRow(timeModeAction, timeModeLabel(value));
+            timeModeAction.setContentDescription("选择时间方式，当前" + timeModeLabel(value));
+            sectionAction.setVisibility(value == CourseTimeMode.SECTION ? View.VISIBLE : View.GONE);
+            clockTimeRows.setVisibility(value == CourseTimeMode.CLOCK ? View.VISIBLE : View.GONE);
+        }));
         LinearLayout timeSelectionRows = new LinearLayout(activity);
         timeSelectionRows.setOrientation(LinearLayout.VERTICAL);
         timeSelectionRows.addView(dayAction);
+        timeSelectionRows.addView(timeModeAction);
         timeSelectionRows.addView(sectionAction);
+        timeSelectionRows.addView(clockTimeRows);
+        sectionAction.setVisibility(
+                selectedTimeMode[0] == CourseTimeMode.SECTION ? View.VISIBLE : View.GONE);
+        clockTimeRows.setVisibility(
+                selectedTimeMode[0] == CourseTimeMode.CLOCK ? View.VISIBLE : View.GONE);
         View placementAction = actionRow("位", "#FFB000", bannerOnly[0] ? "顶部横幅" : "固定节次");
         View typeAction = actionRow("类", "#168FE4", selectedType[0].displayName);
         typeAction.setOnClickListener(v -> showCourseTypeDialog(selectedType[0], value -> {
@@ -235,15 +314,24 @@ public final class CourseEditorDialog {
             String nextName = name.getText().toString().trim();
             int nextDay = bannerOnly[0]
                     ? -1 : selectedDay[0];
-            int nextStart = bannerOnly[0]
-                    ? 0 : selectedStart[0];
-            int nextEnd = bannerOnly[0]
-                    ? 0 : selectedEnd[0];
+            CourseTimeMode nextTimeMode = bannerOnly[0]
+                    ? CourseTimeMode.NONE : selectedTimeMode[0];
+            int nextStart = nextTimeMode == CourseTimeMode.SECTION ? selectedStart[0] : 0;
+            int nextEnd = nextTimeMode == CourseTimeMode.SECTION ? selectedEnd[0] : 0;
+            int nextStartMinute = nextTimeMode == CourseTimeMode.CLOCK
+                    ? selectedStartMinute[0] : -1;
+            int nextEndMinute = nextTimeMode == CourseTimeMode.CLOCK
+                    ? selectedEndMinute[0] : -1;
             if (nextName.isEmpty()) {
                 Toast.makeText(activity, "请填写课程名称", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (!bannerOnly[0] && (nextDay < 0 || nextStart < 1 || nextEnd < nextStart)) {
+            boolean validSections = nextTimeMode == CourseTimeMode.SECTION
+                    && nextDay >= 0 && nextStart >= 1 && nextEnd >= nextStart;
+            boolean validClock = nextTimeMode == CourseTimeMode.CLOCK
+                    && nextDay >= 0 && nextStartMinute >= 0
+                    && nextStartMinute < nextEndMinute && nextEndMinute <= 24 * 60;
+            if (!bannerOnly[0] && !validSections && !validClock) {
                 Toast.makeText(activity, "请填写课程名称和有效时间", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -262,7 +350,10 @@ public final class CourseEditorDialog {
                             ? CourseType.PRACTICE : selectedType[0],
                     StableCourseId.isValid(original.structuredCourseId)
                             ? original.structuredCourseId : StableCourseId.create(),
-                    original.meetingId);
+                    original.meetingId,
+                    nextTimeMode,
+                    nextStartMinute,
+                    nextEndMinute);
             listener.onCourseSaved(original, edited);
             dialog.dismiss();
         });
@@ -435,6 +526,59 @@ public final class CourseEditorDialog {
 
     private String sectionLabel(int start, int end) {
         return "第 " + start + "–" + end + " 节";
+    }
+
+    private String timeModeLabel(CourseTimeMode mode) {
+        return mode == CourseTimeMode.CLOCK ? "具体时间" : "按节次";
+    }
+
+    private String minuteText(int minuteOfDay) {
+        return CourseTimeResolver.formatMinuteOfDay(minuteOfDay);
+    }
+
+    private void showTimeModeDialog(CourseTimeMode current, TimeModeSetter setter) {
+        Dialog dialog = new Dialog(activity);
+        LinearLayout panel = compactDialogPanel("选择时间方式");
+        TextView section = dialogChoice("按节次", current == CourseTimeMode.SECTION);
+        section.setContentDescription("按节次，根据学校上课时间显示");
+        section.setOnClickListener(v -> {
+            setter.set(CourseTimeMode.SECTION);
+            dialog.dismiss();
+        });
+        TextView clock = dialogChoice("具体时间", current == CourseTimeMode.CLOCK);
+        clock.setContentDescription("具体时间，自定义当天开始和结束时间");
+        clock.setOnClickListener(v -> {
+            setter.set(CourseTimeMode.CLOCK);
+            dialog.dismiss();
+        });
+        panel.addView(section);
+        panel.addView(clock);
+        showCompactDialog(dialog, panel, 260);
+    }
+
+    private void showTimeDialog(String title, int currentMinute, IntSetter setter) {
+        Dialog dialog = new Dialog(activity);
+        LinearLayout panel = compactDialogPanel(title);
+        int pickerTheme = darkMode
+                ? android.R.style.Theme_Material
+                : android.R.style.Theme_Material_Light;
+        TimePicker picker = new TimePicker(new ContextThemeWrapper(activity, pickerTheme));
+        picker.setIs24HourView(true);
+        int bounded = Math.max(0, Math.min(23 * 60 + 59, currentMinute));
+        picker.setHour(bounded / 60);
+        picker.setMinute(bounded % 60);
+        picker.setContentDescription(title);
+        panel.addView(picker, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView confirm = dialogChoice("确定", true);
+        confirm.setContentDescription("确定" + title);
+        confirm.setOnClickListener(v -> {
+            setter.set(picker.getHour() * 60 + picker.getMinute());
+            dialog.dismiss();
+        });
+        panel.addView(confirm);
+        showCompactDialog(dialog, panel, 430);
     }
 
     private void showDayDialog(int currentDay, IntSetter setter) {
@@ -1196,6 +1340,10 @@ public final class CourseEditorDialog {
 
     private interface SectionSetter {
         void set(int start, int end);
+    }
+
+    private interface TimeModeSetter {
+        void set(CourseTimeMode value);
     }
 
     private interface WeekSelectionSetter {

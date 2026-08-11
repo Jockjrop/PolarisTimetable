@@ -41,7 +41,7 @@ final class ScheduleWidgetData {
                 if (config.showPracticeBanner) {
                     matching.add(course);
                 }
-            } else if (course.hasFixedTime() && course.day == day
+            } else if (course.hasScheduledTime() && course.day == day
                     && !hasEndedToday(course, config, date, now)) {
                 matching.add(course);
             }
@@ -52,7 +52,9 @@ final class ScheduleWidgetData {
                 if (first.isBannerOnlyCourse() != second.isBannerOnlyCourse()) {
                     return first.isBannerOnlyCourse() ? -1 : 1;
                 }
-                int time = Integer.compare(first.startSection, second.startSection);
+                int time = Integer.compare(
+                        ScheduleWidgetTimeFormatter.startMinutes(first, config),
+                        ScheduleWidgetTimeFormatter.startMinutes(second, config));
                 if (time != 0) {
                     return time;
                 }
@@ -91,7 +93,7 @@ final class ScheduleWidgetData {
         int currentMinutes = minutesOfDay(now);
         long nextEnd = Long.MAX_VALUE;
         for (Course course : source) {
-            if (course == null || !course.hasFixedTime() || course.day != day
+            if (course == null || !course.hasScheduledTime() || course.day != day
                     || !isActiveInWeek(course, week)) {
                 continue;
             }
@@ -216,6 +218,8 @@ final class ScheduleWidgetData {
         result = 31 * result + day;
         result = 31 * result + course.startSection;
         result = 31 * result + course.endSection;
+        result = 31 * result + course.startMinuteOfDay;
+        result = 31 * result + course.endMinuteOfDay;
         result = 31 * result + index;
         return result;
     }

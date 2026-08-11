@@ -29,6 +29,7 @@ import android.widget.TextView;
 import com.polaris.timetable.Course;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.time.CourseTimeResolver;
+import com.polaris.timetable.time.ScheduleTimeAxis;
 import com.polaris.timetable.validation.CourseConflictDetector;
 
 import java.util.ArrayList;
@@ -105,7 +106,9 @@ public class ScheduleBoardView extends FrameLayout {
     private int courseBlockOpacity = 100;
     private int timetableHeaderOpacity;
     private String[] sectionTimes = TIMES;
-    private boolean collapseMiddleSections;
+    private CourseTimeResolver.Settings classTimeSettings = CourseTimeResolver.defaultSettings();
+    private boolean collapseLunchBreak;
+    private ScheduleTimeAxis.Axis timeAxis;
     private int dayWidth;
     private int sectionHeight;
     private int timeWidth;
@@ -284,6 +287,7 @@ public class ScheduleBoardView extends FrameLayout {
         CourseTimeResolver.Settings settings = new CourseTimeResolver.Settings(
                 firstStartTime, classMinutes, breakMinutes, bigBreakMinutes,
                 afternoonStartTime, lateAfternoonStartTime, anchorConfigText);
+        classTimeSettings = settings;
         String[] nextTimes = CourseTimeResolver.sectionTimeLabels(settings, 20);
         if (sameTimes(sectionTimes, nextTimes)) {
             return;
@@ -293,10 +297,14 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     public void setCollapseMiddleSections(boolean enabled) {
-        if (collapseMiddleSections == enabled) {
+        setCollapseLunchBreak(enabled);
+    }
+
+    public void setCollapseLunchBreak(boolean enabled) {
+        if (collapseLunchBreak == enabled) {
             return;
         }
-        collapseMiddleSections = enabled;
+        collapseLunchBreak = enabled;
         renderSchedule();
     }
 
@@ -712,6 +720,8 @@ public class ScheduleBoardView extends FrameLayout {
         adaptiveTextTargets.clear();
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
         sectionHeight = dp(tablet ? Math.max(72, configuredSectionHeight + 8) : configuredSectionHeight);
+        timeAxis = ScheduleTimeAxis.create(
+                courses, classTimeSettings, sectionCount, sectionHeight, collapseLunchBreak);
         timeWidth = dp(tablet ? 54 : 34);
         int availableWidth = getAvailableBoardWidth();
         dayWidth = Math.max(dp(tablet ? 72 : 38), (availableWidth - timeWidth) / visibleDayCount);
@@ -773,9 +783,9 @@ public class ScheduleBoardView extends FrameLayout {
             addRowLine(board, section, week);
         }
         List<Course> visibleCourses = displayCourses(week);
-        Map<Course, SlotLayout> layouts = slotLayouts(visibleCourses, week);
+        Map<Course, SlotLayout> layouts = slotLayouts(visibleCourses);
         List<Course> conflictingCourses = CourseConflictDetector.conflictingCoursesForWeek(
-                courses, lastWeek, week);
+                courses, lastWeek, week, classTimeSettings);
         for (Course course : visibleCourses) {
             addCourseBlock(board, course, week, interactive, layouts.get(course),
                     containsIdentity(conflictingCourses, course));
@@ -816,6 +826,9 @@ public class ScheduleBoardView extends FrameLayout {
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         text.append(course.name);
+        if (course.hasExactTime()) {
+            text.append("\n").append(CourseTimeResolver.format(course, classTimeSettings));
+        }
         if (!course.location.isEmpty()) {
             text.append("\n@").append(course.location);
         }
@@ -1058,8 +1071,9 @@ public class ScheduleBoardView extends FrameLayout {
         if (course.isBannerOnlyCourse()) {
             return "集中实践";
         }
-        if (course.day >= 0 && course.day < DAYS.length) {
-            return "周" + DAYS[course.day] + " " + course.startSection + "-" + course.endSection + "节";
+        if (course.day >= 0 && course.day < DAYS.length && course.hasScheduledTime()) {
+            return "周" + DAYS[course.day] + " "
+                    + CourseTimeResolver.format(course, classTimeSettings);
         }
         return "时间待定";
     }
@@ -1115,47 +1129,61 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private int boardHeight(int week) {
-        int height = dayHeaderHeight + practiceBannerInset(week);
-        for (int section = 1; section <= sectionCount; section++) {
-            height += sectionRowHeight(section);
-        }
-        return height;
+        return bodyTop(week) + (timeAxis == null ? sectionCount * sectionHeight
+                : timeAxis.contentHeight());
+    }
+
+    private int bodyTop(int week) {
+        return dayHeaderHeight + practiceBannerInset(week);
     }
 
     private int sectionTop(int section, int week) {
-        int top = dayHeaderHeight + practiceBannerInset(week);
-        int bounded = Math.max(1, Math.min(sectionCount + 1, section));
-        for (int index = 1; index < bounded; index++) {
-            top += sectionRowHeight(index);
+        CourseTimeResolver.TimeRange range = CourseTimeResolver.sectionTimeRange(
+                classTimeSettings, Math.max(1, Math.min(sectionCount, section)));
+        if (range == null || timeAxis == null) {
+            return bodyTop(week) + (Math.max(1, section) - 1) * sectionHeight;
         }
-        return top;
+        return bodyTop(week) + timeAxis.yForMinute(range.startMinutes);
     }
 
     private int sectionRowHeight(int section) {
-        if (collapseMiddleSections && (section == 5 || section == 6)) {
-            return 0;
+        CourseTimeResolver.TimeRange range = CourseTimeResolver.sectionTimeRange(
+                classTimeSettings, section);
+        if (range != null && timeAxis != null) {
+            return timeAxis.heightForRange(range.startMinutes, range.endMinutes);
         }
         return sectionHeight;
     }
 
-    private int sectionSpanHeight(int startSection, int endSection) {
-        int start = Math.max(1, Math.min(sectionCount, startSection));
-        int end = Math.max(start, Math.min(sectionCount, endSection));
-        int height = 0;
-        for (int section = start; section <= end; section++) {
-            height += sectionRowHeight(section);
-        }
-        return height;
-    }
-
     private int sectionAtY(int y, int week) {
+        int minute = minuteAtY(y, week);
+        int closestSection = 1;
+        int closestDistance = Integer.MAX_VALUE;
         for (int section = 1; section <= sectionCount; section++) {
-            int top = sectionTop(section, week);
-            if (y >= top && y < top + sectionRowHeight(section)) {
+            CourseTimeResolver.TimeRange range = CourseTimeResolver.sectionTimeRange(
+                    classTimeSettings, section);
+            if (range == null) {
+                continue;
+            }
+            if (minute >= range.startMinutes && minute < range.endMinutes) {
                 return section;
             }
+            int distance = Math.min(Math.abs(minute - range.startMinutes),
+                    Math.abs(minute - range.endMinutes));
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestSection = section;
+            }
         }
-        return sectionCount + 1;
+        return closestSection;
+    }
+
+    private int minuteAtY(int y, int week) {
+        if (timeAxis == null) {
+            return 0;
+        }
+        int bodyY = Math.max(0, y - bodyTop(week));
+        return timeAxis.minuteForY(bodyY);
     }
 
     private void addCourseBlock(FrameLayout board, Course course, int week, boolean interactive,
@@ -1207,13 +1235,16 @@ public class ScheduleBoardView extends FrameLayout {
         int slotCount = layout == null ? 1 : Math.max(1, layout.count);
         int slotIndex = layout == null ? 0 : Math.max(0, layout.index);
         int availableWidth = dayWidth - dp(4);
-        int spanHeight = sectionSpanHeight(course.startSection, course.endSection);
-        if (spanHeight <= 0) {
+        CourseTimeResolver.TimeRange timeRange =
+                CourseTimeResolver.timeRange(course, classTimeSettings);
+        if (timeRange == null || timeAxis == null) {
             return;
         }
-        int availableHeight = Math.max(dp(20), spanHeight - dp(8));
+        int spanHeight = timeAxis.heightForRange(
+                timeRange.startMinutes, timeRange.endMinutes);
+        int availableHeight = Math.max(dp(20), spanHeight - dp(6));
         int left = timeWidth + dayWidth * column + dp(2);
-        int top = sectionTop(course.startSection, week) + dp(4);
+        int top = bodyTop(week) + timeAxis.yForMinute(timeRange.startMinutes) + dp(3);
         int width;
         int height;
         if (layout != null && layout.vertical) {
@@ -1277,22 +1308,17 @@ public class ScheduleBoardView extends FrameLayout {
         return count;
     }
 
-    private Map<Course, SlotLayout> slotLayouts(List<Course> visibleCourses, int week) {
+    private Map<Course, SlotLayout> slotLayouts(List<Course> visibleCourses) {
         Map<Course, SlotLayout> layouts = new LinkedHashMap<>();
         for (Course course : visibleCourses) {
             List<Course> overlaps = new ArrayList<>();
-            boolean allOutOfWeek = true;
             for (Course other : visibleCourses) {
                 if (other.day == course.day
-                        && other.startSection <= course.endSection
-                        && other.endSection >= course.startSection) {
+                        && timeRangesOverlap(course, other)) {
                     overlaps.add(other);
-                    if (isCourseInWeek(other, week)) {
-                        allOutOfWeek = false;
-                    }
                 }
             }
-            boolean vertical = showOutOfWeekCourses && allOutOfWeek && overlaps.size() > 1;
+            boolean vertical = false;
             layouts.put(course, new SlotLayout(overlaps.indexOf(course), overlaps.size(), vertical));
         }
         return layouts;
@@ -1323,11 +1349,21 @@ public class ScheduleBoardView extends FrameLayout {
             if (course == candidate || !isCourseInWeek(course, week) || course.day != candidate.day) {
                 continue;
             }
-            if (course.startSection <= candidate.endSection && course.endSection >= candidate.startSection) {
+            if (timeRangesOverlap(course, candidate)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean timeRangesOverlap(Course first, Course second) {
+        CourseTimeResolver.TimeRange firstRange =
+                CourseTimeResolver.timeRange(first, classTimeSettings);
+        CourseTimeResolver.TimeRange secondRange =
+                CourseTimeResolver.timeRange(second, classTimeSettings);
+        return firstRange != null && secondRange != null
+                && firstRange.startMinutes < secondRange.endMinutes
+                && secondRange.startMinutes < firstRange.endMinutes;
     }
 
     private int columnForCourse(Course course) {
@@ -1369,6 +1405,9 @@ public class ScheduleBoardView extends FrameLayout {
         return first.day == second.day
                 && first.startSection == second.startSection
                 && first.endSection == second.endSection
+                && first.timeMode == second.timeMode
+                && first.startMinuteOfDay == second.startMinuteOfDay
+                && first.endMinuteOfDay == second.endMinuteOfDay
                 && sameText(first.name, second.name)
                 && sameText(first.weeks, second.weeks)
                 && sameText(first.location, second.location)
@@ -1520,8 +1559,7 @@ public class ScheduleBoardView extends FrameLayout {
         if (course.day >= 0 && course.day < DAYS.length) {
             text.append("，周").append(DAYS[course.day]);
         }
-        text.append("，第").append(course.startSection)
-                .append("至").append(course.endSection).append("节");
+        text.append("，").append(CourseTimeResolver.format(course, classTimeSettings));
         if (course.location != null && !course.location.trim().isEmpty()) {
             text.append("，地点").append(course.location.trim());
         }
