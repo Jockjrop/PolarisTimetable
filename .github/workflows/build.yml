@@ -73,10 +73,12 @@ jobs:
             gradle-${{ runner.os }}-
 
       - name: Decode release keystore
+        if: secrets.POLARIS_RELEASE_KEYSTORE_B64 != ''
         run: |
           echo "${{ secrets.POLARIS_RELEASE_KEYSTORE_B64 }}" | base64 -d > keystore.jks
 
-      - name: Assemble release APK
+      - name: Assemble release APK (signed)
+        if: secrets.POLARIS_RELEASE_KEYSTORE_B64 != ''
         env:
           POLARIS_RELEASE_STORE_FILE: keystore.jks
           POLARIS_RELEASE_STORE_PASSWORD: ${{ secrets.POLARIS_RELEASE_STORE_PASSWORD }}
@@ -84,9 +86,12 @@ jobs:
           POLARIS_RELEASE_KEY_PASSWORD: ${{ secrets.POLARIS_RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --no-daemon --console=plain
 
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
+      - name: Assemble debug APK (unsigned fallback)
+        if: secrets.POLARIS_RELEASE_KEYSTORE_B64 == ''
+        run: ./gradlew :app:assembleDebug --no-daemon --console=plain
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: Polaris-release-apk
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
+          files: app/build/outputs/apk/*/*.apk
+          generate_release_notes: true
