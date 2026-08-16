@@ -37,6 +37,7 @@ public final class CourseReminderScheduler {
 
     private static final String PREFS_NAME = "polaris_course_reminders";
     private static final String KEY_SCHEDULED_URIS = "scheduled_alarm_uris";
+    private static final String KEY_NEXT_REMINDER_AT = "next_reminder_at";
     private static final Pattern DATE_PATTERN = Pattern.compile(
             "(\\d{4})\\s*[/.-]\\s*(\\d{1,2})\\s*[/.-]\\s*(\\d{1,2})");
 
@@ -49,10 +50,14 @@ public final class CourseReminderScheduler {
         ScheduleRepository repository = new ScheduleRepository(appContext);
         String scheduleId = repository.activeScheduleId();
         ScheduleRepository.Config config = repository.loadConfig(scheduleId);
-        if (!config.remindersEnabled || !hasNotificationPermission(appContext)) {
+        boolean canDeliverPopup = hasOverlayPermission(appContext);
+        boolean canDeliverNotification = hasNotificationPermission(appContext);
+        if (!config.remindersEnabled || (!canDeliverPopup && !canDeliverNotification)) {
             return 0;
         }
-        createNotificationChannel(appContext);
+        if (canDeliverNotification) {
+            createNotificationChannel(appContext);
+        }
         List<Course> courses = repository.loadCourseView(scheduleId);
         CourseTimeResolver.Settings timeSettings = new CourseTimeResolver.Settings(
                 config.firstClassStartTime,
@@ -109,6 +114,8 @@ public final class CourseReminderScheduler {
         }
         reminderPreferences(appContext).edit()
                 .putStringSet(KEY_SCHEDULED_URIS, scheduledUris)
+                .putLong(KEY_NEXT_REMINDER_AT, entries.isEmpty()
+                        ? 0L : entries.get(0).triggerAtMillis)
                 .apply();
         return entries.size();
     }
@@ -135,7 +142,29 @@ public final class CourseReminderScheduler {
                 }
             }
         }
-        reminderPreferences(appContext).edit().remove(KEY_SCHEDULED_URIS).apply();
+        reminderPreferences(appContext).edit()
+                .remove(KEY_SCHEDULED_URIS)
+                .putLong(KEY_NEXT_REMINDER_AT, 0L)
+                .apply();
+    }
+
+    /**
+     * Timestamp of the earliest scheduled reminder, 0 when none is pending.
+     * If this timestamp is already in the past when the app is opened, the
+     * reminder must have been cleared while the process was killed.
+     */
+    public static long nextReminderAtMillis(Context context) {
+        return reminderPreferences(context.getApplicationContext())
+                .getLong(KEY_NEXT_REMINDER_AT, 0L);
+    }
+
+    public static void setNextReminderAt(Context context, long millis) {
+        reminderPreferences(context.getApplicationContext())
+                .edit().putLong(KEY_NEXT_REMINDER_AT, millis).apply();
+    }
+
+    public static boolean hasDeliveryChannel(Context context) {
+        return hasOverlayPermission(context) || hasNotificationPermission(context);
     }
 
     public static boolean hasNotificationPermission(Context context) {
@@ -157,6 +186,11 @@ public final class CourseReminderScheduler {
             }
         }
         return true;
+    }
+
+    public static boolean hasOverlayPermission(Context context) {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && android.provider.Settings.canDrawOverlays(context);
     }
 
     public static boolean canScheduleExactAlarms(Context context) {

@@ -36,8 +36,23 @@ public final class ExportFileProvider extends ContentProvider {
     @Override
     public String getType(Uri uri) {
         File file = fileForUri(uri);
-        return file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".pdf")
-                ? "application/pdf" : "image/png";
+        String lowerName = file.getName().toLowerCase(java.util.Locale.ROOT);
+        if (lowerName.endsWith(".pdf")) {
+            return "application/pdf";
+        }
+        if (lowerName.endsWith(".polaris")) {
+            return "application/vnd.polaris.schedule";
+        }
+        if (lowerName.endsWith(".polarisbackup")) {
+            return "application/vnd.polaris.backup";
+        }
+        if (lowerName.endsWith(".ics")) {
+            return "text/calendar";
+        }
+        if (lowerName.endsWith(".csv")) {
+            return "text/csv";
+        }
+        return "image/png";
     }
 
     @Override
@@ -103,7 +118,12 @@ public final class ExportFileProvider extends ContentProvider {
             File candidate = file.getCanonicalFile();
             String lowerName = candidate.getName().toLowerCase(java.util.Locale.ROOT);
             if (!root.equals(candidate.getParentFile())
-                    || (!lowerName.endsWith(".png") && !lowerName.endsWith(".pdf"))) {
+                    || (!lowerName.endsWith(".png")
+                    && !lowerName.endsWith(".pdf")
+                    && !lowerName.endsWith(".polaris")
+                    && !lowerName.endsWith(".polarisbackup")
+                    && !lowerName.endsWith(".ics")
+                    && !lowerName.endsWith(".csv"))) {
                 throw new IllegalArgumentException("文件不在允许的导出目录中");
             }
             return candidate;

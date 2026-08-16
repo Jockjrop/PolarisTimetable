@@ -30,8 +30,8 @@ android {
         applicationId "com.polaris.timetable"
         minSdk 23
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        versionCode 10400
+        versionName "1.4.0"
     }
 
     signingConfigs {
@@ -55,6 +55,12 @@ android {
             }
         }
     }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "Polaris-${variant.versionName}-${variant.name}.apk"
+        }
+    }
 }
 
 def releaseTaskRequested = gradle.startParameter.taskNames.any {
@@ -68,8 +74,8 @@ if (releaseTaskRequested && !hasReleaseSigning) {
 }
 
 dependencies {
+    implementation "androidx.viewpager:viewpager:1.0.0"
     implementation "com.tom-roush:pdfbox-android:2.0.27.0"
-    implementation "com.google.mlkit:text-recognition-chinese:16.0.1"
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.json:json:20240303"
 }

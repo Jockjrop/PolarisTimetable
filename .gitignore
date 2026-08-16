@@ -9,3 +9,15 @@ keystore.properties
 *.iml
 --css
 .uploads/
+
+# 工具产物与本地目录（不入库）
+output/
+tmp/
+.claude/
+.codex-video-review/
+.impeccable/
+polaris-ui-design/
+polaris-ui-design-draft/
+*.apk
+.kotlin/
+captures/

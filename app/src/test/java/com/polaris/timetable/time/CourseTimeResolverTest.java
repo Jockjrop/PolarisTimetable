@@ -9,8 +9,10 @@ import org.junit.Test;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Map;
 import java.util.TimeZone;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
@@ -120,6 +122,66 @@ public class CourseTimeResolverTest {
         assertEquals(20, CourseTimeResolver.inferSemesterWeeks(Arrays.asList(
                 course(0, 1, 2, "课程一", "全周"),
                 course(1, 1, 2, "课程二", "周次见PDF")), 20, 20));
+    }
+
+    @Test
+    public void sectionTimeRange_honorsAnchorEndTimes() {
+        CourseTimeResolver.Settings anchored = new CourseTimeResolver.Settings(
+                "08:00", 50, 10, 30, "14:30", "16:35",
+                "1 08:00-08:45\n2 08:50-09:35\n3 10:05-10:50");
+
+        CourseTimeResolver.TimeRange second = CourseTimeResolver.sectionTimeRange(anchored, 2);
+        assertEquals(8 * 60 + 50, second.startMinutes);
+        assertEquals(9 * 60 + 35, second.endMinutes);
+
+        CourseTimeResolver.TimeRange third = CourseTimeResolver.sectionTimeRange(anchored, 3);
+        assertEquals(10 * 60 + 5, third.startMinutes);
+        assertEquals(10 * 60 + 50, third.endMinutes);
+    }
+
+    @Test
+    public void sectionTimeRange_firstSectionUsesFirstStartTime() {
+        CourseTimeResolver.Settings anchored = new CourseTimeResolver.Settings(
+                "08:00", 50, 10, 30, "14:30", "16:35",
+                "1 07:30-08:15\n2 08:20-09:05");
+
+        CourseTimeResolver.TimeRange first = CourseTimeResolver.sectionTimeRange(anchored, 1);
+        assertEquals(8 * 60, first.startMinutes);
+        assertEquals(8 * 60 + 50, first.endMinutes);
+    }
+
+    @Test
+    public void sectionTimeRange_mixedAnchorsAndPatternFallback() {
+        CourseTimeResolver.Settings anchored = new CourseTimeResolver.Settings(
+                "08:00", 50, 10, 30, "14:30", "16:35",
+                "1 08:00-08:45\n2 08:50-09:35\n3 10:05-10:50");
+
+        CourseTimeResolver.TimeRange fourth = CourseTimeResolver.sectionTimeRange(anchored, 4);
+        assertEquals(11 * 60, fourth.startMinutes);
+        assertEquals(11 * 60 + 50, fourth.endMinutes);
+
+        CourseTimeResolver.TimeRange fifth = CourseTimeResolver.sectionTimeRange(anchored, 5);
+        assertEquals(14 * 60 + 30, fifth.startMinutes);
+        assertEquals(14 * 60 + 30 + 50, fifth.endMinutes);
+    }
+
+    @Test
+    public void parseSectionAnchors_readsStartAndEnd() {
+        Map<Integer, int[]> anchors = CourseTimeResolver.parseSectionAnchors(
+                "1 08:00-08:50\n2 08:55~09:45\n忽略此行\n4 10:15-11:05");
+
+        assertEquals(3, anchors.size());
+        assertArrayEquals(new int[]{8 * 60, 8 * 60 + 50}, anchors.get(1));
+        assertArrayEquals(new int[]{8 * 60 + 55, 9 * 60 + 45}, anchors.get(2));
+        assertArrayEquals(new int[]{10 * 60 + 15, 11 * 60 + 5}, anchors.get(4));
+    }
+
+    @Test
+    public void parseSectionAnchors_skipsInvalidRanges() {
+        Map<Integer, int[]> anchors = CourseTimeResolver.parseSectionAnchors(
+                "1 08:00-07:00\n2 25:00-26:00\n3 08:00-08:00");
+
+        assertTrue(anchors.isEmpty());
     }
 
     private CourseTimeResolver.Settings settings() {

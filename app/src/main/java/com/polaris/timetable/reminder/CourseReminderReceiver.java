@@ -18,7 +18,11 @@ public final class CourseReminderReceiver extends BroadcastReceiver {
             return;
         }
         if (CourseReminderScheduler.ACTION_COURSE_REMINDER.equals(intent.getAction())) {
-            showNotification(context, intent);
+            if (CourseReminderScheduler.hasOverlayPermission(context)) {
+                CourseReminderPopup.show(context, intent);
+            } else {
+                showNotification(context, intent);
+            }
         }
         CourseReminderScheduler.reschedule(context);
     }

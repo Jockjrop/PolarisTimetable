@@ -69,8 +69,7 @@ public final class ScheduleTimeAxis {
         TimeGap lunchBreak = findLunchBreak(safeSettings, safeSectionCount);
         List<TimeGap> collapsedGaps = collapsedGaps(
                 courses, safeSettings, safeSectionCount, lunchBreak, collapseLunchBreak);
-        return new Axis(start, end, pixelsPerMinute, collapsedGaps,
-                collapseLunchBreak ? lunchBreak : null);
+        return new Axis(start, end, pixelsPerMinute, collapsedGaps, lunchBreak);
     }
 
     private static List<TimeGap> collapsedGaps(
@@ -209,6 +208,9 @@ public final class ScheduleTimeAxis {
         public final float pixelsPerMinute;
         public final int collapsedStartMinute;
         public final int collapsedEndMinute;
+        /** Lunch break window (start/end minute), -1 when no lunch gap exists. */
+        public final int lunchStartMinute;
+        public final int lunchEndMinute;
         private final List<TimeGap> collapsedGaps;
 
         Axis(int startMinute, int endMinute, float pixelsPerMinute) {
@@ -226,6 +228,8 @@ public final class ScheduleTimeAxis {
                     ? lunchBreak.startMinute : -1;
             this.collapsedEndMinute = containsGap(this.collapsedGaps, lunchBreak)
                     ? lunchBreak.endMinute : -1;
+            this.lunchStartMinute = lunchBreak == null ? -1 : lunchBreak.startMinute;
+            this.lunchEndMinute = lunchBreak == null ? -1 : lunchBreak.endMinute;
         }
 
         public int contentHeight() {

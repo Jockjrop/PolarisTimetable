@@ -18,13 +18,18 @@ import android.text.TextUtils;
 import android.text.style.RelativeSizeSpan;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import androidx.viewpager.widget.PagerAdapter;
+import androidx.viewpager.widget.ViewPager;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.model.CourseType;
@@ -61,6 +66,10 @@ public class ScheduleBoardView extends FrameLayout {
         void onPracticeBannerClick(List<Course> practiceCourses);
     }
 
+    public interface OnCourseDragListener {
+        void onCourseDragDrop(Course course, int day, int section);
+    }
+
     public interface OnVerticalScrollListener {
         void onVerticalScroll(int scrollY, int deltaY, boolean atBottom);
     }
@@ -75,7 +84,6 @@ public class ScheduleBoardView extends FrameLayout {
     private final List<Course> courses = new ArrayList<>();
     private final Map<String, Integer> courseColors = new LinkedHashMap<>();
     private final List<AdaptiveTextTarget> adaptiveTextTargets = new ArrayList<>();
-    private final LinearLayout scheduleHost;
     private final ScrollView verticalScroll;
     private final List<Integer> visibleDays = new ArrayList<>();
     private OnCourseClickListener courseClickListener;
@@ -84,6 +92,18 @@ public class ScheduleBoardView extends FrameLayout {
     private OnSlotLongClickListener slotLongClickListener;
     private OnPracticeBannerClickListener practiceBannerClickListener;
     private OnVerticalScrollListener verticalScrollListener;
+    private OnCourseDragListener courseDragListener;
+    private TextView dragGhostView;
+    private Course dragCourse;
+    private FrameLayout dragBoard;
+    private int dragWeek;
+    private float dragOffsetX;
+    private float dragOffsetY;
+    private int dragBlockWidth;
+    private int dragBlockHeight;
+    private int dragTargetDay = -1;
+    private int dragTargetSection = -1;
+    private View dragTargetHighlight;
     private int firstWeek = 1;
     private int lastWeek = 20;
     private int currentWeek = 18;
@@ -115,21 +135,14 @@ public class ScheduleBoardView extends FrameLayout {
     private int dayHeaderHeight;
     private int overlayTopInset;
     private int overlayBottomInset;
-    private float touchStartX;
-    private float touchStartY;
     private float boardTouchX;
     private float boardTouchY;
     private boolean waitingForLayout;
-    private FrameLayout lastBoard;
-    private FrameLayout dragSlider;
-    private FrameLayout dragOverlay;
-    private View dragCurrentBoard;
-    private boolean transitionBoardLocked;
-    private boolean draggingWeek;
-    private boolean previewingWeekDrag;
-    private boolean suppressSlotLongClick;
-    private long suppressCourseInteractionUntil;
-    private boolean skipNextProgrammaticTransition;
+    private int lastBoardWidth;
+    private int lastRenderSignature = -1;
+    private final Map<Integer, PreviewEntry> mainCache = new LinkedHashMap<>();
+    private static final int MAIN_CACHE_CAPACITY = 3;
+    private final FixedHeightViewPager weekPager;
 
     public ScheduleBoardView(Context context) {
         super(context);
@@ -141,12 +154,33 @@ public class ScheduleBoardView extends FrameLayout {
         verticalScroll.setFillViewport(true);
         verticalScroll.setBackgroundColor(Color.TRANSPARENT);
 
-        scheduleHost = new LinearLayout(context);
-        scheduleHost.setOrientation(LinearLayout.VERTICAL);
+        // 标准 ViewPager 承载每周课表板：跟手拖动、惯性翻页、边界回弹
+        // 全部由系统组件处理，杜绝自定义手势带来的叠影与竞态。
+        weekPager = new FixedHeightViewPager(context);
+        weekPager.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        weekPager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+            @Override
+            public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+            }
+
+            @Override
+            public void onPageSelected(int position) {
+                int week = firstWeek + position;
+                int delta = week - currentWeek;
+                currentWeek = week;
+                if (weekSwipeListener != null) {
+                    weekSwipeListener.onWeekSwipe(delta);
+                }
+            }
+
+            @Override
+            public void onPageScrollStateChanged(int state) {
+            }
+        });
         overlayBottomInset = dp(82);
         updateSchedulePadding();
-        verticalScroll.addView(scheduleHost, new ScrollView.LayoutParams(
-                ScrollView.LayoutParams.WRAP_CONTENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        verticalScroll.addView(weekPager, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         addView(verticalScroll, new FrameLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
@@ -188,13 +222,23 @@ public class ScheduleBoardView extends FrameLayout {
         verticalScrollListener = listener;
     }
 
+    public void setOnCourseDragListener(OnCourseDragListener listener) {
+        courseDragListener = listener;
+    }
+
     public void setCurrentWeek(int week) {
         int nextWeek = clamp(week, firstWeek, lastWeek);
-        if (currentWeek == nextWeek) {
+        int position = nextWeek - firstWeek;
+        if (currentWeek == nextWeek
+                && (weekPager.getAdapter() == null
+                || weekPager.getCurrentItem() == position)) {
             return;
         }
         currentWeek = nextWeek;
-        renderSchedule();
+        if (weekPager.getAdapter() != null
+                && position >= 0 && position < weekPager.getAdapter().getCount()) {
+            weekPager.setCurrentItem(position, true);
+        }
     }
 
     public void setWeekBounds(int first, int last) {
@@ -338,6 +382,8 @@ public class ScheduleBoardView extends FrameLayout {
         overlayBottomInset = nextBottom;
         updateSchedulePadding();
         updateAdaptiveTextColors();
+        // inset 变化会影响 ViewPager 固定高度（含 padding），需重算。
+        renderSchedule();
     }
 
     public void setTimetableHeaderOpacity(int opacityPercent) {
@@ -455,183 +501,11 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     public void captureCurrentBoardForTransition() {
-        lastBoard = null;
-        transitionBoardLocked = false;
+        // ViewPager 自带切换动画，无需捕获旧板。
     }
 
     public void playWeekTransition(int delta) {
-        if (skipNextProgrammaticTransition) {
-            skipNextProgrammaticTransition = false;
-            scheduleHost.setTranslationX(0f);
-            return;
-        }
-        skipNextProgrammaticTransition = false;
-        scheduleHost.animate().cancel();
-        scheduleHost.setTranslationX(0f);
-    }
-
-    private void finishWeekTransition(View newBoard, int width, int height) {
-        try {
-            scheduleHost.removeAllViews();
-            if (newBoard.getParent() instanceof ViewGroup) {
-                ((ViewGroup) newBoard.getParent()).removeView(newBoard);
-            }
-            newBoard.setTranslationX(0f);
-            scheduleHost.addView(newBoard, new LinearLayout.LayoutParams(width, height));
-            scheduleHost.setTranslationX(0f);
-        } catch (RuntimeException exception) {
-            Log.w(TAG, "Week transition failed; rendering without animation", exception);
-            renderSchedule();
-        }
-    }
-
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
-        if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            touchStartX = event.getX();
-            touchStartY = event.getY();
-            draggingWeek = false;
-            scheduleHost.animate().cancel();
-        } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
-            float dx = event.getX() - touchStartX;
-            float dy = event.getY() - touchStartY;
-            if (Math.abs(dx) > dp(6) && Math.abs(dx) > Math.abs(dy) * 1.15f) {
-                if (!draggingWeek) {
-                    beginWeekDrag(event);
-                }
-                draggingWeek = true;
-                int width = Math.max(1, getDragPageWidth());
-                int delta = dx < 0 ? 1 : -1;
-                if (!canChangeWeek(delta)) {
-                    if (dragSlider != null) {
-                        dragSlider.setTranslationX(-width);
-                    }
-                    scheduleHost.setTranslationX(0f);
-                    return true;
-                }
-                prepareWeekDragPreview();
-                float limited = Math.max(-width, Math.min(width, dx));
-                if (dragSlider != null) {
-                    dragSlider.setTranslationX(-width + limited);
-                } else {
-                    scheduleHost.setTranslationX(limited);
-                }
-                return true;
-            }
-        } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-            float dx = event.getX() - touchStartX;
-            float dy = event.getY() - touchStartY;
-            int width = Math.max(1, getDragPageWidth());
-            int threshold = Math.max(dp(42), Math.round(width * 0.12f));
-            if (event.getAction() == MotionEvent.ACTION_UP
-                    && Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy) * 1.25f) {
-                int delta = dx < 0 ? 1 : -1;
-                if (canChangeWeek(delta)) {
-                    if (dragSlider != null) {
-                        float target = delta > 0 ? -width * 2f : 0f;
-                        dragSlider.animate()
-                                .translationX(target)
-                                .setDuration(220)
-                                .withEndAction(() -> finishGestureWeekSwitch(delta))
-                                .start();
-                    } else {
-                        scheduleHost.animate()
-                            .translationX(delta > 0 ? -width * 0.45f : width * 0.45f)
-                            .setDuration(100)
-                            .withEndAction(() -> finishGestureWeekSwitch(delta))
-                            .start();
-                    }
-                    draggingWeek = false;
-                    keepCourseInteractionsSuppressed();
-                    return true;
-                }
-            }
-            if (draggingWeek) {
-                if (dragSlider != null) {
-                    dragSlider.animate()
-                            .translationX(-width)
-                            .setDuration(160)
-                            .withEndAction(this::restoreCurrentBoardFromDrag)
-                            .start();
-                } else {
-                    scheduleHost.animate().translationX(0f).setDuration(140).start();
-                }
-                draggingWeek = false;
-                keepCourseInteractionsSuppressed();
-                return true;
-            }
-            suppressSlotLongClick = false;
-        }
-        return super.dispatchTouchEvent(event);
-    }
-
-    private void finishGestureWeekSwitch(int delta) {
-        if (!canChangeWeek(delta)) {
-            restoreCurrentBoardFromDrag();
-            return;
-        }
-        skipNextProgrammaticTransition = true;
-        if (weekSwipeListener != null) {
-            weekSwipeListener.onWeekSwipe(delta);
-        }
-        post(this::finishCommittedWeekDrag);
-        keepCourseInteractionsSuppressed();
-    }
-
-    private void finishCommittedWeekDrag() {
-        if (!previewingWeekDrag) {
-            scheduleHost.setTranslationX(0f);
-            return;
-        }
-        verticalScroll.setVisibility(VISIBLE);
-        if (dragOverlay != null) {
-            removeView(dragOverlay);
-        }
-        dragSlider = null;
-        dragOverlay = null;
-        dragCurrentBoard = null;
-        previewingWeekDrag = false;
-        scheduleHost.setTranslationX(0f);
-        keepCourseInteractionsSuppressed();
-    }
-
-    private void beginWeekDrag(MotionEvent event) {
-        keepCourseInteractionsSuppressed();
-        cancelActiveChildGesture(event);
-        cancelLongPressRecursively(this);
-    }
-
-    private void keepCourseInteractionsSuppressed() {
-        suppressSlotLongClick = true;
-        suppressCourseInteractionUntil = System.currentTimeMillis() + 320L;
-        postDelayed(() -> {
-            if (System.currentTimeMillis() >= suppressCourseInteractionUntil) {
-                suppressSlotLongClick = false;
-            }
-        }, 340L);
-    }
-
-    private boolean interactionsSuppressed() {
-        return draggingWeek || previewingWeekDrag || suppressSlotLongClick
-                || System.currentTimeMillis() < suppressCourseInteractionUntil;
-    }
-
-    private void cancelActiveChildGesture(MotionEvent event) {
-        MotionEvent cancel = MotionEvent.obtain(event);
-        cancel.setAction(MotionEvent.ACTION_CANCEL);
-        verticalScroll.dispatchTouchEvent(cancel);
-        cancel.recycle();
-    }
-
-    private void cancelLongPressRecursively(View view) {
-        view.cancelLongPress();
-        view.setPressed(false);
-        if (view instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                cancelLongPressRecursively(group.getChildAt(i));
-            }
-        }
+        // ViewPager 自带标准翻页动画，此处无需额外处理。
     }
 
     @Override
@@ -639,73 +513,100 @@ public class ScheduleBoardView extends FrameLayout {
         super.onScrollChanged(l, t, oldl, oldt);
     }
 
-    private void prepareWeekDragPreview() {
-        if (previewingWeekDrag || scheduleHost.getChildCount() == 0
-                || !(scheduleHost.getChildAt(0) instanceof FrameLayout)) {
-            return;
+    /**
+     * Returns an interactive board for the given week, reusing the cached one
+     * when the rendering inputs have not changed. Week switches therefore swap
+     * in an already-built board instead of tearing the old one down and
+     * rebuilding synchronously on the UI thread, which was the source of the
+     * visible "clear then refill" flicker.
+     */
+    private FrameLayout interactiveBoard(int week) {
+        if (getWidth() <= 0 || getHeight() <= 0) {
+            return buildBoard(week, true);
         }
-        int width = getDragPageWidth();
-        int previousWeek = Math.max(firstWeek, currentWeek - 1);
-        int nextWeek = Math.min(lastWeek, currentWeek + 1);
-        int height = Math.max(scheduleHost.getChildAt(0).getHeight(),
-                Math.max(boardHeight(previousWeek),
-                        Math.max(boardHeight(currentWeek), boardHeight(nextWeek))));
-        if (width <= 0 || height <= 0) {
-            return;
+        int signature = previewSignature();
+        PreviewEntry entry = mainCache.get(week);
+        if (entry != null && entry.signature == signature && entry.board.getParent() == null) {
+            adaptiveTextTargets.clear();
+            adaptiveTextTargets.addAll(entry.targets);
+            return entry.board;
         }
-
-        dragOverlay = new FrameLayout(getContext());
-        dragOverlay.setClipChildren(true);
-        dragOverlay.setBackgroundColor(Color.TRANSPARENT);
-        dragSlider = new FrameLayout(getContext());
-        FrameLayout previous = buildBoard(previousWeek, false);
-        FrameLayout current = buildBoard(currentWeek, false);
-        FrameLayout next = buildBoard(nextWeek, false);
-        dragSlider.addView(previous, dragPageParams(0, width, height));
-        dragSlider.addView(current, dragPageParams(width, width, height));
-        dragSlider.addView(next, dragPageParams(width * 2, width, height));
-        dragSlider.setTranslationX(-width);
-
-        FrameLayout.LayoutParams sliderParams = new FrameLayout.LayoutParams(width * 3, height);
-        sliderParams.topMargin = overlayTopInset - verticalScroll.getScrollY();
-        dragOverlay.addView(dragSlider, sliderParams);
-        addView(dragOverlay, new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-        verticalScroll.setVisibility(INVISIBLE);
-        previewingWeekDrag = true;
+        FrameLayout board = buildBoard(week, true);
+        mainCache.put(week, new PreviewEntry(signature, board,
+                new ArrayList<>(adaptiveTextTargets)));
+        if (mainCache.size() > MAIN_CACHE_CAPACITY) {
+            mainCache.remove(mainCache.keySet().iterator().next());
+        }
+        return board;
     }
 
-    private boolean canChangeWeek(int delta) {
-        int targetWeek = currentWeek + delta;
-        return targetWeek >= firstWeek && targetWeek <= lastWeek;
-    }
-
-    private FrameLayout.LayoutParams dragPageParams(int left, int width, int height) {
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
-        params.leftMargin = left;
-        return params;
-    }
-
-    private int getDragPageWidth() {
-        int childWidth = scheduleHost.getChildCount() > 0 ? scheduleHost.getChildAt(0).getWidth() : 0;
-        return Math.max(Math.max(getWidth(), childWidth), getAvailableBoardWidth());
-    }
-
-    private void restoreCurrentBoardFromDrag() {
-        if (!previewingWeekDrag) {
-            scheduleHost.setTranslationX(0f);
-            return;
+    /** Content-based signature of everything that affects how a board renders. */
+    private int previewSignature() {
+        int hash = 1;
+        hash = 31 * hash + (visualTheme == null ? 0 : visualTheme.hashCode());
+        hash = 31 * hash + (darkMode ? 1 : 0);
+        hash = 31 * hash + (showOutOfWeekCourses ? 1 : 0);
+        hash = 31 * hash + (showPracticeBanner ? 1 : 0);
+        hash = 31 * hash + hashOf(currentBackgroundImageUri);
+        hash = 31 * hash + sectionCount;
+        hash = 31 * hash + (collapseLunchBreak ? 1 : 0);
+        hash = 31 * hash + visibleDayCount;
+        hash = 31 * hash + firstWeek;
+        hash = 31 * hash + lastWeek;
+        hash = 31 * hash + (int) (firstWeekStartMillis ^ (firstWeekStartMillis >>> 32));
+        hash = 31 * hash + courseCornerRadius;
+        hash = 31 * hash + courseBlockOpacity;
+        hash = 31 * hash + configuredSectionHeight;
+        hash = 31 * hash + timetableHeaderOpacity;
+        if (sectionTimes != null) {
+            for (String time : sectionTimes) {
+                hash = 31 * hash + (time == null ? 0 : time.hashCode());
+            }
         }
-        if (dragOverlay != null) {
-            removeView(dragOverlay);
+        if (classTimeSettings != null) {
+            hash = 31 * hash + (classTimeSettings.firstStartTime == null ? 0
+                    : classTimeSettings.firstStartTime.hashCode());
+            hash = 31 * hash + classTimeSettings.classMinutes;
+            hash = 31 * hash + classTimeSettings.breakMinutes;
+            hash = 31 * hash + classTimeSettings.bigBreakMinutes;
+            hash = 31 * hash + (classTimeSettings.afternoonStartTime == null ? 0
+                    : classTimeSettings.afternoonStartTime.hashCode());
+            hash = 31 * hash + (classTimeSettings.lateAfternoonStartTime == null ? 0
+                    : classTimeSettings.lateAfternoonStartTime.hashCode());
+            hash = 31 * hash + (classTimeSettings.anchorConfigText == null ? 0
+                    : classTimeSettings.anchorConfigText.hashCode());
         }
-        dragSlider = null;
-        dragOverlay = null;
-        dragCurrentBoard = null;
-        previewingWeekDrag = false;
-        verticalScroll.setVisibility(VISIBLE);
-        scheduleHost.setTranslationX(0f);
-        renderSchedule();
+        for (Integer day : visibleDays) {
+            hash = 31 * hash + day;
+        }
+        for (Course course : courses) {
+            hash = 31 * hash + course.day;
+            hash = 31 * hash + course.startSection;
+            hash = 31 * hash + course.endSection;
+            hash = 31 * hash + hashOf(course.name);
+            hash = 31 * hash + hashOf(course.weeks);
+            hash = 31 * hash + hashOf(course.location);
+            hash = 31 * hash + hashOf(course.teacher);
+            hash = 31 * hash + hashOf(course.color);
+            hash = 31 * hash + (course.courseType == null ? 0 : course.courseType.ordinal());
+        }
+        return hash;
+    }
+
+    private static int hashOf(String value) {
+        return value == null ? 0 : value.hashCode();
+    }
+
+    private static final class PreviewEntry {
+        final int signature;
+        final FrameLayout board;
+        final List<AdaptiveTextTarget> targets;
+
+        PreviewEntry(int signature, FrameLayout board, List<AdaptiveTextTarget> targets) {
+            this.signature = signature;
+            this.board = board;
+            this.targets = targets;
+        }
     }
 
     private void renderSchedule() {
@@ -717,7 +618,6 @@ public class ScheduleBoardView extends FrameLayout {
             });
             return;
         }
-        adaptiveTextTargets.clear();
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
         sectionHeight = dp(tablet ? Math.max(72, configuredSectionHeight + 8) : configuredSectionHeight);
         timeAxis = ScheduleTimeAxis.create(
@@ -726,19 +626,26 @@ public class ScheduleBoardView extends FrameLayout {
         int availableWidth = getAvailableBoardWidth();
         dayWidth = Math.max(dp(tablet ? 72 : 38), (availableWidth - timeWidth) / visibleDayCount);
         dayHeaderHeight = dp(62);
-
-        if (!transitionBoardLocked && scheduleHost.getChildCount() > 0 && scheduleHost.getChildAt(0) instanceof FrameLayout) {
-            lastBoard = (FrameLayout) scheduleHost.getChildAt(0);
-        } else if (!transitionBoardLocked) {
-            lastBoard = null;
+        lastBoardWidth = Math.max(availableWidth, timeWidth + dayWidth * visibleDayCount);
+        int maxHeight = 0;
+        for (int week = firstWeek; week <= lastWeek; week++) {
+            maxHeight = Math.max(maxHeight, boardHeight(week));
         }
-        scheduleHost.removeAllViews();
-        int width = Math.max(availableWidth, timeWidth + dayWidth * visibleDayCount);
-        int height = boardHeight(currentWeek);
-        FrameLayout board = buildBoard(currentWeek, true);
-        scheduleHost.addView(board, new LinearLayout.LayoutParams(width, height));
-        if (!draggingWeek && !previewingWeekDrag) {
-            scheduleHost.setTranslationX(0f);
+        // 固定高度须包含上下 inset：ViewPager 的 padding 会压缩页面可用高度，
+        // 否则板底部（晚节次）会被裁切。
+        weekPager.setFixedHeight(Math.max(1, maxHeight + overlayTopInset + overlayBottomInset));
+
+        int signature = previewSignature();
+        if (signature != lastRenderSignature || weekPager.getAdapter() == null) {
+            lastRenderSignature = signature;
+            adaptiveTextTargets.clear();
+            weekPager.setAdapter(new WeekPagerAdapter());
+            weekPager.getAdapter().notifyDataSetChanged();
+        }
+        int position = currentWeek - firstWeek;
+        if (weekPager.getAdapter() != null && weekPager.getAdapter().getCount() > 0
+                && weekPager.getCurrentItem() != position) {
+            weekPager.setCurrentItem(position, false);
         }
     }
 
@@ -755,9 +662,6 @@ public class ScheduleBoardView extends FrameLayout {
                 return false;
             });
             board.setOnLongClickListener(view -> {
-                if (interactionsSuppressed()) {
-                    return true;
-                }
                 int day = (int) ((boardTouchX - timeWidth) / dayWidth);
                 int section = sectionAtY(Math.round(boardTouchY), week);
                 if (slotLongClickListener != null && day >= 0 && day < visibleDayCount
@@ -782,6 +686,7 @@ public class ScheduleBoardView extends FrameLayout {
             addTimeLabel(board, section, week);
             addRowLine(board, section, week);
         }
+        addLunchHourLines(board, week);
         List<Course> visibleCourses = displayCourses(week);
         Map<Course, SlotLayout> layouts = slotLayouts(visibleCourses);
         List<Course> conflictingCourses = CourseConflictDetector.conflictingCoursesForWeek(
@@ -986,9 +891,6 @@ public class ScheduleBoardView extends FrameLayout {
         if (interactive) {
             banner.setClickable(true);
             banner.setOnClickListener(v -> {
-                if (interactionsSuppressed()) {
-                    return;
-                }
                 if (practiceCourses.size() == 1 && courseClickListener != null) {
                     courseClickListener.onCourseClick(practiceCourses.get(0));
                 } else if (practiceBannerClickListener != null) {
@@ -997,9 +899,6 @@ public class ScheduleBoardView extends FrameLayout {
             });
             if (practiceCourses.size() == 1) {
                 banner.setOnLongClickListener(v -> {
-                    if (interactionsSuppressed()) {
-                        return true;
-                    }
                     if (courseLongClickListener != null) {
                         courseLongClickListener.onCourseLongClick(practiceCourses.get(0));
                         return true;
@@ -1128,6 +1027,53 @@ public class ScheduleBoardView extends FrameLayout {
         board.addView(line, params);
     }
 
+    /**
+     * Draws horizontal grid lines at whole hours inside the lunch break region
+     * (e.g. 13:00 and 14:00 between the morning and afternoon sections), so the
+     * empty midday band still carries hour marks. Skipped when the lunch break
+     * is collapsed (no visible region) or when the hour coincides with a
+     * section boundary line.
+     */
+    private void addLunchHourLines(FrameLayout board, int week) {
+        if (timeAxis == null || timeAxis.lunchStartMinute < 0
+                || timeAxis.lunchEndMinute <= timeAxis.lunchStartMinute
+                || timeAxis.isLunchBreakCollapsed()) {
+            return;
+        }
+        int firstHour = timeAxis.lunchStartMinute / 60 + 1;
+        int lastHour = (timeAxis.lunchEndMinute - 1) / 60;
+        for (int hour = firstHour; hour <= lastHour; hour++) {
+            int minute = hour * 60;
+            if (minute <= timeAxis.startMinute || minute >= timeAxis.endMinute) {
+                continue;
+            }
+            if (minuteOnSectionBoundary(minute)) {
+                continue;
+            }
+            View line = new View(getContext());
+            line.setBackgroundColor(PolarisVisualTheme.gridLineColor(visualTheme, darkMode));
+            FrameLayout.LayoutParams params =
+                    new FrameLayout.LayoutParams(dayWidth * visibleDayCount, dp(1));
+            params.leftMargin = timeWidth;
+            params.topMargin = bodyTop(week) + timeAxis.yForMinute(minute);
+            board.addView(line, params);
+        }
+    }
+
+    private boolean minuteOnSectionBoundary(int minute) {
+        for (int section = 1; section <= sectionCount; section++) {
+            CourseTimeResolver.TimeRange range =
+                    CourseTimeResolver.sectionTimeRange(classTimeSettings, section);
+            if (range == null) {
+                continue;
+            }
+            if (range.startMinutes == minute || range.endMinutes == minute) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private int boardHeight(int week) {
         return bodyTop(week) + (timeAxis == null ? sectionCount * sectionHeight
                 : timeAxis.contentHeight());
@@ -1212,24 +1158,7 @@ public class ScheduleBoardView extends FrameLayout {
             view.setAlpha(0.52f);
         }
         if (interactive) {
-            view.setOnClickListener(v -> {
-                if (interactionsSuppressed()) {
-                    return;
-                }
-                if (courseClickListener != null) {
-                    courseClickListener.onCourseClick(course);
-                }
-            });
-            view.setOnLongClickListener(v -> {
-                if (interactionsSuppressed()) {
-                    return true;
-                }
-                if (courseLongClickListener != null) {
-                    courseLongClickListener.onCourseLongClick(course);
-                    return true;
-                }
-                return false;
-            });
+            attachCourseBlockGestures(view, course, board, week);
         }
 
         int slotCount = layout == null ? 1 : Math.max(1, layout.count);
@@ -1267,6 +1196,212 @@ public class ScheduleBoardView extends FrameLayout {
         params.leftMargin = left;
         params.topMargin = top;
         board.addView(view, params);
+    }
+
+    /**
+     * Unified gesture handling for course blocks: tap opens the detail dialog,
+     * long-press without movement opens the editor, long-press followed by a
+     * drag moves the course to another day/section via the drag listener.
+     */
+    private void attachCourseBlockGestures(TextView view, Course course,
+                                           FrameLayout board, int week) {
+        final float[] downX = {0f};
+        final float[] downY = {0f};
+        final boolean[] longPressed = {false};
+        final boolean[] dragging = {false};
+        final Runnable[] longPressRunnable = new Runnable[1];
+        final float touchSlop = ViewConfiguration.get(getContext())
+                .getScaledTouchSlop();
+        longPressRunnable[0] = () -> {
+            if (!dragging[0] && !longPressed[0]) {
+                longPressed[0] = true;
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            }
+        };
+        view.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX[0] = event.getX();
+                    downY[0] = event.getY();
+                    longPressed[0] = false;
+                    dragging[0] = false;
+                    v.postDelayed(longPressRunnable[0],
+                            ViewConfiguration.getLongPressTimeout());
+                    return true;
+                case MotionEvent.ACTION_MOVE: {
+                    float deltaX = event.getX() - downX[0];
+                    float deltaY = event.getY() - downY[0];
+                    if (!dragging[0] && longPressed[0]
+                            && (Math.abs(deltaX) > touchSlop
+                            || Math.abs(deltaY) > touchSlop)) {
+                        dragging[0] = true;
+                        v.getParent().requestDisallowInterceptTouchEvent(true);
+                        startCourseDrag(view, course, board, week,
+                                downX[0], downY[0]);
+                    }
+                    if (dragging[0]) {
+                        updateCourseDrag(event);
+                    }
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                    v.removeCallbacks(longPressRunnable[0]);
+                    if (dragging[0]) {
+                        finishCourseDrag(view);
+                        return true;
+                    }
+                    if (longPressed[0]) {
+                        longPressed[0] = false;
+                        if (courseLongClickListener != null) {
+                            courseLongClickListener.onCourseLongClick(course);
+                        }
+                        return true;
+                    }
+                    if (courseClickListener != null) {
+                        courseClickListener.onCourseClick(course);
+                    }
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    v.removeCallbacks(longPressRunnable[0]);
+                    if (dragging[0]) {
+                        cancelCourseDrag(view);
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        });
+    }
+
+    private void startCourseDrag(TextView source, Course course,
+                                 FrameLayout board, int week,
+                                 float downX, float downY) {
+        TextView ghost = new TextView(getContext());
+        ghost.setText(source.getText());
+        ghost.setTypeface(source.getTypeface());
+        ghost.setGravity(source.getGravity());
+        ghost.setTextColor(source.getCurrentTextColor());
+        Drawable background = source.getBackground();
+        if (background != null) {
+            ghost.setBackground(background.getConstantState().newDrawable().mutate());
+        }
+        ghost.setPadding(source.getPaddingLeft(), source.getPaddingTop(),
+                source.getPaddingRight(), source.getPaddingBottom());
+        ghost.setAlpha(0.9f);
+        ghost.setElevation(dp(8));
+        ghost.setContentDescription("正在拖动课程 " + course.name);
+
+        int[] blockLocation = new int[2];
+        source.getLocationOnScreen(blockLocation);
+        int[] rootLocation = new int[2];
+        getLocationOnScreen(rootLocation);
+        dragBlockWidth = source.getWidth();
+        dragBlockHeight = source.getHeight();
+        dragOffsetX = downX;
+        dragOffsetY = downY;
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                dragBlockWidth, dragBlockHeight);
+        params.leftMargin = blockLocation[0] - rootLocation[0];
+        params.topMargin = blockLocation[1] - rootLocation[1];
+        addView(ghost, params);
+        dragGhostView = ghost;
+        dragCourse = course;
+        dragBoard = board;
+        dragWeek = week;
+        dragTargetDay = -1;
+        dragTargetSection = -1;
+        source.setAlpha(0.4f);
+    }
+
+    private void updateCourseDrag(MotionEvent event) {
+        if (dragGhostView == null) {
+            return;
+        }
+        int[] rootLocation = new int[2];
+        getLocationOnScreen(rootLocation);
+        FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) dragGhostView.getLayoutParams();
+        params.leftMargin = Math.round(event.getRawX() - rootLocation[0] - dragOffsetX);
+        params.topMargin = Math.round(event.getRawY() - rootLocation[1] - dragOffsetY);
+        dragGhostView.setLayoutParams(params);
+        updateDragTarget(event.getRawX(), event.getRawY());
+    }
+
+    private void updateDragTarget(float rawX, float rawY) {
+        if (dragBoard == null) {
+            return;
+        }
+        int[] boardLocation = new int[2];
+        dragBoard.getLocationOnScreen(boardLocation);
+        float boardX = rawX - boardLocation[0];
+        float boardY = rawY - boardLocation[1];
+        int day = (int) ((boardX - timeWidth) / dayWidth);
+        if (day < 0 || day >= visibleDayCount) {
+            day = -1;
+        }
+        int section = sectionAtY(Math.round(boardY), dragWeek);
+        if (day == dragTargetDay && section == dragTargetSection) {
+            return;
+        }
+        dragTargetDay = day;
+        dragTargetSection = section;
+        if (dragTargetHighlight != null) {
+            dragBoard.removeView(dragTargetHighlight);
+            dragTargetHighlight = null;
+        }
+        if (day < 0 || section < 1 || section > sectionCount) {
+            return;
+        }
+        TextView highlight = new TextView(getContext());
+        GradientDrawable stroke = new GradientDrawable();
+        stroke.setColor(Color.argb(46, 255, 255, 255));
+        int accent = PolarisVisualTheme.accentColor(visualTheme, darkMode);
+        stroke.setStroke(dp(2), accent);
+        stroke.setCornerRadius(dp(courseCornerRadius));
+        highlight.setBackground(stroke);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                dayWidth - dp(4), sectionRowHeight(section));
+        params.leftMargin = timeWidth + dayWidth * day + dp(2);
+        params.topMargin = sectionTop(section, dragWeek);
+        highlight.setLayoutParams(params);
+        highlight.setContentDescription("目标位置 第" + section + "节");
+        dragBoard.addView(highlight, params);
+        dragTargetHighlight = highlight;
+    }
+
+    private void finishCourseDrag(TextView source) {
+        int targetDay = dragTargetDay;
+        int targetSection = dragTargetSection;
+        Course draggedCourse = dragCourse;
+        cleanupCourseDrag(source);
+        if (targetDay >= 0 && targetSection >= 1 && targetSection <= sectionCount
+                && courseDragListener != null) {
+            courseDragListener.onCourseDragDrop(
+                    draggedCourse, visibleDays.get(targetDay), targetSection);
+        }
+    }
+
+    private void cancelCourseDrag(TextView source) {
+        cleanupCourseDrag(source);
+    }
+
+    private void cleanupCourseDrag(TextView source) {
+        if (dragGhostView != null) {
+            removeView(dragGhostView);
+            dragGhostView = null;
+        }
+        if (dragTargetHighlight != null && dragBoard != null) {
+            dragBoard.removeView(dragTargetHighlight);
+            dragTargetHighlight = null;
+        }
+        if (source != null) {
+            source.setAlpha(1f);
+        }
+        dragCourse = null;
+        dragBoard = null;
+        dragWeek = 0;
+        dragTargetDay = -1;
+        dragTargetSection = -1;
     }
 
     private void configureCourseBlockText(TextView view, int width, int height) {
@@ -1712,8 +1847,8 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private void updateSchedulePadding() {
-        if (scheduleHost != null) {
-            scheduleHost.setPadding(0, overlayTopInset, 0, overlayBottomInset);
+        if (weekPager != null) {
+            weekPager.setPadding(0, overlayTopInset, 0, overlayBottomInset);
         }
     }
 
@@ -1861,5 +1996,64 @@ public class ScheduleBoardView extends FrameLayout {
         date.set(2026, Calendar.MARCH, 3, 0, 0, 0);
         date.set(Calendar.MILLISECOND, 0);
         return date.getTimeInMillis();
+    }
+
+    /** Maps pager positions to week boards, reusing the interactive board cache. */
+    private class WeekPagerAdapter extends PagerAdapter {
+        @Override
+        public int getCount() {
+            return Math.max(0, lastWeek - firstWeek + 1);
+        }
+
+        @Override
+        public boolean isViewFromObject(View view, Object object) {
+            return view == object;
+        }
+
+        @Override
+        public Object instantiateItem(ViewGroup container, int position) {
+            int week = firstWeek + position;
+            FrameLayout board = interactiveBoard(week);
+            if (board.getParent() != null) {
+                ((ViewGroup) board.getParent()).removeView(board);
+            }
+            container.addView(board, new ViewGroup.LayoutParams(
+                    Math.max(1, lastBoardWidth), ViewGroup.LayoutParams.MATCH_PARENT));
+            return board;
+        }
+
+        @Override
+        public void destroyItem(ViewGroup container, int position, Object object) {
+            // 板本身保留在缓存中复用，这里只从容器移除。
+            container.removeView((View) object);
+        }
+    }
+
+    /**
+     * ViewPager with a fixed height so week switches never change the
+     * vertical layout (each page may have a different natural height).
+     */
+    private static class FixedHeightViewPager extends ViewPager {
+        private int fixedHeight;
+
+        FixedHeightViewPager(Context context) {
+            super(context);
+        }
+
+        void setFixedHeight(int height) {
+            if (fixedHeight != height) {
+                fixedHeight = height;
+                requestLayout();
+            }
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            if (fixedHeight > 0) {
+                heightMeasureSpec = MeasureSpec.makeMeasureSpec(
+                        fixedHeight, MeasureSpec.EXACTLY);
+            }
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        }
     }
 }

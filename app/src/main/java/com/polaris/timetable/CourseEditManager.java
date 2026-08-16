@@ -121,6 +121,91 @@ public final class CourseEditManager {
         return true;
     }
 
+    /**
+     * Applies a teacher change to the course-level field and every meeting of
+     * every course whose stable id is in {@code courseIds}. Returns the number
+     * of courses updated.
+     */
+    public static int batchUpdateTeacher(
+            List<StructuredCourse> structuredCourses,
+            java.util.Set<String> courseIds,
+            String teacher) {
+        String value = teacher == null ? "" : teacher.trim();
+        if (structuredCourses == null || courseIds == null || courseIds.isEmpty()) {
+            return 0;
+        }
+        int updated = 0;
+        for (int index = 0; index < structuredCourses.size(); index++) {
+            StructuredCourse source = structuredCourses.get(index);
+            if (source == null || !courseIds.contains(source.id)) {
+                continue;
+            }
+            List<CourseMeeting> meetings = new ArrayList<>(source.meetings.size());
+            for (CourseMeeting meeting : source.meetings) {
+                if (meeting == null) {
+                    continue;
+                }
+                meetings.add(new CourseMeeting(
+                        meeting.id,
+                        meeting.day,
+                        meeting.startSection,
+                        meeting.endSection,
+                        meeting.weekRule,
+                        meeting.location,
+                        value,
+                        meeting.rawText,
+                        meeting.timeMode,
+                        meeting.startMinuteOfDay,
+                        meeting.endMinuteOfDay));
+            }
+            structuredCourses.set(index, new StructuredCourse(
+                    source.id,
+                    source.name,
+                    value,
+                    source.defaultLocation,
+                    meetings,
+                    source.rawText,
+                    source.credit,
+                    source.color,
+                    source.courseType));
+            updated++;
+        }
+        return updated;
+    }
+
+    /**
+     * Applies a color change to every course whose stable id is in
+     * {@code courseIds}. Returns the number of courses updated.
+     */
+    public static int batchUpdateColor(
+            List<StructuredCourse> structuredCourses,
+            java.util.Set<String> courseIds,
+            String color) {
+        String value = color == null ? "" : color;
+        if (structuredCourses == null || courseIds == null || courseIds.isEmpty()) {
+            return 0;
+        }
+        int updated = 0;
+        for (int index = 0; index < structuredCourses.size(); index++) {
+            StructuredCourse source = structuredCourses.get(index);
+            if (source == null || !courseIds.contains(source.id)) {
+                continue;
+            }
+            structuredCourses.set(index, new StructuredCourse(
+                    source.id,
+                    source.name,
+                    source.teacher,
+                    source.defaultLocation,
+                    source.meetings,
+                    source.rawText,
+                    source.credit,
+                    value,
+                    source.courseType));
+            updated++;
+        }
+        return updated;
+    }
+
     /** Legacy index-based compatibility helper. Normal production edits use meeting UUID. */
     @Deprecated
     public static boolean updateMeeting(

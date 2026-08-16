@@ -105,6 +105,34 @@ public class ScheduleTimeAxisTest {
     }
 
     @Test
+    public void lunchWindowIsExposedEvenWhenNotCollapsed() {
+        ScheduleTimeAxis.Axis expanded = ScheduleTimeAxis.create(
+                Collections.emptyList(), settings(), 11, 100f, false);
+        ScheduleTimeAxis.Axis collapsed = ScheduleTimeAxis.create(
+                Collections.emptyList(), settings(), 11, 100f, true);
+
+        assertEquals(12 * 60 + 10, expanded.lunchStartMinute);
+        assertEquals(14 * 60 + 30, expanded.lunchEndMinute);
+        assertEquals(12 * 60 + 10, collapsed.lunchStartMinute);
+        assertEquals(14 * 60 + 30, collapsed.lunchEndMinute);
+    }
+
+    @Test
+    public void continuousScheduleHasNoLunchWindow() {
+        // Four consecutive 50-minute classes with 5-minute breaks: no section
+        // starts after 14:00, so neither the gap rule nor the core lunch
+        // window fallback can produce a lunch band.
+        ScheduleTimeAxis.Axis axis = ScheduleTimeAxis.create(
+                Collections.emptyList(),
+                new CourseTimeResolver.Settings(
+                        "08:00", 50, 5, 5, "", "", ""),
+                4, 100f);
+
+        assertEquals(-1, axis.lunchStartMinute);
+        assertEquals(-1, axis.lunchEndMinute);
+    }
+
+    @Test
     public void lunchCourseKeepsLunchBreakExpanded() {
         ScheduleTimeAxis.Axis axis = ScheduleTimeAxis.create(
                 Collections.singletonList(exactCourse(0, 13 * 60, 13 * 60 + 30)),

@@ -29,6 +29,15 @@ Polaris课程表是一个原生 Android Java 课程表 App，面向学生使用�
 - 根目录 `preview.html` 已停止维护，仅作为历史视觉参考保留。
 - 后续修改 Android 交互页面、布局、导航、弹窗或课程表视觉时，不再要求同步更新 `preview.html`。
 
+## 版本号与构建
+
+- **每次改动代码并构建 APK 交付时，必须同时更新版本号**（`app/build.gradle`）。
+- 版本号遵循语义化版本 `major.minor.patch`，`versionCode` 按 `major×10000 + minor×100 + patch` 映射，只能递增不能回退。
+- 示例：`1.0.0 → versionCode 10000`；下一次交付 `1.0.1 → versionCode 10001`；功能增强 `1.1.0 → versionCode 10100`。
+- 当前基准：`versionName "1.0.0"`，`versionCode 10000`。
+- 构建命令：`.\gradlew.bat :app:assembleDebug`，产物位于 `app/build/outputs/apk/debug/`，文件名自带版本号（如 `Polaris-1.0.0-debug.apk`）。
+- 未构建 APK 的纯代码改动（如仅改测试、文档）不强制升版本。
+
 ## 当前优先级
 
 1. 稳定现有 PDF 导入和周课表展示。

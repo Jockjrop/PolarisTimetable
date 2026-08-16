@@ -24,7 +24,7 @@ public final class CourseTimeResolver {
     private static final Pattern TIME_PATTERN = Pattern.compile(
             "(\\d{1,2})\\s*[:：]\\s*(\\d{1,2})");
     private static final Pattern ANCHOR_PATTERN = Pattern.compile(
-            "(\\d{1,2})\\s+((?:\\d{1,2})[:：](?:\\d{2}))\\s*-\\s*(?:\\d{1,2})[:：](?:\\d{2})");
+            "(\\d{1,2})\\s+((?:\\d{1,2})[:：](?:\\d{2}))\\s*[-~～]\\s*((?:\\d{1,2})[:：](?:\\d{2}))");
     private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
     private static final WeekRuleParser WEEK_RULE_PARSER = new WeekRuleParser();
     private static final Settings DEFAULT_SETTINGS = new Settings(
@@ -299,6 +299,26 @@ public final class CourseTimeResolver {
         return remainder == 0 ? hours + "小时" : hours + "小时" + remainder + "分钟";
     }
 
+    /**
+     * Parses a per-section class time table text, e.g.
+     * {@code "1 08:00-08:50\n2 08:55-09:45"}. Returns a map keyed by section
+     * number (1..40), each value being {@code {startMinutes, endMinutes}}.
+     * Lines with an invalid or non-increasing time range are skipped.
+     */
+    public static Map<Integer, int[]> parseSectionAnchors(String value) {
+        Map<Integer, int[]> anchors = new LinkedHashMap<>();
+        Matcher matcher = ANCHOR_PATTERN.matcher(safe(value));
+        while (matcher.find()) {
+            int section = Integer.parseInt(matcher.group(1));
+            int start = minutesFromText(matcher.group(2));
+            int end = minutesFromText(matcher.group(3));
+            if (section > 0 && section <= 40 && start >= 0 && end > start) {
+                anchors.put(section, new int[]{start, end});
+            }
+        }
+        return anchors;
+    }
+
     private static TimeRange[] buildRanges(Settings settings, int sectionCount,
                                            boolean allowDefaultStart) {
         if (settings == null) {
@@ -307,7 +327,7 @@ public final class CourseTimeResolver {
                     "14:30", "16:35", ""), sectionCount, false)
                     : null;
         }
-        Map<Integer, Integer> anchors = classTimeAnchors(settings.anchorConfigText);
+        Map<Integer, int[]> anchors = parseSectionAnchors(settings.anchorConfigText);
         int start = minutesFromText(settings.firstStartTime);
         if (start < 0) {
             start = firstTimeFromText(settings.anchorConfigText);
@@ -323,10 +343,14 @@ public final class CourseTimeResolver {
         int count = Math.max(1, sectionCount);
         TimeRange[] ranges = new TimeRange[count + 1];
         for (int section = 1; section <= count; section++) {
-            Integer anchoredStart = anchors.get(section);
-            if (anchoredStart != null && section > 1) {
-                start = anchoredStart;
-            } else if (section == 5 && afternoonStart >= 0) {
+            int[] anchored = anchors.get(section);
+            if (anchored != null && section > 1) {
+                ranges[section] = new TimeRange(anchored[0], anchored[1]);
+                start = anchored[1] + (section % 2 == 0
+                        ? settings.bigBreakMinutes : settings.breakMinutes);
+                continue;
+            }
+            if (section == 5 && afternoonStart >= 0) {
                 start = afternoonStart;
             } else if (section == 7 && lateAfternoonStart >= 0) {
                 start = lateAfternoonStart;
@@ -337,19 +361,6 @@ public final class CourseTimeResolver {
                     ? settings.bigBreakMinutes : settings.breakMinutes);
         }
         return ranges;
-    }
-
-    private static Map<Integer, Integer> classTimeAnchors(String value) {
-        Map<Integer, Integer> anchors = new LinkedHashMap<>();
-        Matcher matcher = ANCHOR_PATTERN.matcher(safe(value));
-        while (matcher.find()) {
-            int section = Integer.parseInt(matcher.group(1));
-            int start = minutesFromText(matcher.group(2));
-            if (section > 0 && section <= 40 && start >= 0) {
-                anchors.put(section, start);
-            }
-        }
-        return anchors;
     }
 
     private static int firstTimeFromText(String value) {
