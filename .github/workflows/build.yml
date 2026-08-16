@@ -49,6 +49,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       HAS_RELEASE_KEY: ${{ secrets.POLARIS_RELEASE_KEYSTORE_B64 != '' }}
     steps:
