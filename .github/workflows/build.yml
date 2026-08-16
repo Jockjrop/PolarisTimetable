@@ -49,6 +49,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    env:
+      HAS_RELEASE_KEY: ${{ secrets.POLARIS_RELEASE_KEYSTORE_B64 != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,12 +75,12 @@ jobs:
             gradle-${{ runner.os }}-
 
       - name: Decode release keystore
-        if: secrets.POLARIS_RELEASE_KEYSTORE_B64 != ''
+        if: env.HAS_RELEASE_KEY == 'true'
         run: |
           echo "${{ secrets.POLARIS_RELEASE_KEYSTORE_B64 }}" | base64 -d > keystore.jks
 
       - name: Assemble release APK (signed)
-        if: secrets.POLARIS_RELEASE_KEYSTORE_B64 != ''
+        if: env.HAS_RELEASE_KEY == 'true'
         env:
           POLARIS_RELEASE_STORE_FILE: keystore.jks
           POLARIS_RELEASE_STORE_PASSWORD: ${{ secrets.POLARIS_RELEASE_STORE_PASSWORD }}
@@ -87,7 +89,7 @@ jobs:
         run: ./gradlew :app:assembleRelease --no-daemon --console=plain
 
       - name: Assemble debug APK (unsigned fallback)
-        if: secrets.POLARIS_RELEASE_KEYSTORE_B64 == ''
+        if: env.HAS_RELEASE_KEY != 'true'
         run: ./gradlew :app:assembleDebug --no-daemon --console=plain
 
       - name: Create GitHub Release
