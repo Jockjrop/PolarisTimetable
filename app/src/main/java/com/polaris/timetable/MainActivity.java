@@ -236,6 +236,10 @@ public class MainActivity extends Activity {
     /** 平板横屏：左侧滑出的手机宽度计划管理浮层（遮罩 + 面板）。 */
     private FrameLayout planManageOverlay;
     private LinearLayout planManagePanel;
+    /** 计划管理浮层头部（主题切换时刷新背景色）。 */
+    private LinearLayout planManageHeader;
+    /** 新建计划按钮（手机=计划页按钮，平板=管理浮层按钮；主题切换时刷新底色）。 */
+    private TextView planAddButton;
     private int currentWeek = 18;
     private int visibleDayCount = 7;
     private int activeTab = 0;
@@ -264,12 +268,8 @@ public class MainActivity extends Activity {
     private int courseBlockOpacity = 100;
     private int timetableHeaderOpacity = 78;
     private int bottomNavOpacity = 86;
-    private String bottomNavShape = "矩形";
     private int bottomNavHeight = 60;
     private int bottomNavRectCornerRadius = 58;
-    private int bottomNavSplitCornerRadius = 58;
-    private int bottomNavSideCornerRadius = 58;
-    private int bottomNavSideMargin = 10;
     private boolean shellBarsBlurEnabled = true;
     private String timetableBackground = "清爽蓝";
     private String visualTheme = PolarisVisualTheme.MINIMAL;
@@ -4191,6 +4191,7 @@ public class MainActivity extends Activity {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(0, statusBarHeight() + dp(8), 0, dp(8));
         header.setBackgroundColor(settingsHeaderSurfaceColor());
+        planManageHeader = header;
         TextView close = new TextView(this);
         close.setText("×");
         close.setTextColor(inkColor());
@@ -4233,6 +4234,7 @@ public class MainActivity extends Activity {
         addButton.setBackground(addBg);
         addButton.setOnClickListener(v -> showPlanEditor(null));
         attachPressFeedback(addButton);
+        planAddButton = addButton;
         content.addView(addButton, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
@@ -4293,6 +4295,7 @@ public class MainActivity extends Activity {
         addButton.setBackground(addBg);
         addButton.setOnClickListener(v -> showPlanEditor(null));
         attachPressFeedback(addButton);
+        planAddButton = addButton;
         LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
         addParams.setMargins(dp(12), 0, dp(12), dp(6));
@@ -4343,6 +4346,39 @@ public class MainActivity extends Activity {
             }
             planListContainer.addView(group);
         }
+    }
+
+    /**
+     * 主题/深色模式切换后刷新计划相关界面的固有色：
+     * 计划页与浮层背景、浮层头部、新建按钮底色、右侧玻璃面板底色，并重建列表行。
+     * 与 refreshMyPageBehindSettings 同一刷新链，保证计划界面与主题同步。
+     */
+    private void refreshPlanTheme() {
+        if (planPage != null) {
+            planPage.setBackgroundColor(pageSurfaceColor());
+        }
+        if (planManagePanel != null) {
+            planManagePanel.setBackgroundColor(pageSurfaceColor());
+        }
+        if (planManageHeader != null) {
+            planManageHeader.setBackgroundColor(settingsHeaderSurfaceColor());
+        }
+        if (planAddButton != null) {
+            GradientDrawable addBg = new GradientDrawable();
+            addBg.setColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+            addBg.setCornerRadius(dp(18));
+            planAddButton.setBackground(addBg);
+        }
+        if (planSidePanel != null) {
+            updateGlassLayer(planSidePanel, floatingPanelBg(bottomNavOpacity, 20), 20);
+        }
+        if (practiceSidePanel != null) {
+            updateGlassLayer(practiceSidePanel, floatingPanelBg(bottomNavOpacity, 20), 20);
+        }
+        if (todayOverviewPanel != null) {
+            updateGlassLayer(todayOverviewPanel, floatingPanelBg(bottomNavOpacity, 20), 20);
+        }
+        refreshPlanList();
     }
 
     private int weekDayValue(StudyPlan plan) {
@@ -4708,32 +4744,15 @@ public class MainActivity extends Activity {
         if (isLandscapeTablet()) {
             return tabletBottomBar();
         }
-        // 手机（含竖屏平板）：课表/计划/我的 三 tab。
-        // 三个 tab 放不进左右角落布局，手机端「侧边」形状按「矩形」渲染。
-        String shape = "侧边".equals(bottomNavShape) ? "矩形" : bottomNavShape;
+        // 手机（含竖屏平板）：课表/计划/我的 三 tab，矩形悬浮条样式。
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        int horizontalPadding = "分散".equals(shape) ? 0 : dp(10);
-        nav.setPadding(horizontalPadding, 0, horizontalPadding, 0);
+        nav.setPadding(dp(10), 0, dp(10), 0);
         nav.setBackground(null);
         scheduleNav = navItem(navText("课表", activeTab == 0), activeTab == 0, 0);
         planNav = navItem(navText("计划", activeTab == 1), activeTab == 1, 1);
         myNav = navItem(navText("我的", activeTab == 2), activeTab == 2, 2);
-        if ("分散".equals(shape)) {
-            scheduleNav.setBackgroundColor(Color.TRANSPARENT);
-            planNav.setBackgroundColor(Color.TRANSPARENT);
-            myNav.setBackgroundColor(Color.TRANSPARENT);
-            nav.addView(navItemContainer(scheduleNav));
-            View spacer = new View(this);
-            nav.addView(spacer, new LinearLayout.LayoutParams(0, dp(navVisualHeight()), 1f));
-            nav.addView(navItemContainer(planNav));
-            View spacer2 = new View(this);
-            nav.addView(spacer2, new LinearLayout.LayoutParams(0, dp(navVisualHeight()), 1f));
-            nav.addView(navItemContainer(myNav));
-            return nav;
-        }
-        // 矩形（含手机端侧边回退）
         scheduleNav.setBackgroundColor(Color.TRANSPARENT);
         planNav.setBackgroundColor(Color.TRANSPARENT);
         myNav.setBackgroundColor(Color.TRANSPARENT);
@@ -4755,30 +4774,6 @@ public class MainActivity extends Activity {
         return nav;
     }
 
-    private FrameLayout navItemContainer(TextView item) {
-        FrameLayout container = new FrameLayout(this);
-        container.addView(glassLayer(floatingPanelBg(bottomNavOpacity, bottomNavRadius()), bottomNavRadius()),
-                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT));
-        container.addView(item, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(132), dp(navVisualHeight()));
-        container.setLayoutParams(params);
-        return container;
-    }
-
-    private FrameLayout sideNavItemContainer(TextView item, boolean roundLeft) {
-        FrameLayout container = new FrameLayout(this);
-        container.addView(glassLayer(sidePanelBg(bottomNavOpacity, roundLeft), bottomNavRadius()),
-                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT));
-        container.addView(item, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        container.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight())));
-        return container;
-    }
-
     private TextView navItem(String text, boolean active, int tab) {
         TextView item = new TextView(this);
         item.setText(styledNavText(text));
@@ -4789,15 +4784,6 @@ public class MainActivity extends Activity {
         item.setTextColor(active ? inkColor() : mutedColor());
         item.setOnClickListener(v -> switchTab(tab));
         attachPressFeedback(item);
-        // 侧边形状仅在平板横屏（tabletBottomBar）中使用；手机三 tab 按矩形渲染。
-        if ("侧边".equals(bottomNavShape) && isLandscapeTablet()) {
-            int outside = dp(24);
-            if (tab == 1) {
-                item.setPadding(0, 0, outside, 0);
-            } else {
-                item.setPadding(outside, 0, 0, 0);
-            }
-        }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         item.setLayoutParams(params);
         return item;
@@ -4843,12 +4829,9 @@ public class MainActivity extends Activity {
         }
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
         int bottomMargin = dp(18);
-        // 手机三 tab：侧边形状按矩形渲染，不再使用左右角落布局。
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()), Gravity.BOTTOM);
-        int side = "分散".equals(bottomNavShape)
-                ? dp(Math.max(0, bottomNavSideMargin))
-                : dp(tablet ? 16 : 10);
+        int side = dp(tablet ? 16 : 10);
         params.setMargins(side, 0, side, bottomMargin);
         return params;
     }
@@ -4863,11 +4846,6 @@ public class MainActivity extends Activity {
 
     private void handleScheduleVerticalScroll(int scrollY, int deltaY, boolean atBottom) {
         if (activeTab != 0 || settingsPage != null && settingsPage.getVisibility() == View.VISIBLE) {
-            return;
-        }
-        String shape = "侧边".equals(bottomNavShape) ? "矩形" : bottomNavShape;
-        if (!"矩形".equals(shape) && !"分散".equals(shape)) {
-            showBottomNav(false);
             return;
         }
         if (scrollY <= 0) {
@@ -4992,10 +4970,9 @@ public class MainActivity extends Activity {
         bottomNavView = bottomNav();
         bottomNavView.setVisibility(visibility);
         rootView.addView(bottomNavView, bottomNavLayoutParams());
-        if (bottomNavHidden && ("矩形".equals(bottomNavShape) || "分散".equals(bottomNavShape))) {
+        if (bottomNavHidden) {
             bottomNavView.setTranslationY(dp(navVisualHeight() + 18));
         } else {
-            bottomNavHidden = false;
             bottomNavView.setTranslationY(0f);
         }
     }
@@ -7426,6 +7403,7 @@ public class MainActivity extends Activity {
                             saveConfig();
                             applyShellAppearance();
                             refreshMyPageBehindSettings();
+                            refreshPlanTheme();
                             renderSchedule();
                             updateSettingValueRow(v, darkMode);
                             refreshVisibleSettingsTheme();
@@ -7441,6 +7419,7 @@ public class MainActivity extends Activity {
                                 timetableBackground = "清爽蓝";
                                 saveGlobalAppearance();
                                 applyShellAppearance();
+                                refreshPlanTheme();
                                 renderSchedule();
                                 updateSettingValueRow(v, "未设置");
                                 refreshVisibleSettingsTheme();
@@ -7518,27 +7497,12 @@ public class MainActivity extends Activity {
                     renderSchedule();
                     updateSettingValueRow(v, bottomNavHeight + " dp");
                 })));
-        shellCard.addView(settingValueRow("底部切换栏形状", bottomNavShape,
-                v -> showChoiceDialog(v, "底部切换栏形状",
-                        new String[]{"矩形", "分散", "侧边"}, bottomNavShape, value -> {
-                            bottomNavShape = normalizeBottomNavShape(value);
-                            saveGlobalAppearance();
-                            applyShellAppearance();
-                            updateSettingValueRow(v, bottomNavShape);
-                        })));
         shellCard.addView(settingValueRow("底部圆角半径", bottomNavRadius() + " dp",
                 v -> showNumberDialog("底部圆角半径", 0, 72, bottomNavRadius(), value -> {
-                    setBottomNavRadiusForShape(bottomNavShape, value);
+                    bottomNavRectCornerRadius = Math.max(0, Math.min(72, value));
                     saveGlobalAppearance();
                     applyShellAppearance();
                     updateSettingValueRow(v, bottomNavRadius() + " dp");
-                })));
-        shellCard.addView(settingValueRow("底部侧边距", bottomNavSideMargin + " dp",
-                v -> showNumberDialog("底部侧边距", 0, 48, bottomNavSideMargin, value -> {
-                    bottomNavSideMargin = value;
-                    saveGlobalAppearance();
-                    applyShellAppearance();
-                    updateSettingValueRow(v, bottomNavSideMargin + " dp");
                 })));
         return shellCard;
     }
@@ -7570,13 +7534,13 @@ public class MainActivity extends Activity {
     }
 
     private String appearancePresetName() {
-        if (matchesAppearancePreset(78, 86, 60, 58, 10, 76, 9, 70)) {
+        if (matchesAppearancePreset(78, 86, 60, 58, 76, 9, 70)) {
             return "标准";
         }
-        if (matchesAppearancePreset(90, 94, 56, 22, 8, 64, 7, 88)) {
+        if (matchesAppearancePreset(90, 94, 56, 22, 64, 7, 88)) {
             return "紧凑";
         }
-        if (matchesAppearancePreset(55, 64, 64, 32, 14, 82, 14, 62)) {
+        if (matchesAppearancePreset(55, 64, 64, 32, 82, 14, 62)) {
             return "沉浸";
         }
         return "自定义";
@@ -7584,12 +7548,11 @@ public class MainActivity extends Activity {
 
     private boolean matchesAppearancePreset(
             int headerOpacity, int navOpacity, int navHeight, int navRadius,
-            int navMargin, int cellHeight, int cellRadius, int cellOpacity) {
+            int cellHeight, int cellRadius, int cellOpacity) {
         return timetableHeaderOpacity == headerOpacity
                 && bottomNavOpacity == navOpacity
                 && bottomNavHeight == navHeight
                 && bottomNavRadius() == navRadius
-                && bottomNavSideMargin == navMargin
                 && courseCellHeight == cellHeight
                 && courseCornerRadius == cellRadius
                 && courseBlockOpacity == cellOpacity;
@@ -7597,11 +7560,11 @@ public class MainActivity extends Activity {
 
     private void applyAppearancePreset(String preset) {
         if ("紧凑".equals(preset)) {
-            setAppearanceValues(90, 94, 56, 22, 8, 64, 7, 88);
+            setAppearanceValues(90, 94, 56, 22, 64, 7, 88);
         } else if ("沉浸".equals(preset)) {
-            setAppearanceValues(55, 64, 64, 32, 14, 82, 14, 62);
+            setAppearanceValues(55, 64, 64, 32, 82, 14, 62);
         } else {
-            setAppearanceValues(78, 86, 60, 58, 10, 76, 9, 70);
+            setAppearanceValues(78, 86, 60, 58, 76, 9, 70);
         }
         saveGlobalAppearance();
         applyShellAppearance();
@@ -7624,6 +7587,7 @@ public class MainActivity extends Activity {
         saveGlobalAppearance();
         applyShellAppearance();
         refreshMyPageBehindSettings();
+        refreshPlanTheme();
         renderSchedule();
         refreshActiveSettingsPage();
         Toast.makeText(this, "已切换为“" + visualTheme + "”", Toast.LENGTH_SHORT).show();
@@ -7631,14 +7595,11 @@ public class MainActivity extends Activity {
 
     private void setAppearanceValues(
             int headerOpacity, int navOpacity, int navHeight, int navRadius,
-            int navMargin, int cellHeight, int cellRadius, int cellOpacity) {
+            int cellHeight, int cellRadius, int cellOpacity) {
         timetableHeaderOpacity = headerOpacity;
         bottomNavOpacity = navOpacity;
         bottomNavHeight = navHeight;
         bottomNavRectCornerRadius = navRadius;
-        bottomNavSplitCornerRadius = navRadius;
-        bottomNavSideCornerRadius = navRadius;
-        bottomNavSideMargin = navMargin;
         courseCellHeight = cellHeight;
         courseCornerRadius = cellRadius;
         courseBlockOpacity = cellOpacity;
@@ -8203,15 +8164,11 @@ public class MainActivity extends Activity {
         collapseXautMiddleSections = config.collapseXautMiddleSections;
         timetableHeaderOpacity = Math.max(40, Math.min(100, config.timetableHeaderOpacity));
         bottomNavOpacity = Math.max(40, Math.min(100, config.bottomNavOpacity));
-        bottomNavShape = normalizeBottomNavShape(config.bottomNavShape);
         // 72 dp was the old fixed visual height. Migrate that legacy default once to the
         // compact 60 dp bar; all other user-selected heights remain unchanged.
         bottomNavHeight = config.bottomNavHeight == 72
                 ? 60 : Math.max(56, Math.min(120, config.bottomNavHeight));
         bottomNavRectCornerRadius = Math.max(0, Math.min(72, config.bottomNavRectCornerRadius));
-        bottomNavSplitCornerRadius = Math.max(0, Math.min(72, config.bottomNavSplitCornerRadius));
-        bottomNavSideCornerRadius = Math.max(0, Math.min(72, config.bottomNavSideCornerRadius));
-        bottomNavSideMargin = Math.max(0, Math.min(48, config.bottomNavSideMargin));
         shellBarsBlurEnabled = config.shellBarsBlurEnabled;
         updateVisibleDayCount();
     }
@@ -8253,13 +8210,9 @@ public class MainActivity extends Activity {
         config.courseBlockOpacity = courseBlockOpacity;
         config.timetableHeaderOpacity = timetableHeaderOpacity;
         config.bottomNavOpacity = bottomNavOpacity;
-        config.bottomNavShape = bottomNavShape;
         config.bottomNavHeight = bottomNavHeight;
         config.bottomNavCornerRadius = bottomNavRectCornerRadius;
         config.bottomNavRectCornerRadius = bottomNavRectCornerRadius;
-        config.bottomNavSplitCornerRadius = bottomNavSplitCornerRadius;
-        config.bottomNavSideCornerRadius = bottomNavSideCornerRadius;
-        config.bottomNavSideMargin = bottomNavSideMargin;
         config.shellBarsBlurEnabled = shellBarsBlurEnabled;
         scheduleRepository.saveConfig(activeScheduleId, config);
         syncActiveScheduleName();
@@ -8529,13 +8482,9 @@ public class MainActivity extends Activity {
         config.collapseLunchBreak = collapseLunchBreak;
         config.timetableHeaderOpacity = timetableHeaderOpacity;
         config.bottomNavOpacity = bottomNavOpacity;
-        config.bottomNavShape = bottomNavShape;
         config.bottomNavHeight = bottomNavHeight;
         config.bottomNavCornerRadius = bottomNavRectCornerRadius;
         config.bottomNavRectCornerRadius = bottomNavRectCornerRadius;
-        config.bottomNavSplitCornerRadius = bottomNavSplitCornerRadius;
-        config.bottomNavSideCornerRadius = bottomNavSideCornerRadius;
-        config.bottomNavSideMargin = bottomNavSideMargin;
         config.shellBarsBlurEnabled = shellBarsBlurEnabled;
         scheduleRepository.saveConfig(scheduleId, config);
     }
@@ -8681,31 +8630,7 @@ public class MainActivity extends Activity {
     }
 
     private int bottomNavRadius() {
-        if ("分散".equals(bottomNavShape)) {
-            return Math.max(0, Math.min(72, bottomNavSplitCornerRadius));
-        }
-        if ("侧边".equals(bottomNavShape)) {
-            return Math.max(0, Math.min(72, bottomNavSideCornerRadius));
-        }
         return Math.max(0, Math.min(72, bottomNavRectCornerRadius));
-    }
-
-    private void setBottomNavRadiusForShape(String shape, int value) {
-        int radius = Math.max(0, Math.min(72, value));
-        if ("分散".equals(shape)) {
-            bottomNavSplitCornerRadius = radius;
-        } else if ("侧边".equals(shape)) {
-            bottomNavSideCornerRadius = radius;
-        } else {
-            bottomNavRectCornerRadius = radius;
-        }
-    }
-
-    private String normalizeBottomNavShape(String value) {
-        if ("分散".equals(value) || "侧边".equals(value)) {
-            return value;
-        }
-        return "矩形";
     }
 
     private int selectedTextColor() {
@@ -8877,17 +8802,6 @@ public class MainActivity extends Activity {
                     PolarisVisualTheme.glassStrokeColor(visualTheme, dark, neutralStroke));
         }
         drawable.setCornerRadius(dp(radius));
-        return drawable;
-    }
-
-    private GradientDrawable sidePanelBg(int opacityPercent, boolean roundLeft) {
-        GradientDrawable drawable = floatingPanelBg(opacityPercent, 0);
-        float radius = dp(bottomNavRadius());
-        if (roundLeft) {
-            drawable.setCornerRadii(new float[]{radius, radius, 0f, 0f, 0f, 0f, radius, radius});
-        } else {
-            drawable.setCornerRadii(new float[]{0f, 0f, radius, radius, radius, radius, 0f, 0f});
-        }
         return drawable;
     }
 
