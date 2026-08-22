@@ -4,6 +4,7 @@ import com.polaris.timetable.model.WeekRule;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -88,7 +89,13 @@ public class WeekRuleParser {
 
         if (oddOnly || evenOnly) {
             final boolean keepOddWeeks = oddOnly;
-            referencedWeeks.removeIf(week -> keepOddWeeks ? week % 2 == 0 : week % 2 != 0);
+            Iterator<Integer> weekIterator = referencedWeeks.iterator();
+            while (weekIterator.hasNext()) {
+                int week = weekIterator.next();
+                if (keepOddWeeks ? week % 2 == 0 : week % 2 != 0) {
+                    weekIterator.remove();
+                }
+            }
             if (referencedWeeks.isEmpty()) {
                 return new WeekRule(WeekRule.Type.RANGE, 1, 0,
                         Collections.emptyList(), raw);

@@ -12,6 +12,7 @@ import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
+import com.polaris.timetable.time.CourseTimeResolver;
 import com.polaris.timetable.widget.ScheduleWidgetProvider;
 
 import org.json.JSONArray;
@@ -618,7 +619,7 @@ public class ScheduleRepository {
         public String afternoonStartTime = "14:30";
         public String lateAfternoonStartTime = "16:35";
         public String parserModel = "";
-        public String firstWeekDay = "2026/3/3";
+        public String firstWeekDay = CourseTimeResolver.DEFAULT_SEMESTER_START_TEXT;
         public String semesterName = "";
         public String schoolName = "";
         public String timetableBackground = "清爽蓝";

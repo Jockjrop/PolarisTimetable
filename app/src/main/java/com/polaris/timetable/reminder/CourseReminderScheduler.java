@@ -22,8 +22,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TimeZone;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public final class CourseReminderScheduler {
     public static final String ACTION_COURSE_REMINDER =
@@ -38,8 +36,6 @@ public final class CourseReminderScheduler {
     private static final String PREFS_NAME = "polaris_course_reminders";
     private static final String KEY_SCHEDULED_URIS = "scheduled_alarm_uris";
     private static final String KEY_NEXT_REMINDER_AT = "next_reminder_at";
-    private static final Pattern DATE_PATTERN = Pattern.compile(
-            "(\\d{4})\\s*[/.-]\\s*(\\d{1,2})\\s*[/.-]\\s*(\\d{1,2})");
 
     private CourseReminderScheduler() {
     }
@@ -238,25 +234,9 @@ public final class CourseReminderScheduler {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
+    /** 统一委托 {@link CourseTimeResolver}：与课表 UI、计划提醒共用同一解析与回退规则。 */
     private static long firstWeekStartMillis(String text, TimeZone timeZone) {
-        Calendar first = Calendar.getInstance(timeZone);
-        first.clear();
-        Matcher matcher = DATE_PATTERN.matcher(safe(text));
-        if (matcher.find()) {
-            first.set(Integer.parseInt(matcher.group(1)),
-                    Integer.parseInt(matcher.group(2)) - 1,
-                    Integer.parseInt(matcher.group(3)), 0, 0, 0);
-        } else {
-            first.setTimeInMillis(System.currentTimeMillis());
-            first.set(Calendar.HOUR_OF_DAY, 0);
-            first.set(Calendar.MINUTE, 0);
-            first.set(Calendar.SECOND, 0);
-            first.set(Calendar.MILLISECOND, 0);
-        }
-        int day = first.get(Calendar.DAY_OF_WEEK);
-        int daysFromMonday = day == Calendar.SUNDAY ? 6 : day - Calendar.MONDAY;
-        first.add(Calendar.DATE, -daysFromMonday);
-        return first.getTimeInMillis();
+        return CourseTimeResolver.firstWeekStartMillis(text, timeZone);
     }
 
     private static String safe(String value) {

@@ -26,6 +26,7 @@ public final class TodayOverviewView extends LinearLayout {
     private CourseTimeResolver.TodayOverview overview;
     private OnCourseClickListener courseClickListener;
     private boolean darkMode;
+    private boolean large;
     private String visualTheme = PolarisVisualTheme.MINIMAL;
 
     public TodayOverviewView(Context context) {
@@ -75,6 +76,34 @@ public final class TodayOverviewView extends LinearLayout {
 
     public void setOnCourseClickListener(OnCourseClickListener listener) {
         courseClickListener = listener;
+    }
+
+    /**
+     * 大号模式：用于平板右侧独立面板——更大字号、状态胶囊加大、
+     * 详情允许两行，完整展示信息。
+     */
+    public void setLarge(boolean large) {
+        if (this.large == large) {
+            return;
+        }
+        this.large = large;
+        setMinimumHeight(dp(large ? 92 : 60));
+        setPadding(dp(2), dp(large ? 12 : 7), dp(2), dp(large ? 8 : 2));
+        statusView.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 14 : 12);
+        LayoutParams statusParams = new LayoutParams(dp(large ? 76 : 60), dp(large ? 38 : 30));
+        statusParams.rightMargin = dp(10);
+        statusView.setLayoutParams(statusParams);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 21 : 16);
+        detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 16 : 13);
+        if (large) {
+            detailView.setSingleLine(false);
+            detailView.setMaxLines(2);
+            detailView.setEllipsize(TextUtils.TruncateAt.END);
+        } else {
+            detailView.setSingleLine(true);
+            detailView.setMaxLines(1);
+        }
+        requestLayout();
     }
 
     public void setVisualTheme(String theme) {

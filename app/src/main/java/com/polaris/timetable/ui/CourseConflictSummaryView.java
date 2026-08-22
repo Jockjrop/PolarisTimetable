@@ -12,6 +12,9 @@ import android.widget.TextView;
 
 /** Non-blocking, accessible summary shown only when the displayed week has conflicts. */
 public final class CourseConflictSummaryView extends TextView {
+    private boolean compact;
+    private boolean lastDarkMode;
+
     public CourseConflictSummaryView(Context context) {
         super(context);
         setGravity(Gravity.CENTER_VERTICAL);
@@ -27,7 +30,24 @@ public final class CourseConflictSummaryView extends TextView {
         setVisibility(View.GONE);
     }
 
+    /**
+     * 紧凑 chip 形态：用于平板横屏顶栏，降低行高、收紧内边距与圆角。
+     */
+    public void setCompact(boolean compact) {
+        if (this.compact == compact) {
+            return;
+        }
+        this.compact = compact;
+        setMinHeight(dp(compact ? 34 : 48));
+        setPadding(dp(compact ? 10 : 12), 0, dp(compact ? 10 : 12), 0);
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, compact ? 12 : 13);
+        if (getVisibility() == View.VISIBLE) {
+            setBackground(conflictBackground(lastDarkMode));
+        }
+    }
+
     public void setConflictCount(int count, int week, boolean darkMode) {
+        lastDarkMode = darkMode;
         if (count <= 0) {
             setVisibility(View.GONE);
             setText("");
@@ -51,7 +71,7 @@ public final class CourseConflictSummaryView extends TextView {
         background.setStroke(dp(1), darkMode
                 ? Color.rgb(230, 112, 127)
                 : Color.rgb(205, 66, 84));
-        background.setCornerRadius(dp(13));
+        background.setCornerRadius(dp(compact ? 10 : 13));
         return background;
     }
 

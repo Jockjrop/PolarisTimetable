@@ -1,5 +1,8 @@
 package com.polaris.timetable;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.Manifest;
 import android.app.Activity;
 import android.app.Dialog;
@@ -81,12 +84,15 @@ import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableCourseId;
 import com.polaris.timetable.model.StableMeetingId;
 import com.polaris.timetable.model.StructuredCourse;
+import com.polaris.timetable.model.StudyPlan;
 import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.parser.ParseDiagnosticsReport;
 import com.polaris.timetable.reminder.CourseReminderScheduler;
+import com.polaris.timetable.reminder.PlanReminderScheduler;
 import com.polaris.timetable.sharing.ScheduleShareCodec;
 import com.polaris.timetable.sharing.ScheduleShareFile;
 import com.polaris.timetable.statistics.ScheduleStatistics;
+import com.polaris.timetable.storage.PlanRepository;
 import com.polaris.timetable.storage.ScheduleBackupManager;
 import com.polaris.timetable.storage.ScheduleRepository;
 import com.polaris.timetable.time.CourseTimeResolver;
@@ -113,6 +119,7 @@ import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -176,6 +183,7 @@ public class MainActivity extends Activity {
     private static final String UI_ONBOARDING_PREFERENCES = "polaris_ui_onboarding";
     private static final String WEEK_SWIPE_HINT_SHOWN = "week_swipe_hint_shown_v1";
     private static final String CONTACT_EMAIL = "polaris_io@163.com";
+    private static final String PROJECT_HOME_URL = "https://github.com/Jockjrop/PolarisTimetable";
     private static final String[] APPEARANCE_PRESETS = {"标准", "紧凑", "沉浸"};
     private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
@@ -186,6 +194,9 @@ public class MainActivity extends Activity {
             new AiExternalImportReturnController();
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
     private ScheduleRepository scheduleRepository;
+    private PlanRepository planRepository;
+    private final List<StudyPlan> studyPlans = new ArrayList<>();
+    private LinearLayout planListContainer;
     private PdfImportCoordinator importCoordinator;
     private ScheduleBoardView scheduleBoard;
     private FrameLayout contentHost;
@@ -196,9 +207,11 @@ public class MainActivity extends Activity {
     private View topPanelGlassLayer;
     private LinearLayout bottomNavView;
     private ScrollView myPage;
+    private ScrollView planPage;
     private FrameLayout settingsPage;
     private View emptyScheduleView;
     private TextView scheduleNav;
+    private TextView planNav;
     private TextView myNav;
     private TextView title;
     private TextView subtitle;
@@ -206,6 +219,23 @@ public class MainActivity extends Activity {
     private Button overflowMenuButton;
     private TodayOverviewView todayOverviewView;
     private CourseConflictSummaryView conflictSummaryView;
+    /** 横屏平板顶栏的周选择下拉按钮（替代周 chip 行）。 */
+    private TextView weekSelectorButton;
+    /** 横屏平板：设置面板是否打开（我的页处于左侧侧栏模式）。 */
+    private boolean tabletSettingsOpen;
+    /** 横屏平板双栏模式的分隔线（仅侧栏模式可见）。 */
+    private View paneDivider;
+    /** 横屏平板：课表右侧本周实践列表面板（右侧空间充足时显示）。 */
+    private FrameLayout practiceSidePanel;
+    private LinearLayout practiceSidePanelContent;
+    /** 横屏平板：右侧顶部的今日概览独立面板（右侧空间充足时显示）。 */
+    private View todayOverviewPanel;
+    /** 横屏平板：右侧下方剩余空间的本周计划面板。 */
+    private FrameLayout planSidePanel;
+    private LinearLayout planSidePanelContent;
+    /** 平板横屏：左侧滑出的手机宽度计划管理浮层（遮罩 + 面板）。 */
+    private FrameLayout planManageOverlay;
+    private LinearLayout planManagePanel;
     private int currentWeek = 18;
     private int visibleDayCount = 7;
     private int activeTab = 0;
@@ -305,6 +335,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         scheduleRepository = new ScheduleRepository(this);
+        planRepository = new PlanRepository(this);
         importCoordinator = new PdfImportCoordinator(this);
         activeScheduleId = scheduleRepository.activeScheduleId();
         darkMode = scheduleRepository.loadGlobalDarkMode();
@@ -312,6 +343,7 @@ public class MainActivity extends Activity {
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
         currentWeek = currentWeekFromDate();
         loadActiveCourses();
+        reloadStudyPlans();
         buildLayout();
         renderSchedule();
         Intent launchIntent = getIntent();
@@ -354,6 +386,7 @@ public class MainActivity extends Activity {
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
         if (granted) {
             enableCourseReminders();
+            PlanReminderScheduler.reschedule(this);
         } else {
             remindersEnabled = false;
             CourseReminderScheduler.cancelAll(this);
@@ -377,6 +410,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (planManageOverlay != null && planManageOverlay.getVisibility() == View.VISIBLE) {
+            closePlanManagePanel();
+            return;
+        }
         if (settingsPage != null && settingsPage.getVisibility() == View.VISIBLE) {
             closeSettingsPage();
             return;
@@ -386,6 +423,12 @@ public class MainActivity extends Activity {
 
     private void buildLayout() {
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+        // 横屏平板：顶栏采用横向并排布局，压缩垂直占用。
+        boolean wideTopPanel = isLandscapeTablet();
+        // 布局重建（旋转等）后回到「我的页居中」初始模式，侧栏状态不跨重建保留。
+        tabletSettingsOpen = false;
+        paneDivider = null;
+        weekSelectorButton = null;
         weekSwipeHintView = null;
         weekSwipeHintScheduled = false;
         courseSaveUndoView = null;
@@ -400,14 +443,8 @@ public class MainActivity extends Activity {
         topPanel.setPadding(dp(12), dp(10), dp(12), dp(10));
         topPanel.setBackgroundColor(Color.TRANSPARENT);
 
-        LinearLayout headline = new LinearLayout(this);
-        headline.setOrientation(LinearLayout.HORIZONTAL);
-        headline.setGravity(Gravity.CENTER_VERTICAL);
-        topPanel.addView(headline);
-
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
-        headline.addView(heading, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         title = new TextView(this);
         title.setText(headerTitle());
@@ -427,7 +464,11 @@ public class MainActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        headline.addView(actions);
+        if (wideTopPanel) {
+            // 横屏平板：周选择做成顶部下拉按钮，置于操作区最前。
+            weekSelectorButton = buildWeekSelectorButton();
+            actions.addView(weekSelectorButton);
+        }
         returnCurrentWeekButton = topHeaderAction(
                 getString(R.string.return_to_current_week), v -> returnToCurrentWeek());
         returnCurrentWeekButton.setContentDescription(
@@ -442,6 +483,39 @@ public class MainActivity extends Activity {
         });
         overflowMenuButton.setContentDescription("更多操作");
         actions.addView(overflowMenuButton);
+
+        LinearLayout headline = new LinearLayout(this);
+        headline.setOrientation(LinearLayout.HORIZONTAL);
+        headline.setGravity(Gravity.CENTER_VERTICAL);
+        // 横屏平板且右侧空间充足：今日概览独立到右侧顶部面板，顶栏不再内嵌。
+        boolean separateTodayPanel = isLandscapeTablet() && rightPanelSpace() >= dp(240);
+        if (wideTopPanel) {
+            if (separateTodayPanel) {
+                // 横屏平板：标题区占满剩余空间，操作按钮置于右侧。
+                LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                headingParams.rightMargin = dp(14);
+                headline.addView(heading, headingParams);
+            } else {
+                // 横屏平板（空间不足）：标题区按内容自适应，今日概览占据剩余空间。
+                LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                headingParams.rightMargin = dp(14);
+                headline.addView(heading, headingParams);
+                todayOverviewView = new TodayOverviewView(this);
+                todayOverviewView.setVisualTheme(visualTheme);
+                todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
+                headline.addView(todayOverviewView, new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            }
+            headline.addView(actions);
+        } else {
+            headline.addView(heading, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            headline.addView(actions);
+        }
+        topPanel.addView(headline);
 
         scheduleBoard = new ScheduleBoardView(this);
         scheduleBoard.setOnCourseClickListener(this::showCourseDetail);
@@ -463,23 +537,33 @@ public class MainActivity extends Activity {
         scheduleBoard.setVisualTheme(visualTheme);
         scheduleBoard.setDarkMode(isDarkModeActive());
         scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
-        scheduleBoard.setShowPracticeBanner(showPracticeBanner);
+        // 横屏平板右侧空间充足时，本周实践改由右侧面板展示，板内横幅关闭。
+        scheduleBoard.setShowPracticeBanner(
+                isLandscapeTablet() && hasPracticePanelSpace() ? false : showPracticeBanner);
         scheduleBoard.setCourseMetrics(courseCellHeight, courseCornerRadius);
         scheduleBoard.setCourseBlockOpacity(courseBlockOpacity);
         scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
         scheduleBoard.setBackgroundImage(backgroundImageUri, backgroundImageCrop);
         scheduleBoard.setCourses(courses);
 
-        todayOverviewView = new TodayOverviewView(this);
-        todayOverviewView.setVisualTheme(visualTheme);
-        todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
-        LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        overviewParams.topMargin = dp(5);
-        topPanel.addView(todayOverviewView, overviewParams);
+        if (!wideTopPanel) {
+            todayOverviewView = new TodayOverviewView(this);
+            todayOverviewView.setVisualTheme(visualTheme);
+            todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
+            LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            overviewParams.topMargin = dp(5);
+            topPanel.addView(todayOverviewView, overviewParams);
+        } else if (separateTodayPanel) {
+            // 横屏平板：今日概览独立到右侧顶部面板（面板容器在 contentHost 构建时挂载）。
+            todayOverviewView = new TodayOverviewView(this);
+            todayOverviewView.setVisualTheme(visualTheme);
+            todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
+        }
         updateTodayOverview();
 
         conflictSummaryView = new CourseConflictSummaryView(this);
+        conflictSummaryView.setCompact(wideTopPanel);
         conflictSummaryView.setOnClickListener(v -> showCurrentWeekConflicts());
         LinearLayout.LayoutParams conflictParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -488,6 +572,7 @@ public class MainActivity extends Activity {
         updateConflictSummary();
 
         myPage = buildMyPage();
+        planPage = buildPlanPage();
         settingsPage = new FrameLayout(this);
         settingsPage.setVisibility(View.GONE);
         contentHost = new FrameLayout(this);
@@ -498,18 +583,81 @@ public class MainActivity extends Activity {
         emptyScheduleView = buildEmptyScheduleView();
         contentHost.addView(emptyScheduleView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        contentHost.addView(myPage, new FrameLayout.LayoutParams(
+        contentHost.addView(planPage, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        contentHost.addView(settingsPage, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        if (isLandscapeTablet()) {
+            // 平板：我的页初始全宽居中；点击设置后收缩为左侧侧栏，
+            // 右侧设置面板 + 分隔线（paneDivider 默认隐藏，侧栏模式才显示）。
+            contentHost.addView(myPage, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            paneDivider = new View(this);
+            paneDivider.setBackgroundColor(PolarisVisualTheme.outlineColor(
+                    visualTheme, isDarkModeActive()));
+            FrameLayout.LayoutParams dividerParams = new FrameLayout.LayoutParams(
+                    dp(1), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
+            dividerParams.leftMargin = dp(424);
+            paneDivider.setVisibility(View.GONE);
+            contentHost.addView(paneDivider, dividerParams);
+            FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+            settingsParams.leftMargin = dp(425);
+            contentHost.addView(settingsPage, settingsParams);
+            // 课表右侧本周实践面板：毛玻璃容器（内容决定尺寸）+ 内容层，初始隐藏。
+            practiceSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, 20), 20);
+            practiceSidePanelContent = new LinearLayout(this);
+            practiceSidePanelContent.setOrientation(LinearLayout.VERTICAL);
+            practiceSidePanel.addView(practiceSidePanelContent,
+                    new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.WRAP_CONTENT));
+            practiceSidePanel.setVisibility(View.GONE);
+            contentHost.addView(practiceSidePanel, new FrameLayout.LayoutParams(
+                    dp(190), FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.RIGHT | Gravity.TOP));
+            if (separateTodayPanel) {
+                // 今日概览独立面板：右侧顶部，实践面板上方。
+                buildTodayOverviewPanel();
+            }
+            // 本周计划面板：毛玻璃容器（内容可滚动，占满右侧剩余空间）。
+            planSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, 20), 20);
+            ScrollView planScroll = new ScrollView(this);
+            planScroll.setFillViewport(true);
+            planScroll.setVerticalScrollBarEnabled(false);
+            planScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            planSidePanel.addView(planScroll, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+            planSidePanelContent = new LinearLayout(this);
+            planSidePanelContent.setOrientation(LinearLayout.VERTICAL);
+            // 水平内边距让内部计划卡片缩进到圆角内侧，避免白底超出玻璃框。
+            planSidePanelContent.setPadding(dp(8), 0, dp(8), dp(8));
+            planScroll.addView(planSidePanelContent);
+            planSidePanel.setVisibility(View.GONE);
+            contentHost.addView(planSidePanel, new FrameLayout.LayoutParams(
+                    dp(360), LinearLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.RIGHT | Gravity.TOP));
+        } else {
+            contentHost.addView(myPage, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            contentHost.addView(settingsPage, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            practiceSidePanel = null;
+        }
         rootView.addView(contentHost, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP);
-        topParams.setMargins(dp(tablet ? 16 : 10), statusBarHeight() + dp(8),
-                dp(tablet ? 16 : 10), 0);
+        FrameLayout.LayoutParams topParams;
+        if (isLandscapeTablet()) {
+            // 横屏平板：顶栏左贴边、宽度与课表网格一致（两侧对齐）。
+            topParams = new FrameLayout.LayoutParams(
+                    tabletGridWidth(), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP);
+            topParams.setMargins(0, statusBarHeight() + dp(8), 0, 0);
+        } else {
+            topParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP);
+            topParams.setMargins(dp(tablet ? 16 : 10), statusBarHeight() + dp(8),
+                    dp(tablet ? 16 : 10), 0);
+        }
         topPanelContainer = new FrameLayout(this);
         topPanelGlassLayer = glassLayer(liquidGlassBg(timetableHeaderOpacity), 24);
         topPanelContainer.addView(topPanelGlassLayer, new FrameLayout.LayoutParams(
@@ -523,8 +671,19 @@ public class MainActivity extends Activity {
 
         bottomNavView = bottomNav();
         rootView.addView(bottomNavView, bottomNavLayoutParams());
+        if (isLandscapeTablet()) {
+            // 平板横屏：计划管理浮层（遮罩 + 右侧手机宽面板），盖在最上层。
+            buildPlanManageOverlay();
+        }
         setContentView(rootView);
         updateSystemBarAppearance(getWindow());
+        if (isLandscapeTablet()) {
+            // 我的页初始为居中内容列模式。
+            applyMyPageMode(false);
+        }
+        updateTodayOverviewPanel();
+        updatePracticeSidePanel();
+        updatePlanSidePanel();
         switchTab(activeTab);
         scheduleBoard.post(this::renderSchedule);
         scheduleWeekSwipeHintIfNeeded();
@@ -1406,7 +1565,9 @@ public class MainActivity extends Activity {
             scheduleBoard.setVisualTheme(visualTheme);
             scheduleBoard.setDarkMode(isDarkModeActive());
             scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
-            scheduleBoard.setShowPracticeBanner(showPracticeBanner);
+            // 横屏平板右侧空间充足时，本周实践改由右侧面板展示，板内横幅关闭。
+            scheduleBoard.setShowPracticeBanner(
+                    isLandscapeTablet() && hasPracticePanelSpace() ? false : showPracticeBanner);
             scheduleBoard.setCourseMetrics(courseCellHeight, courseCornerRadius);
             scheduleBoard.setCourseBlockOpacity(courseBlockOpacity);
             scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
@@ -1420,6 +1581,19 @@ public class MainActivity extends Activity {
         updateConflictSummary();
         updateEmptyScheduleView();
         updateReturnCurrentWeekAction();
+        // 横屏平板：顶栏宽度与课表网格一致——周六/周日开关变化后即时重算。
+        if (isLandscapeTablet() && topPanelContainer != null) {
+            FrameLayout.LayoutParams topParams =
+                    (FrameLayout.LayoutParams) topPanelContainer.getLayoutParams();
+            int gridWidth = tabletGridWidth();
+            if (topParams.width != gridWidth) {
+                topParams.width = gridWidth;
+                topPanelContainer.setLayoutParams(topParams);
+            }
+        }
+        updateTodayOverviewPanel();
+        updatePracticeSidePanel();
+        updatePlanSidePanel();
     }
 
     private void showCourseDetail(Course course) {
@@ -1561,6 +1735,307 @@ public class MainActivity extends Activity {
         int count = CourseConflictDetector.forWeek(
                 courses, semesterWeeks, currentWeek, courseTimeSettings()).size();
         conflictSummaryView.setConflictCount(count, currentWeek, isDarkModeActive());
+    }
+
+    /**
+     * 横屏平板课表网格宽度：委托 ScheduleBoardView 的统一计算，
+     * 与板内布局共用同一组常数，避免两处算法漂移导致顶栏与网格错位。
+     */
+    private int tabletGridWidth() {
+        return ScheduleBoardView.gridContentWidth(this,
+                getResources().getDisplayMetrics().widthPixels, visibleDayCount);
+    }
+
+    /** 横屏平板课表右侧可用空间（减去左右边距，px）。 */
+    private int rightPanelSpace() {
+        return Math.max(0, getResources().getDisplayMetrics().widthPixels
+                - tabletGridWidth() - dp(24));
+    }
+
+    /** 右侧实践面板是否需要至少 150dp 空间。 */
+    private boolean hasPracticePanelSpace() {
+        return isLandscapeTablet() && rightPanelSpace() >= dp(150);
+    }
+
+    private int practicePanelWidth() {
+        if (todayOverviewPanel != null && todayOverviewPanel.getVisibility() == View.VISIBLE) {
+            // 与今日概览面板同宽。
+            return todayOverviewPanel.getWidth() > 0
+                    ? todayOverviewPanel.getWidth()
+                    : Math.min(dp(440), rightPanelSpace());
+        }
+        return Math.max(dp(150), Math.min(dp(210), rightPanelSpace()));
+    }
+
+    private List<Course> practiceCoursesForCurrentWeek() {
+        List<Course> result = new ArrayList<>();
+        for (Course course : courses) {
+            if (course != null && (course.courseType == CourseType.PRACTICE
+                    || course.isBannerOnlyCourse())
+                    && CourseTimeResolver.isActiveInWeek(course, currentWeek)) {
+                result.add(course);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 刷新课表右侧的本周实践面板：仅横屏平板且右侧空间充足、
+     * 本周有实践、课表 tab 且设置面板未打开时显示。
+     */
+    private void updatePracticeSidePanel() {
+        if (practiceSidePanel == null) {
+            return;
+        }
+        boolean panelEnabled = isLandscapeTablet() && showPracticeBanner
+                && hasPracticePanelSpace();
+        boolean visible = panelEnabled && activeTab == 0
+                && (settingsPage == null
+                || settingsPage.getVisibility() != View.VISIBLE);
+        List<Course> practices = panelEnabled ? practiceCoursesForCurrentWeek()
+                : new ArrayList<>();
+        if (!visible || practices.isEmpty()) {
+            practiceSidePanel.setVisibility(View.GONE);
+            return;
+        }
+        practiceSidePanelContent.removeAllViews();
+
+        TextView title = new TextView(this);
+        title.setText("本周实践");
+        title.setTextColor(inkColor());
+        title.setTextSize(14);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setPadding(dp(14), dp(10), dp(14), dp(6));
+        practiceSidePanelContent.addView(title);
+
+        for (Course course : practices) {
+            practiceSidePanelContent.addView(buildPracticePanelItem(course));
+        }
+
+        FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) practiceSidePanel.getLayoutParams();
+        params.width = practicePanelWidth();
+        int topInset = scheduleOverlayTopInset(
+                getResources().getConfiguration().smallestScreenWidthDp >= 600);
+        if (todayOverviewPanel != null && todayOverviewPanel.getVisibility() == View.VISIBLE) {
+            // 实践面板排在今日概览面板下方；未布局时用估算高度兜底。
+            int todayBottom;
+            if (todayOverviewPanel.getHeight() > 0) {
+                todayBottom = todayOverviewPanel.getTop() + todayOverviewPanel.getHeight();
+            } else {
+                FrameLayout.LayoutParams todayParams =
+                        (FrameLayout.LayoutParams) todayOverviewPanel.getLayoutParams();
+                todayBottom = todayParams.topMargin + dp(90);
+            }
+            topInset = todayBottom + dp(10);
+        }
+        params.topMargin = topInset;
+        params.rightMargin = dp(12);
+        practiceSidePanel.setLayoutParams(params);
+        practiceSidePanel.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * 刷新右侧顶部的今日概览独立面板：仅横屏平板且右侧空间充足、
+     * 课表 tab 且设置面板未打开时显示。
+     */
+    private void updateTodayOverviewPanel() {
+        if (todayOverviewPanel == null) {
+            return;
+        }
+        boolean visible = isLandscapeTablet() && rightPanelSpace() >= dp(240)
+                && activeTab == 0
+                && (settingsPage == null
+                || settingsPage.getVisibility() != View.VISIBLE);
+        if (!visible) {
+            todayOverviewPanel.setVisibility(View.GONE);
+            return;
+        }
+        FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) todayOverviewPanel.getLayoutParams();
+        params.width = Math.min(dp(440), rightPanelSpace());
+        // 与左侧顶栏顶部平齐。
+        params.topMargin = statusBarHeight() + dp(8);
+        params.rightMargin = dp(12);
+        todayOverviewPanel.setLayoutParams(params);
+        todayOverviewPanel.setVisibility(View.VISIBLE);
+    }
+
+    private View buildTodayOverviewPanel() {
+        todayOverviewView.setLarge(true);
+        // 毛玻璃容器（BackdropBlurView 按内容定尺寸）+ 大号今日概览内容。
+        FrameLayout host = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, 20), 20);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(10), dp(10), dp(10), dp(10));
+        content.addView(todayOverviewView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        host.addView(content, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+        todayOverviewPanel = host;
+        contentHost.addView(host, new FrameLayout.LayoutParams(
+                dp(360), LinearLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.RIGHT | Gravity.TOP));
+        host.setVisibility(View.GONE);
+        return host;
+    }
+
+    /**
+     * 刷新右侧下方的本周计划面板：仅横屏平板且右侧空间充足、
+     * 课表 tab 且设置面板未打开时显示；排在实践面板下方。
+     */
+    private void updatePlanSidePanel() {
+        if (planSidePanel == null) {
+            return;
+        }
+        boolean visible = isLandscapeTablet() && rightPanelSpace() >= dp(240)
+                && activeTab == 0
+                && (settingsPage == null
+                || settingsPage.getVisibility() != View.VISIBLE);
+        if (!visible) {
+            planSidePanel.setVisibility(View.GONE);
+            return;
+        }
+        planSidePanelContent.removeAllViews();
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        // 内容层已有 8dp 水平 padding，这里与「本周实践」面板标题的缩进保持一致。
+        header.setPadding(dp(6), dp(10), dp(6), dp(4));
+        TextView title = new TextView(this);
+        title.setText("本周计划");
+        title.setTextColor(inkColor());
+        title.setTextSize(14);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView manage = new TextView(this);
+        manage.setText("管理");
+        manage.setTextSize(13);
+        manage.setTypeface(Typeface.DEFAULT_BOLD);
+        manage.setTextColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+        manage.setGravity(Gravity.CENTER_VERTICAL);
+        manage.setPadding(dp(8), 0, dp(8), 0);
+        manage.setMinHeight(dp(32));
+        manage.setOnClickListener(v -> showPlanPage());
+        header.addView(manage);
+        planSidePanelContent.addView(header);
+
+        List<StudyPlan> weekPlans = new ArrayList<>();
+        for (StudyPlan plan : studyPlans) {
+            if (plan.week == currentWeek) {
+                weekPlans.add(plan);
+            }
+        }
+        Collections.sort(weekPlans, (a, b) -> {
+            int doneCompare = Boolean.compare(a.done, b.done);
+            return doneCompare != 0 ? doneCompare : a.dayOfWeek - b.dayOfWeek;
+        });
+        if (weekPlans.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("本周暂无计划，点「管理」新建");
+            empty.setTextColor(mutedColor());
+            empty.setTextSize(13);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dp(18), 0, dp(18));
+            empty.setOnClickListener(v -> showPlanPage());
+            planSidePanelContent.addView(empty);
+        } else {
+            for (StudyPlan plan : weekPlans) {
+                planSidePanelContent.addView(planRow(plan));
+            }
+        }
+
+        planSidePanel.setVisibility(View.VISIBLE);
+        // 布局完成后定位：实践面板高度（内容数量）变化后，计划面板
+        // 自动占据「实践面板下方 → 屏幕底部」的剩余空间。
+        planSidePanel.post(this::layoutPlanSidePanel);
+    }
+
+    /**
+     * 计划面板定位：宽度随右侧空间，顶部排在实践/今日概览面板下方，
+     * 高度占满到屏幕底部（底部预留导航栏空间），内部内容可滚动。
+     */
+    private void layoutPlanSidePanel() {
+        if (planSidePanel == null || planSidePanel.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) planSidePanel.getLayoutParams();
+        params.width = practicePanelWidth();
+        int topInset = scheduleOverlayTopInset(
+                getResources().getConfiguration().smallestScreenWidthDp >= 600);
+        View anchor = null;
+        if (practiceSidePanel != null
+                && practiceSidePanel.getVisibility() == View.VISIBLE
+                && practiceSidePanel.getHeight() > 0) {
+            anchor = practiceSidePanel;
+        } else if (todayOverviewPanel != null
+                && todayOverviewPanel.getVisibility() == View.VISIBLE
+                && todayOverviewPanel.getHeight() > 0) {
+            anchor = todayOverviewPanel;
+        }
+        if (anchor != null) {
+            topInset = anchor.getTop() + anchor.getHeight() + dp(10);
+        }
+        params.topMargin = topInset;
+        params.rightMargin = dp(12);
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int bottomReserve = bottomContentInset() + dp(30);
+        params.height = Math.max(dp(140), screenHeight - topInset - bottomReserve);
+        planSidePanel.setLayoutParams(params);
+    }
+
+    private View buildPracticePanelItem(Course course) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(8), dp(14), dp(8));
+        card.setBackground(roundedBg(cardColorHex(), 14));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setOnClickListener(v -> new CourseDetailDialog(
+                this, isDarkModeActive(), dialogBlurSource(), courseTimeSettings())
+                .show(course, this::showCourseEditor));
+
+        TextView name = new TextView(this);
+        name.setText(course.name == null || course.name.trim().isEmpty()
+                ? "未命名实践" : course.name.trim());
+        name.setTextColor(inkColor());
+        name.setTextSize(14);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        card.addView(name);
+
+        StringBuilder meta = new StringBuilder(course.isBannerOnlyCourse()
+                ? "集中实践" : courseTimeInlineText(course));
+        if (course.location != null && !course.location.trim().isEmpty()) {
+            meta.append(" · ").append(course.location.trim());
+        }
+        if (course.teacher != null && !course.teacher.trim().isEmpty()) {
+            meta.append(" · 老师 ").append(course.teacher.trim());
+        }
+        TextView metaView = new TextView(this);
+        metaView.setText(meta.toString());
+        metaView.setTextColor(mutedColor());
+        metaView.setTextSize(13);
+        metaView.setSingleLine(false);
+        metaView.setMaxLines(2);
+        metaView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        metaParams.topMargin = dp(2);
+        card.addView(metaView, metaParams);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(dp(8), 0, dp(8), dp(8));
+        card.setLayoutParams(params);
+        return card;
     }
 
     private void showCurrentWeekConflicts() {
@@ -3645,6 +4120,540 @@ public class MainActivity extends Activity {
         transparentDialog(dialog);
     }
 
+    // ===== 学习计划 =====
+
+    private void reloadStudyPlans() {
+        studyPlans.clear();
+        studyPlans.addAll(planRepository.loadPlans(activeScheduleId));
+    }
+
+    private void persistPlans() {
+        planRepository.savePlans(activeScheduleId, studyPlans);
+    }
+
+    private int indexOfPlan(String id) {
+        for (int i = 0; i < studyPlans.size(); i++) {
+            if (studyPlans.get(i).id.equals(id)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int planIdCounter;
+
+    private String newPlanId() {
+        planIdCounter++;
+        return "plan-" + System.currentTimeMillis() + "-" + planIdCounter;
+    }
+
+    private String remindTimeText(int minute) {
+        return twoDigits(minute / 60) + ":" + twoDigits(minute % 60);
+    }
+
+    /**
+     * 计划页入口：平板横屏从右侧计划面板「管理」进入 → 右侧手机宽管理浮层；
+     * 手机/竖屏平板直接切到底部导航「计划」tab。
+     */
+    private void showPlanPage() {
+        if (isLandscapeTablet()) {
+            showPlanManagePanel();
+        } else {
+            switchTab(1);
+            refreshPlanList();
+        }
+    }
+
+    /** 平板横屏：全屏遮罩 + 右侧手机宽度计划管理浮层（内容与手机计划页一致）。 */
+    private void buildPlanManageOverlay() {
+        planManageOverlay = new FrameLayout(this);
+        planManageOverlay.setBackgroundColor(Color.argb(130, 0, 0, 0));
+        planManageOverlay.setVisibility(View.GONE);
+        planManageOverlay.setOnClickListener(v -> closePlanManagePanel());
+        rootView.addView(planManageOverlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        int panelWidth = Math.min(dp(380),
+                getResources().getDisplayMetrics().widthPixels - dp(24));
+        planManagePanel = new LinearLayout(this);
+        planManagePanel.setOrientation(LinearLayout.VERTICAL);
+        planManagePanel.setBackgroundColor(pageSurfaceColor());
+        planManagePanel.setOnClickListener(v -> {
+            // 消费点击，阻止遮罩关闭。
+        });
+        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
+                panelWidth, FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        planManageOverlay.addView(planManagePanel, panelParams);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(0, statusBarHeight() + dp(8), 0, dp(8));
+        header.setBackgroundColor(settingsHeaderSurfaceColor());
+        TextView close = new TextView(this);
+        close.setText("×");
+        close.setTextColor(inkColor());
+        close.setTextSize(30);
+        close.setTypeface(Typeface.DEFAULT_BOLD);
+        close.setGravity(Gravity.CENTER);
+        close.setContentDescription("关闭计划管理");
+        close.setOnClickListener(v -> closePlanManagePanel());
+        header.addView(close, new LinearLayout.LayoutParams(dp(52), dp(54)));
+        TextView title = new TextView(this);
+        title.setText("计划");
+        title.setTextColor(inkColor());
+        title.setTextSize(21);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        header.addView(title, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        planManagePanel.addView(header);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(8), dp(12), bottomContentInset() + dp(48));
+        scroll.addView(content);
+        planManagePanel.addView(scroll, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        TextView addButton = new TextView(this);
+        addButton.setText("＋ 新建计划");
+        addButton.setTextColor(Color.WHITE);
+        addButton.setTextSize(15);
+        addButton.setTypeface(Typeface.DEFAULT_BOLD);
+        addButton.setGravity(Gravity.CENTER);
+        addButton.setPadding(dp(14), 0, dp(14), 0);
+        addButton.setMinHeight(dp(44));
+        GradientDrawable addBg = new GradientDrawable();
+        addBg.setColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+        addBg.setCornerRadius(dp(18));
+        addButton.setBackground(addBg);
+        addButton.setOnClickListener(v -> showPlanEditor(null));
+        attachPressFeedback(addButton);
+        content.addView(addButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        planListContainer = new LinearLayout(this);
+        planListContainer.setOrientation(LinearLayout.VERTICAL);
+        content.addView(planListContainer);
+    }
+
+    private void showPlanManagePanel() {
+        if (planManageOverlay == null) {
+            return;
+        }
+        planManageOverlay.setAlpha(0f);
+        planManagePanel.setTranslationX(dp(380));
+        planManageOverlay.setVisibility(View.VISIBLE);
+        planManagePanel.setVisibility(View.VISIBLE);
+        refreshPlanList();
+        planManageOverlay.animate().alpha(1f).setDuration(200).start();
+        planManagePanel.animate().translationX(0f).setDuration(200).start();
+    }
+
+    private void closePlanManagePanel() {
+        if (planManageOverlay == null || planManageOverlay.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        planManageOverlay.animate().alpha(0f).setDuration(180).start();
+        planManagePanel.animate().translationX(dp(380)).setDuration(180)
+                .withEndAction(() -> planManageOverlay.setVisibility(View.GONE)).start();
+    }
+
+    /** 手机/竖屏平板：底部导航「计划」tab 的独立页面。 */
+    private ScrollView buildPlanPage() {
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setBackgroundColor(pageSurfaceColor());
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(0, statusBarHeight() + dp(34), 0, bottomContentInset() + dp(48));
+        if (!isLandscapeTablet()) {
+            int columnWidth = contentColumnWidth();
+            if (columnWidth < getResources().getDisplayMetrics().widthPixels) {
+                page.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
+            }
+        }
+        scrollView.addView(page);
+
+        TextView addButton = new TextView(this);
+        addButton.setText("＋ 新建计划");
+        addButton.setTextColor(Color.WHITE);
+        addButton.setTextSize(15);
+        addButton.setTypeface(Typeface.DEFAULT_BOLD);
+        addButton.setGravity(Gravity.CENTER);
+        addButton.setPadding(dp(14), 0, dp(14), 0);
+        addButton.setMinHeight(dp(44));
+        GradientDrawable addBg = new GradientDrawable();
+        addBg.setColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+        addBg.setCornerRadius(dp(18));
+        addButton.setBackground(addBg);
+        addButton.setOnClickListener(v -> showPlanEditor(null));
+        attachPressFeedback(addButton);
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        addParams.setMargins(dp(12), 0, dp(12), dp(6));
+        page.addView(addButton, addParams);
+
+        planListContainer = new LinearLayout(this);
+        planListContainer.setOrientation(LinearLayout.VERTICAL);
+        page.addView(planListContainer);
+        return scrollView;
+    }
+
+    /** 平板横屏：右侧面板「管理」→ 全屏计划页（settingsPage 模式）。 */
+    private void refreshPlanList() {
+        if (planListContainer == null) {
+            return;
+        }
+        planListContainer.removeAllViews();
+        if (studyPlans.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("还没有计划，点击上方「＋ 新建计划」");
+            empty.setTextColor(mutedColor());
+            empty.setTextSize(15);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dp(42), 0, dp(42));
+            planListContainer.addView(empty);
+            return;
+        }
+        List<StudyPlan> pending = new ArrayList<>();
+        List<StudyPlan> finished = new ArrayList<>();
+        for (StudyPlan plan : studyPlans) {
+            (plan.done ? finished : pending).add(plan);
+        }
+        Collections.sort(pending, (a, b) -> weekDayValue(a) - weekDayValue(b));
+        Collections.sort(finished, (a, b) -> weekDayValue(b) - weekDayValue(a));
+        if (!pending.isEmpty()) {
+            planListContainer.addView(sectionHeader("待完成"));
+            LinearLayout group = settingsGroup();
+            for (StudyPlan plan : pending) {
+                group.addView(planRow(plan));
+            }
+            planListContainer.addView(group);
+        }
+        if (!finished.isEmpty()) {
+            planListContainer.addView(sectionHeader("已完成"));
+            LinearLayout group = settingsGroup();
+            for (StudyPlan plan : finished) {
+                group.addView(planRow(plan));
+            }
+            planListContainer.addView(group);
+        }
+    }
+
+    private int weekDayValue(StudyPlan plan) {
+        return plan.week * 7 + plan.dayOfWeek;
+    }
+
+    private View planRow(StudyPlan plan) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(8), dp(10), dp(8));
+        row.setBackground(roundedBg(cardColorHex(), 16));
+        row.setOnClickListener(v -> showPlanEditor(plan));
+        attachCardPressFeedback(row, 16);
+
+        TextView check = new TextView(this);
+        check.setText(plan.done ? "☑" : "☐");
+        check.setTextSize(24);
+        check.setGravity(Gravity.CENTER);
+        check.setTextColor(plan.done
+                ? PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()) : mutedColor());
+        check.setContentDescription(plan.done ? "标记为未完成" : "标记为完成");
+        check.setOnClickListener(v -> togglePlanDone(plan));
+        attachPressFeedback(check);
+        row.addView(check, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(this);
+        title.setText(plan.title.length() == 0 ? "未命名计划" : plan.title);
+        title.setTextColor(inkColor());
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        if (plan.done) {
+            title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
+            title.setAlpha(0.55f);
+        }
+        content.addView(title);
+
+        StringBuilder meta = new StringBuilder("第").append(plan.week).append("周 · ")
+                .append(dayText(plan.dayOfWeek));
+        if (plan.hasCourse()) {
+            meta.append(" · ").append(plan.courseName);
+        }
+        if (plan.hasReminder()) {
+            meta.append(" · 提醒 ").append(remindTimeText(plan.remindMinute));
+        }
+        TextView metaView = new TextView(this);
+        metaView.setText(meta.toString());
+        metaView.setTextColor(mutedColor());
+        metaView.setTextSize(12);
+        metaView.setSingleLine(true);
+        metaView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        metaParams.topMargin = dp(2);
+        content.addView(metaView, metaParams);
+        row.addView(content, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView edit = new TextView(this);
+        edit.setText("✎");
+        edit.setTextSize(18);
+        edit.setGravity(Gravity.CENTER);
+        edit.setTextColor(mutedColor());
+        edit.setContentDescription("编辑计划");
+        edit.setOnClickListener(v -> showPlanEditor(plan));
+        attachPressFeedback(edit);
+        row.addView(edit, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(8));
+        row.setLayoutParams(params);
+        return row;
+    }
+
+    private void togglePlanDone(StudyPlan plan) {
+        StudyPlan updated = plan.withDone(!plan.done);
+        int index = indexOfPlan(plan.id);
+        if (index >= 0) {
+            studyPlans.set(index, updated);
+        }
+        persistPlans();
+        refreshPlanList();
+        updatePlanSidePanel();
+        PlanReminderScheduler.reschedule(this);
+    }
+
+    private void deletePlan(StudyPlan plan) {
+        Iterator<StudyPlan> planIterator = studyPlans.iterator();
+        while (planIterator.hasNext()) {
+            if (planIterator.next().id.equals(plan.id)) {
+                planIterator.remove();
+            }
+        }
+        persistPlans();
+        refreshPlanList();
+        updatePlanSidePanel();
+        PlanReminderScheduler.reschedule(this);
+    }
+
+    private String[] courseNameChoices() {
+        List<String> names = new ArrayList<>();
+        for (Course course : courses) {
+            String name = course.name == null ? "" : course.name.trim();
+            if (name.length() > 0 && !names.contains(name)) {
+                names.add(name);
+            }
+        }
+        names.add(0, "不关联");
+        return names.toArray(new String[0]);
+    }
+
+    private void showPlanEditor(StudyPlan existing) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(existing == null ? "新建计划" : "编辑计划");
+
+        final String[] titleValue = {existing == null ? "" : existing.title};
+        final String[] courseValue = {existing == null ? "" : existing.courseName};
+        final int[] weekValue = {existing == null ? Math.max(1, currentWeek) : existing.week};
+        final int[] dayValue = {existing == null ? 0 : existing.dayOfWeek};
+        final boolean[] remindEnabledValue = {
+                existing == null || existing.remindEnabled};
+        final int[] remindMinuteValue = {
+                existing == null ? StudyPlan.REMIND_DEFAULT_MINUTE : existing.remindMinute};
+
+        EditText titleInput = input("计划内容，如：预习高数第3章", titleValue[0]);
+        panel.addView(titleInput);
+
+        final String[] choices = courseNameChoices();
+        String currentCourseLabel = courseValue[0].length() == 0 ? "不关联" : courseValue[0];
+        View courseRow = settingValueRow("关联课程", currentCourseLabel, v ->
+                showChoiceDialog(v, "关联课程", choices, currentCourseLabel, value -> {
+                    courseValue[0] = "不关联".equals(value) ? "" : value;
+                    updateSettingValueRow(v, "不关联".equals(value) ? "不关联" : value);
+                }));
+        panel.addView(courseRow);
+
+        // 周次步进
+        LinearLayout weekRow = new LinearLayout(this);
+        weekRow.setOrientation(LinearLayout.HORIZONTAL);
+        weekRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView weekLabel = new TextView(this);
+        weekLabel.setText("周次");
+        weekLabel.setTextColor(inkColor());
+        weekLabel.setTextSize(15);
+        weekLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        weekRow.addView(weekLabel, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        EditText weekInput = stepInput(String.valueOf(weekValue[0]));
+        weekInput.setContentDescription("计划周次");
+        TextView minus = stepButton("−");
+        TextView plus = stepButton("+");
+        minus.setOnClickListener(v -> {
+            weekValue[0] = Math.max(1, parseBounded(
+                    weekInput.getText().toString(), 1, semesterWeeks, weekValue[0]) - 1);
+            weekInput.setText(String.valueOf(weekValue[0]));
+            weekInput.setSelection(weekInput.getText().length());
+        });
+        plus.setOnClickListener(v -> {
+            weekValue[0] = Math.min(semesterWeeks, parseBounded(
+                    weekInput.getText().toString(), 1, semesterWeeks, weekValue[0]) + 1);
+            weekInput.setText(String.valueOf(weekValue[0]));
+            weekInput.setSelection(weekInput.getText().length());
+        });
+        weekRow.addView(minus);
+        weekRow.addView(weekInput, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        weekRow.addView(plus);
+        LinearLayout.LayoutParams weekRowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        weekRowParams.topMargin = dp(10);
+        weekRow.setLayoutParams(weekRowParams);
+        panel.addView(weekRow);
+
+        // 周几选择
+        final String[] weekdays = {"一", "二", "三", "四", "五", "六", "日"};
+        LinearLayout dayRow = new LinearLayout(this);
+        dayRow.setOrientation(LinearLayout.HORIZONTAL);
+        dayRow.setGravity(Gravity.CENTER);
+        final TextView[] dayChips = new TextView[7];
+        final int accent = PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
+        for (int i = 0; i < 7; i++) {
+            final int day = i;
+            TextView chip = new TextView(this);
+            chip.setText("周" + weekdays[i]);
+            chip.setTextSize(13);
+            chip.setGravity(Gravity.CENTER);
+            chip.setTypeface(day == dayValue[0] ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            chip.setTextColor(day == dayValue[0] ? Color.WHITE : mutedColor());
+            GradientDrawable chipBg = new GradientDrawable();
+            chipBg.setCornerRadius(dp(16));
+            chipBg.setColor(day == dayValue[0] ? accent : color(cardColorHex()));
+            chip.setBackground(chipBg);
+            chip.setClickable(true);
+            chip.setOnClickListener(v -> {
+                dayValue[0] = day;
+                for (int j = 0; j < 7; j++) {
+                    boolean selected = j == day;
+                    dayChips[j].setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+                    dayChips[j].setTextColor(selected ? Color.WHITE : mutedColor());
+                    GradientDrawable bg = new GradientDrawable();
+                    bg.setCornerRadius(dp(16));
+                    bg.setColor(selected ? accent : color(cardColorHex()));
+                    dayChips[j].setBackground(bg);
+                }
+            });
+            dayChips[i] = chip;
+            dayRow.addView(chip, new LinearLayout.LayoutParams(0, dp(36), 1f));
+        }
+        LinearLayout.LayoutParams dayRowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        dayRowParams.topMargin = dp(10);
+        dayRow.setLayoutParams(dayRowParams);
+        panel.addView(dayRow);
+
+        // 到期提醒开关
+        LinearLayout remindRow = new LinearLayout(this);
+        remindRow.setOrientation(LinearLayout.HORIZONTAL);
+        remindRow.setGravity(Gravity.CENTER_VERTICAL);
+        remindRow.setPadding(dp(2), dp(10), dp(2), dp(4));
+        TextView remindLabel = new TextView(this);
+        remindLabel.setText("到期提醒");
+        remindLabel.setTextColor(inkColor());
+        remindLabel.setTextSize(15);
+        remindLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        remindRow.addView(remindLabel, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        final SwitchThumbView[] remindSwitch = {
+                new SwitchThumbView(this, remindEnabledValue[0], isDarkModeActive())};
+        remindSwitch[0].setOnClickListener(v -> {
+            remindEnabledValue[0] = !remindEnabledValue[0];
+            remindSwitch[0].setChecked(remindEnabledValue[0]);
+        });
+        remindRow.addView(remindSwitch[0], new LinearLayout.LayoutParams(dp(52), dp(30)));
+        panel.addView(remindRow);
+
+        // 提醒时间
+        View timeRow = settingValueRow("提醒时间",
+                remindTimeText(remindMinuteValue[0]), v ->
+                        showTimeDialog("提醒时间", remindTimeText(remindMinuteValue[0]), value -> {
+                            int[] time = timeFromText(value);
+                            remindMinuteValue[0] = time[0] * 60 + time[1];
+                            updateSettingValueRow(v, remindTimeText(remindMinuteValue[0]));
+                        }));
+        panel.addView(timeRow);
+
+        panel.addView(dialogAction("保存", v -> {
+            String title = titleInput.getText() == null ? "" : titleInput.getText().toString().trim();
+            if (title.length() == 0) {
+                Toast.makeText(this, "请填写计划内容", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            savePlan(existing, title, courseValue[0], weekValue[0], dayValue[0],
+                    remindEnabledValue[0], remindMinuteValue[0]);
+            dialog.dismiss();
+        }));
+        if (existing != null) {
+            panel.addView(dialogAction("删除计划", v -> {
+                deletePlan(existing);
+                dialog.dismiss();
+            }));
+        }
+        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.show();
+        transparentDialog(dialog);
+    }
+
+    private void savePlan(StudyPlan existing, String title, String courseName,
+                          int week, int dayOfWeek, boolean remindEnabled, int remindMinute) {
+        String id = existing == null ? newPlanId() : existing.id;
+        long createdAt = existing == null ? System.currentTimeMillis() : existing.createdAt;
+        boolean done = existing != null && existing.done;
+        StudyPlan plan = new StudyPlan(id, title, courseName, week, dayOfWeek,
+                done, remindEnabled, remindMinute, createdAt);
+        if (existing == null) {
+            studyPlans.add(plan);
+        } else {
+            int index = indexOfPlan(existing.id);
+            if (index >= 0) {
+                studyPlans.set(index, plan);
+            }
+        }
+        persistPlans();
+        refreshPlanList();
+        updatePlanSidePanel();
+        if (remindEnabled) {
+            int scheduled = PlanReminderScheduler.reschedule(this);
+            if (scheduled == 0) {
+                if (!PlanReminderScheduler.hasPermission(this)) {
+                    Toast.makeText(this, "未获得通知权限，计划提醒不会生效，请在系统设置中允许通知",
+                            Toast.LENGTH_LONG).show();
+                    openNotificationSettings();
+                } else {
+                    Toast.makeText(this, "提醒时间已过，不会触发通知，请调整计划周次或提醒时间",
+                            Toast.LENGTH_LONG).show();
+                }
+            }
+        } else {
+            PlanReminderScheduler.reschedule(this);
+        }
+    }
+
     private EditText input(String hint, String value) {
         EditText editText = new EditText(this);
         editText.setHint(hint);
@@ -3696,69 +4705,53 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout bottomNav() {
+        if (isLandscapeTablet()) {
+            return tabletBottomBar();
+        }
+        // 手机（含竖屏平板）：课表/计划/我的 三 tab。
+        // 三个 tab 放不进左右角落布局，手机端「侧边」形状按「矩形」渲染。
+        String shape = "侧边".equals(bottomNavShape) ? "矩形" : bottomNavShape;
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        int horizontalPadding = "侧边".equals(bottomNavShape) || "分散".equals(bottomNavShape) ? 0 : dp(10);
+        int horizontalPadding = "分散".equals(shape) ? 0 : dp(10);
         nav.setPadding(horizontalPadding, 0, horizontalPadding, 0);
         nav.setBackground(null);
-        boolean side = "侧边".equals(bottomNavShape);
-        boolean showScheduleItem = !side || activeTab == 1;
-        boolean showMyItem = !side || activeTab == 0;
-        scheduleNav = navItem(navText("课表", true), activeTab == 0, 0);
-        myNav = navItem(navText("我的", false), activeTab == 1, 1);
-        if ("分散".equals(bottomNavShape) || "侧边".equals(bottomNavShape)) {
-            scheduleNav.setBackground(floatingPanelBg(bottomNavOpacity, bottomNavRadius()));
-            myNav.setBackground(floatingPanelBg(bottomNavOpacity, bottomNavRadius()));
-            if ("侧边".equals(bottomNavShape)) {
-                scheduleNav.setBackground(sidePanelBg(bottomNavOpacity, false));
-                myNav.setBackground(sidePanelBg(bottomNavOpacity, true));
-            }
-        }
-        if ("分散".equals(bottomNavShape)) {
+        scheduleNav = navItem(navText("课表", activeTab == 0), activeTab == 0, 0);
+        planNav = navItem(navText("计划", activeTab == 1), activeTab == 1, 1);
+        myNav = navItem(navText("我的", activeTab == 2), activeTab == 2, 2);
+        if ("分散".equals(shape)) {
             scheduleNav.setBackgroundColor(Color.TRANSPARENT);
+            planNav.setBackgroundColor(Color.TRANSPARENT);
             myNav.setBackgroundColor(Color.TRANSPARENT);
             nav.addView(navItemContainer(scheduleNav));
             View spacer = new View(this);
             nav.addView(spacer, new LinearLayout.LayoutParams(0, dp(navVisualHeight()), 1f));
+            nav.addView(navItemContainer(planNav));
+            View spacer2 = new View(this);
+            nav.addView(spacer2, new LinearLayout.LayoutParams(0, dp(navVisualHeight()), 1f));
             nav.addView(navItemContainer(myNav));
             return nav;
         }
-        if ("矩形".equals(bottomNavShape)) {
-            scheduleNav.setBackgroundColor(Color.TRANSPARENT);
-            myNav.setBackgroundColor(Color.TRANSPARENT);
-            FrameLayout container = new FrameLayout(this);
-            container.addView(glassLayer(floatingPanelBg(bottomNavOpacity, bottomNavRadius()), bottomNavRadius()),
-                    new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                            FrameLayout.LayoutParams.MATCH_PARENT));
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER);
-            row.setPadding(dp(10), 0, dp(10), 0);
-            row.addView(scheduleNav);
-            row.addView(myNav);
-            container.addView(row, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-            nav.addView(container, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight())));
-            return nav;
-        }
-        if (showScheduleItem) {
-            if ("侧边".equals(bottomNavShape)) {
-                scheduleNav.setBackgroundColor(Color.TRANSPARENT);
-                nav.addView(sideNavItemContainer(scheduleNav, false));
-            } else {
-                nav.addView(scheduleNav);
-            }
-        }
-        if (showMyItem) {
-            if ("侧边".equals(bottomNavShape)) {
-                myNav.setBackgroundColor(Color.TRANSPARENT);
-                nav.addView(sideNavItemContainer(myNav, true));
-            } else {
-                nav.addView(myNav);
-            }
-        }
+        // 矩形（含手机端侧边回退）
+        scheduleNav.setBackgroundColor(Color.TRANSPARENT);
+        planNav.setBackgroundColor(Color.TRANSPARENT);
+        myNav.setBackgroundColor(Color.TRANSPARENT);
+        FrameLayout container = new FrameLayout(this);
+        container.addView(glassLayer(floatingPanelBg(bottomNavOpacity, bottomNavRadius()), bottomNavRadius()),
+                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        row.setPadding(dp(10), 0, dp(10), 0);
+        row.addView(scheduleNav);
+        row.addView(planNav);
+        row.addView(myNav);
+        container.addView(row, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        nav.addView(container, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight())));
         return nav;
     }
 
@@ -3796,7 +4789,8 @@ public class MainActivity extends Activity {
         item.setTextColor(active ? inkColor() : mutedColor());
         item.setOnClickListener(v -> switchTab(tab));
         attachPressFeedback(item);
-        if ("侧边".equals(bottomNavShape)) {
+        // 侧边形状仅在平板横屏（tabletBottomBar）中使用；手机三 tab 按矩形渲染。
+        if ("侧边".equals(bottomNavShape) && isLandscapeTablet()) {
             int outside = dp(24);
             if (tab == 1) {
                 item.setPadding(0, 0, outside, 0);
@@ -3809,21 +4803,47 @@ public class MainActivity extends Activity {
         return item;
     }
 
+    /**
+     * 横屏平板底部导航：矩形悬浮条样式，宽度由 bottomNavLayoutParams
+     * 限制为居中限宽（不横跨全屏）。
+     */
+    private LinearLayout tabletBottomBar() {
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        scheduleNav = navItem(navText("课表", activeTab == 0), activeTab == 0, 0);
+        myNav = navItem(navText("我的", activeTab == 2), activeTab == 2, 2);
+        scheduleNav.setPadding(0, 0, 0, 0);
+        myNav.setPadding(0, 0, 0, 0);
+        FrameLayout container = new FrameLayout(this);
+        container.addView(glassLayer(floatingPanelBg(bottomNavOpacity, bottomNavRadius()),
+                        bottomNavRadius()),
+                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        row.setPadding(dp(10), 0, dp(10), 0);
+        row.addView(scheduleNav);
+        row.addView(myNav);
+        container.addView(row, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        nav.addView(container, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight())));
+        return nav;
+    }
+
     private FrameLayout.LayoutParams bottomNavLayoutParams() {
-        boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
-        int bottomMargin = dp(18);
-        if ("侧边".equals(bottomNavShape)) {
-            int extra = dp(24);
-            int width = dp(128) + extra;
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, dp(navVisualHeight()),
-                    activeTab == 0 ? Gravity.RIGHT | Gravity.BOTTOM : Gravity.LEFT | Gravity.BOTTOM);
-            if (activeTab == 0) {
-                params.setMargins(0, 0, -extra, bottomMargin);
-            } else {
-                params.setMargins(-extra, 0, 0, bottomMargin);
-            }
+        if (isLandscapeTablet()) {
+            // 底部导航：固定宽度、水平居中，不横跨全屏。
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                    dp(240), dp(navVisualHeight()), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            params.setMargins(0, 0, 0, dp(18));
             return params;
         }
+        boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+        int bottomMargin = dp(18);
+        // 手机三 tab：侧边形状按矩形渲染，不再使用左右角落布局。
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()), Gravity.BOTTOM);
         int side = "分散".equals(bottomNavShape)
@@ -3845,7 +4865,8 @@ public class MainActivity extends Activity {
         if (activeTab != 0 || settingsPage != null && settingsPage.getVisibility() == View.VISIBLE) {
             return;
         }
-        if (!"矩形".equals(bottomNavShape) && !"分散".equals(bottomNavShape)) {
+        String shape = "侧边".equals(bottomNavShape) ? "矩形" : bottomNavShape;
+        if (!"矩形".equals(shape) && !"分散".equals(shape)) {
             showBottomNav(false);
             return;
         }
@@ -3909,14 +4930,23 @@ public class MainActivity extends Activity {
     private void switchTab(int tab) {
         activeTab = tab;
         boolean schedule = tab == 0;
+        boolean plan = tab == 1;
+        boolean mine = tab == 2;
         if (scheduleBoard != null) {
             scheduleBoard.setVisibility(schedule ? View.VISIBLE : View.GONE);
         }
+        if (planPage != null) {
+            planPage.setVisibility(plan ? View.VISIBLE : View.GONE);
+        }
         if (myPage != null) {
-            myPage.setVisibility(schedule ? View.GONE : View.VISIBLE);
+            myPage.setVisibility(mine ? View.VISIBLE : View.GONE);
         }
         if (settingsPage != null) {
             settingsPage.setVisibility(View.GONE);
+        }
+        if (isLandscapeTablet() && tabletSettingsOpen) {
+            // 侧栏模式被 tab 切换打断时，恢复我的页居中模式。
+            closeTabletSplit();
         }
         updateEmptyScheduleView();
         if (topPanelContainer != null) {
@@ -3931,18 +4961,26 @@ public class MainActivity extends Activity {
             scheduleNav.setTypeface(schedule ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
             scheduleNav.setTextColor(schedule ? inkColor() : mutedColor());
         }
+        if (planNav != null) {
+            planNav.setText(styledNavText(navText("计划", plan)));
+            planNav.setTypeface(plan ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            planNav.setTextColor(plan ? inkColor() : mutedColor());
+        }
         if (myNav != null) {
-            myNav.setText(styledNavText(navText("我的", !schedule)));
-            myNav.setTypeface(!schedule ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            myNav.setTextColor(!schedule ? inkColor() : mutedColor());
+            myNav.setText(styledNavText(navText("我的", mine)));
+            myNav.setTypeface(mine ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            myNav.setTextColor(mine ? inkColor() : mutedColor());
         }
         if (schedule) {
             updateHeader();
             scheduleWeekSwipeHintIfNeeded();
         }
-        if ("侧边".equals(bottomNavShape) && rootView != null) {
-            refreshBottomNavView();
+        if (plan) {
+            refreshPlanList();
         }
+        updateTodayOverviewPanel();
+        updatePracticeSidePanel();
+        updatePlanSidePanel();
     }
 
     private void refreshBottomNavView() {
@@ -3968,6 +5006,14 @@ public class MainActivity extends Activity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(0, statusBarHeight() + dp(34), 0, bottomContentInset() + dp(48));
+        if (!isLandscapeTablet()) {
+            int columnWidth = contentColumnWidth();
+            if (columnWidth < getResources().getDisplayMetrics().widthPixels) {
+                // 横屏平板除外：内容列封顶居中（双栏模式下左栏宽度由宿主决定）。
+                page.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
+            }
+        }
         scrollView.addView(page);
         if (isMinimalVisualTheme()) {
             page.addView(profileHeader());
@@ -4052,7 +5098,7 @@ public class MainActivity extends Activity {
         identity.addView(semester, semesterParams);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(getResources().getDisplayMetrics().widthPixels * 0.88f),
+                Math.round(menuCardWidth(0.88f)),
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         params.gravity = Gravity.CENTER_HORIZONTAL;
         params.setMargins(0, dp(8), 0, dp(18));
@@ -4124,7 +5170,7 @@ public class MainActivity extends Activity {
         card.addView(arrow, new LinearLayout.LayoutParams(dp(30), dp(48)));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(getResources().getDisplayMetrics().widthPixels * 0.88f), dp(78));
+                Math.round(menuCardWidth(0.88f)), dp(78));
         params.gravity = Gravity.CENTER_HORIZONTAL;
         params.setMargins(0, 0, 0, dp(12));
         card.setLayoutParams(params);
@@ -4178,21 +5224,21 @@ public class MainActivity extends Activity {
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(
-                Math.round(getResources().getDisplayMetrics().widthPixels * 0.82f),
+                Math.round(menuCardWidth(0.82f)),
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         nameParams.topMargin = dp(10);
         header.addView(name, nameParams);
 
         TextView school = profileInfoLine(displaySchoolName());
         LinearLayout.LayoutParams schoolParams = new LinearLayout.LayoutParams(
-                Math.round(getResources().getDisplayMetrics().widthPixels * 0.82f),
+                Math.round(menuCardWidth(0.82f)),
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         schoolParams.topMargin = dp(5);
         header.addView(school, schoolParams);
 
         TextView semester = profileInfoLine(displaySemesterName());
         LinearLayout.LayoutParams semesterParams = new LinearLayout.LayoutParams(
-                Math.round(getResources().getDisplayMetrics().widthPixels * 0.82f),
+                Math.round(menuCardWidth(0.82f)),
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         semesterParams.topMargin = dp(2);
         header.addView(semester, semesterParams);
@@ -4231,7 +5277,7 @@ public class MainActivity extends Activity {
         card.setBackground(roundedBg(cardColorHex(), 18));
         card.setOnClickListener(listener);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(getResources().getDisplayMetrics().widthPixels * 0.86f),
+                Math.round(menuCardWidth(0.86f)),
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         params.gravity = Gravity.CENTER_HORIZONTAL;
         params.setMargins(0, 0, 0, dp(10));
@@ -4263,7 +5309,7 @@ public class MainActivity extends Activity {
         card.addView(label, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(getResources().getDisplayMetrics().widthPixels * 0.86f),
+                Math.round(menuCardWidth(0.86f)),
                 dp(58));
         params.gravity = Gravity.CENTER_HORIZONTAL;
         params.setMargins(0, 0, 0, dp(10));
@@ -4290,6 +5336,9 @@ public class MainActivity extends Activity {
     private String navText(String label, boolean active) {
         if ("课表".equals(label)) {
             return (active ? "▣" : "▦") + "\n" + label;
+        }
+        if ("计划".equals(label)) {
+            return "✎\n" + label;
         }
         return (active ? "●" : "○") + "\n" + label;
     }
@@ -4832,7 +5881,10 @@ public class MainActivity extends Activity {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             window.setDimAmount(isDarkModeActive() ? 0.68f : 0.42f);
-            window.setLayout(dp(320), LinearLayout.LayoutParams.WRAP_CONTENT);
+            // 平板自适应宽度：手机保持 320dp，宽屏平板放大到最多 400dp。
+            int dialogWidth = Math.max(dp(320), Math.min(dp(400),
+                    getResources().getDisplayMetrics().widthPixels - dp(64)));
+            window.setLayout(dialogWidth, LinearLayout.LayoutParams.WRAP_CONTENT);
             makeDialogStill(window);
         }
     }
@@ -5734,22 +6786,162 @@ public class MainActivity extends Activity {
         boolean settingsVisible = settingsPage != null && settingsPage.getVisibility() == View.VISIBLE;
         contentHost.removeView(myPage);
         myPage = buildMyPage();
+        FrameLayout.LayoutParams params;
+        if (isLandscapeTablet() && tabletSettingsOpen) {
+            // 平板侧栏模式：重建后仍保持左侧侧栏的宽度与位置。
+            params = new FrameLayout.LayoutParams(
+                    dp(320), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
+            params.leftMargin = dp(104);
+        } else {
+            params = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+        }
         int settingsIndex = settingsPage == null ? -1 : contentHost.indexOfChild(settingsPage);
         if (settingsIndex >= 0) {
-            contentHost.addView(myPage, settingsIndex, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            contentHost.addView(myPage, settingsIndex, params);
         } else {
-            contentHost.addView(myPage, new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            contentHost.addView(myPage, params);
         }
-        myPage.setVisibility(settingsVisible || activeTab == 0 ? View.GONE : View.VISIBLE);
+        boolean showMyPage;
+        if (isLandscapeTablet() && tabletSettingsOpen) {
+            // 平板侧栏模式：我的页始终作为左侧栏可见。
+            showMyPage = true;
+        } else {
+            // 手机三 tab：我的页仅在「我的」tab（2）且设置面板未打开时可见。
+            showMyPage = activeTab == 2 && !settingsVisible;
+        }
+        myPage.setVisibility(showMyPage ? View.VISIBLE : View.GONE);
+        applyMyPageMode(isLandscapeTablet() && tabletSettingsOpen);
     }
 
     private LinearLayout settingsPagePanel(String headingText) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(12), dp(8), dp(12), bottomContentInset() + dp(48));
+        int columnWidth = contentColumnWidth();
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        if (columnWidth < screenWidth) {
+            // 横屏平板：内容列封顶居中，行内边距相应加大。
+            panel.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
+            panel.setPadding(dp(16), dp(8), dp(16), bottomContentInset() + dp(48));
+        } else {
+            panel.setPadding(dp(12), dp(8), dp(12), bottomContentInset() + dp(48));
+        }
         return panel;
+    }
+
+    /**
+     * 平板侧栏模式：我的页从居中内容收缩为左侧侧栏（320dp @ x=104），
+     * 动画结束后按侧栏宽度重建卡片布局。
+     */
+    private void openTabletSplit() {
+        if (tabletSettingsOpen || myPage == null) {
+            return;
+        }
+        tabletSettingsOpen = true;
+        if (paneDivider != null) {
+            paneDivider.setVisibility(View.VISIBLE);
+        }
+        final FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) myPage.getLayoutParams();
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int startWidth = params.width > 0 ? params.width : screenWidth;
+        int startLeft = Math.max(0, params.leftMargin);
+        int endWidth = dp(320);
+        int endLeft = dp(104);
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        animator.setDuration(220);
+        animator.setInterpolator(new DecelerateInterpolator());
+        animator.addUpdateListener(animation -> {
+            float t = (float) animation.getAnimatedValue();
+            params.width = Math.round(startWidth + (endWidth - startWidth) * t);
+            params.leftMargin = Math.round(startLeft + (endLeft - startLeft) * t);
+            myPage.requestLayout();
+        });
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (!tabletSettingsOpen) {
+                    return; // 动画期间面板已被关闭，跳过侧栏重建。
+                }
+                params.width = endWidth;
+                params.leftMargin = endLeft;
+                myPage.requestLayout();
+                rebuildMyPageAsSidebar();
+            }
+        });
+        animator.start();
+    }
+
+    private void rebuildMyPageAsSidebar() {
+        if (contentHost == null || myPage == null) {
+            return;
+        }
+        int settingsIndex = settingsPage == null ? -1 : contentHost.indexOfChild(settingsPage);
+        contentHost.removeView(myPage);
+        myPage = buildMyPage();
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                dp(320), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
+        params.leftMargin = dp(104);
+        if (settingsIndex >= 0) {
+            contentHost.addView(myPage, settingsIndex, params);
+        } else {
+            contentHost.addView(myPage, params);
+        }
+        myPage.setVisibility(View.VISIBLE);
+        myPage.setTranslationX(0f);
+        myPage.setAlpha(1f);
+        applyMyPageMode(true);
+    }
+
+    /**
+     * 平板侧栏关闭：我的页重建为全宽居中内容模式，分隔线隐藏。
+     */
+    private void closeTabletSplit() {
+        if (!tabletSettingsOpen || contentHost == null || myPage == null) {
+            return;
+        }
+        tabletSettingsOpen = false;
+        if (paneDivider != null) {
+            paneDivider.setVisibility(View.GONE);
+        }
+        int visibility = myPage.getVisibility();
+        int settingsIndex = settingsPage == null ? -1 : contentHost.indexOfChild(settingsPage);
+        contentHost.removeView(myPage);
+        myPage = buildMyPage();
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+        if (settingsIndex >= 0) {
+            contentHost.addView(myPage, settingsIndex, params);
+        } else {
+            contentHost.addView(myPage, params);
+        }
+        myPage.setVisibility(visibility);
+        myPage.setTranslationX(0f);
+        applyMyPageMode(false);
+        if (visibility == View.VISIBLE) {
+            myPage.setAlpha(0.4f);
+            myPage.animate().alpha(1f).setDuration(180).start();
+        }
+    }
+
+    /**
+     * 我的页内容列模式：侧栏模式内容铺满 320dp 容器；
+     * 居中模式内容列封顶 640dp 水平居中。
+     */
+    private void applyMyPageMode(boolean sideMode) {
+        if (myPage == null || myPage.getChildCount() == 0) {
+            return;
+        }
+        View page = myPage.getChildAt(0);
+        if (sideMode) {
+            page.setLayoutParams(new ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        } else {
+            int column = Math.min(dp(640), getResources().getDisplayMetrics().widthPixels);
+            page.setLayoutParams(new ScrollView.LayoutParams(column,
+                    ScrollView.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
+        }
     }
 
     private void showSettingsPage(String headingText, LinearLayout panel) {
@@ -5805,6 +6997,49 @@ public class MainActivity extends Activity {
         settingsPage.addView(contentScroll, scrollParams);
         settingsPage.addView(fixedHeader, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, headerHeight));
+        if (isLandscapeTablet()) {
+            // 平板：首次打开设置时我的页收缩为左侧侧栏，右侧面板从右滑入；
+            // 后续切换设置页仅替换面板内容。
+            boolean firstOpen = !tabletSettingsOpen;
+            if (firstOpen) {
+                openTabletSplit();
+            }
+            if (scheduleBoard != null) {
+                scheduleBoard.setVisibility(View.GONE);
+            }
+            if (topPanelContainer != null) {
+                topPanelContainer.setVisibility(View.GONE);
+            }
+            if (myPage != null) {
+                myPage.animate().cancel();
+                myPage.setClipBounds(null);
+                myPage.setVisibility(View.VISIBLE);
+                myPage.setTranslationX(0f);
+                myPage.setAlpha(1f);
+            }
+            if (bottomNavView != null) {
+                bottomNavView.animate().cancel();
+                bottomNavView.setClipBounds(null);
+                bottomNavView.setVisibility(View.VISIBLE);
+                bottomNavView.setTranslationY(0f);
+                bottomNavView.setAlpha(1f);
+            }
+            settingsPage.setVisibility(View.VISIBLE);
+            updatePlanSidePanel();
+            if (firstOpen) {
+                int panelWidth = Math.max(1,
+                        getResources().getDisplayMetrics().widthPixels - dp(425));
+                settingsPage.setTranslationX(panelWidth);
+                settingsPage.animate()
+                        .translationX(0f)
+                        .setDuration(220)
+                        .setInterpolator(new DecelerateInterpolator())
+                        .start();
+            } else {
+                settingsPage.setTranslationX(0f);
+            }
+            return;
+        }
         if (scheduleBoard != null) {
             scheduleBoard.setVisibility(View.GONE);
         }
@@ -5879,7 +7114,7 @@ public class MainActivity extends Activity {
             settingsPage.setTranslationX(0f);
             settingsPage.setAlpha(1f);
             settingsPage.setVisibility(View.VISIBLE);
-            if (myPage != null) {
+            if (myPage != null && !isLandscapeTablet()) {
                 myPage.setVisibility(View.GONE);
                 myPage.setTranslationX(0f);
                 myPage.setAlpha(1f);
@@ -5946,7 +7181,47 @@ public class MainActivity extends Activity {
 
     private void closeSettingsPage() {
         if (settingsPage == null || settingsPage.getVisibility() != View.VISIBLE) {
-            switchTab(1);
+            switchTab(2);
+            return;
+        }
+        if (isLandscapeTablet()) {
+            // 平板：有上级页面时回到上级；否则面板滑出、我的页恢复居中。
+            if (previousSettingsTitle != null && previousSettingsTitle.length() > 0) {
+                String target = previousSettingsTitle;
+                previousSettingsTitle = "";
+                suppressSettingsPageAnimation = true;
+                try {
+                    if ("课表设置".equals(target)) {
+                        showScheduleSettings();
+                    } else if ("全局设置".equals(target)) {
+                        showGlobalSettings();
+                    } else if ("安全设置".equals(target)) {
+                        showSecuritySettings();
+                    } else {
+                        switchTab(2);
+                    }
+                } finally {
+                    suppressSettingsPageAnimation = false;
+                }
+                settingsPage.setTranslationX(0f);
+                settingsPage.setAlpha(1f);
+                settingsPage.setVisibility(View.VISIBLE);
+            } else {
+                settingsPage.animate().cancel();
+                int panelWidth = Math.max(1,
+                        getResources().getDisplayMetrics().widthPixels - dp(425));
+                settingsPage.animate()
+                        .translationX(panelWidth)
+                        .setDuration(180)
+                        .setInterpolator(new DecelerateInterpolator())
+                        .withEndAction(() -> {
+                            settingsPage.setVisibility(View.GONE);
+                            settingsPage.setTranslationX(0f);
+                        })
+                        .start();
+                closeTabletSplit();
+                switchTab(2);
+            }
             return;
         }
         if (previousSettingsTitle != null && previousSettingsTitle.length() > 0) {
@@ -5960,7 +7235,7 @@ public class MainActivity extends Activity {
             } else if ("安全设置".equals(target)) {
                 showSecuritySettings();
             } else {
-                switchTab(1);
+                switchTab(2);
             }
             suppressSettingsPageAnimation = false;
             if (settingsPage != null) {
@@ -6019,7 +7294,7 @@ public class MainActivity extends Activity {
                     settingsPage.animate().setUpdateListener(null);
                     settingsPage.setAlpha(1f);
                     settingsPage.setTranslationX(0f);
-                    switchTab(1);
+                    switchTab(2);
                     if (myPage != null) {
                         myPage.setVisibility(View.VISIBLE);
                         myPage.setTranslationX(0f);
@@ -6172,10 +7447,11 @@ public class MainActivity extends Activity {
                             }
                         }));
         displayCard.addView(backgroundSettingRow);
-        displayCard.addView(settingSwitchRow("显示本周实践横幅", showPracticeBanner, value -> {
+        displayCard.addView(settingSwitchRow("显示本周实践", showPracticeBanner, value -> {
             showPracticeBanner = value;
             saveGlobalAppearance();
             renderSchedule();
+            updatePracticeSidePanel();
         }));
         displayCard.addView(settingSwitchRow("折叠午休时间", collapseLunchBreak, value -> {
             collapseLunchBreak = value;
@@ -6681,6 +7957,12 @@ public class MainActivity extends Activity {
             copyTextToClipboard(CONTACT_EMAIL);
             Toast.makeText(this, "邮箱已复制：" + CONTACT_EMAIL, Toast.LENGTH_SHORT).show();
         }));
+        aboutCard.addView(settingValueRow("GitHub 项目地址",
+                PROJECT_HOME_URL.replace("https://", ""), v -> {
+                    copyTextToClipboard(PROJECT_HOME_URL);
+                    Toast.makeText(this, "GitHub 地址已复制：" + PROJECT_HOME_URL,
+                            Toast.LENGTH_SHORT).show();
+                }));
         panel.addView(aboutCard);
         showSettingsPage("更多", panel);
     }
@@ -6732,6 +8014,91 @@ public class MainActivity extends Activity {
     }
 
     /**
+     * 横屏平板顶栏的周选择下拉按钮：「第 X 周 ▾」。
+     */
+    private TextView buildWeekSelectorButton() {
+        TextView button = new TextView(this);
+        button.setText("第 " + currentWeek + " 周 ▾");
+        button.setTextColor(inkColor());
+        button.setTextSize(13);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setSingleLine(true);
+        button.setPadding(dp(12), 0, dp(12), 0);
+        button.setMinHeight(dp(32));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color(cardColorHex()));
+        background.setCornerRadius(dp(16));
+        button.setBackground(background);
+        button.setContentDescription("选择周次");
+        button.setOnClickListener(v -> showWeekPickerPopup(v));
+        attachPressFeedback(button);
+        return button;
+    }
+
+    private void showWeekPickerPopup(View anchor) {
+        final PopupWindow[] popupHolder = new PopupWindow[1];
+        ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(6), dp(6), dp(6), dp(6));
+        list.setBackground(dialogGlassBg(18, ACTION_PANEL_OPACITY_PERCENT));
+        int accent = PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
+        for (int week = 1; week <= semesterWeeks; week++) {
+            final int target = week;
+            TextView item = new TextView(this);
+            item.setText("第 " + week + " 周");
+            item.setTextSize(15);
+            item.setTypeface(week == currentWeek ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            item.setTextColor(week == currentWeek ? accent : inkColor());
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setPadding(dp(14), 0, dp(14), 0);
+            item.setOnClickListener(v -> {
+                if (popupHolder[0] != null) {
+                    popupHolder[0].dismiss();
+                }
+                switchToWeek(target);
+            });
+            list.addView(item, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+        }
+        scroll.addView(list);
+        PopupWindow popup = new PopupWindow();
+        popup.setContentView(scroll);
+        popup.setWidth(dp(168));
+        popup.setHeight(dp(Math.min(44 * semesterWeeks + 12, 460)));
+        popup.setFocusable(true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        popup.setElevation(dp(8));
+        popupHolder[0] = popup;
+        popup.showAsDropDown(anchor, 0, dp(8));
+    }
+
+    private void updateWeekSelector() {
+        if (weekSelectorButton != null) {
+            weekSelectorButton.setText("第 " + currentWeek + " 周 ▾");
+        }
+    }
+
+    private void switchToWeek(int week) {
+        int nextWeek = Math.max(1, Math.min(semesterWeeks, week));
+        if (nextWeek == currentWeek) {
+            return;
+        }
+        currentWeek = nextWeek;
+        scheduleBoard.setCurrentWeek(nextWeek);
+        updateReturnCurrentWeekAction();
+        updateHeader();
+        updateTodayOverview();
+        updateConflictSummary();
+        updateWeekSelector();
+        updatePracticeSidePanel();
+        updatePlanSidePanel();
+    }
+
+    /**
      * Called whenever the board lands on a (possibly new) week — from a swipe
      * or from a programmatic page change. Keeps the activity state in sync
      * without re-rendering the board, so week switches stay smooth.
@@ -6754,6 +8121,9 @@ public class MainActivity extends Activity {
         updateHeader();
         updateTodayOverview();
         updateConflictSummary();
+        updateWeekSelector();
+        updatePracticeSidePanel();
+        updatePlanSidePanel();
     }
 
     private void updateHeader() {
@@ -7078,6 +8448,8 @@ public class MainActivity extends Activity {
         if (scheduleRepository != null) {
             CourseReminderScheduler.reschedule(this);
         }
+        // 计划提醒与课程提醒在同一刷新点重排。
+        PlanReminderScheduler.reschedule(this);
     }
 
     /**
@@ -7203,7 +8575,7 @@ public class MainActivity extends Activity {
     }
 
     private long firstWeekStartMillis() {
-        return weekMondayFromText(firstWeekDay).getTimeInMillis();
+        return CourseTimeResolver.firstWeekStartMillis(firstWeekDay);
     }
 
     private String todayText() {
@@ -7222,14 +8594,6 @@ public class MainActivity extends Activity {
             date.set(2026, Calendar.MARCH, 3, 0, 0, 0);
         }
         date.set(Calendar.MILLISECOND, 0);
-        return date;
-    }
-
-    private Calendar weekMondayFromText(String value) {
-        Calendar date = calendarFromText(value);
-        int dayOfWeek = date.get(Calendar.DAY_OF_WEEK);
-        int mondayOffset = dayOfWeek == Calendar.SUNDAY ? -6 : Calendar.MONDAY - dayOfWeek;
-        date.add(Calendar.DATE, mondayOffset);
         return date;
     }
 
@@ -7378,6 +8742,34 @@ public class MainActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    /**
+     * 内容列宽（px）：手机与竖屏平板沿用全屏宽；横屏平板封顶 640dp，
+     * 保证设置页/我的页在宽屏上仍保持可读的行长。
+     */
+    private int contentColumnWidth() {
+        return isLandscapeTablet() ? Math.min(dp(640), getResources().getDisplayMetrics().widthPixels)
+                : getResources().getDisplayMetrics().widthPixels;
+    }
+
+    /** 横屏平板：导航 rail、顶栏并排、设置双栏等平板专属布局的统一判定。 */
+    private boolean isLandscapeTablet() {
+        Configuration configuration = getResources().getConfiguration();
+        return configuration.smallestScreenWidthDp >= 600
+                && configuration.orientation == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
+    /**
+     * 我的页卡片宽度（px）：手机/竖屏平板为内容列宽百分比；
+     * 平板居中模式为 640dp 内容列、侧栏模式为 320dp 侧栏的百分比。
+     */
+    private int menuCardWidth(float percent) {
+        if (isLandscapeTablet()) {
+            float base = tabletSettingsOpen ? dp(320) : contentColumnWidth();
+            return Math.round(base * percent);
+        }
+        return Math.round(contentColumnWidth() * percent);
+    }
+
     private String defaultWeeks() {
         return "1-20周";
     }
@@ -7443,6 +8835,10 @@ public class MainActivity extends Activity {
         }
         int top = topPanelContainer == null ? statusBarHeight() : topPanelContainer.getTop();
         scheduleBoard.setOverlayInsets(top + contentHeight + dp(8), bottomContentInset());
+        // 顶栏高度变化后，同步右侧面板的垂直位置（今日概览在上、实践与计划在下）。
+        updateTodayOverviewPanel();
+        updatePracticeSidePanel();
+        updatePlanSidePanel();
     }
 
     private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
@@ -7566,6 +8962,8 @@ public class MainActivity extends Activity {
                 drawSettingsIcon(canvas, width, height);
             } else if ("more".equals(type)) {
                 drawMoreIcon(canvas, width, height);
+            } else if ("plan".equals(type)) {
+                drawPlanIcon(canvas, width, height);
             } else {
                 drawShieldIcon(canvas, width, height);
             }
@@ -7629,6 +9027,20 @@ public class MainActivity extends Activity {
             canvas.drawPath(path, paint);
             canvas.drawLine(width * 0.39f, height * 0.5f, width * 0.47f, height * 0.6f, paint);
             canvas.drawLine(width * 0.47f, height * 0.6f, width * 0.63f, height * 0.42f, paint);
+        }
+
+        private void drawPlanIcon(Canvas canvas, float width, float height) {
+            // 清单：三条横线 + 首行行首对勾
+            float left = width * 0.3f;
+            float right = width * 0.82f;
+            for (int i = 0; i < 3; i++) {
+                float y = height * (0.28f + 0.22f * i);
+                canvas.drawLine(left, y, right, y, paint);
+            }
+            float checkX = width * 0.16f;
+            float checkY = height * 0.28f;
+            canvas.drawLine(checkX, checkY, checkX + dp(4), checkY + dp(4), paint);
+            canvas.drawLine(checkX + dp(4), checkY + dp(4), checkX + dp(10), checkY - dp(5), paint);
         }
     }
 

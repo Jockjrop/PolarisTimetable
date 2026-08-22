@@ -25,6 +25,10 @@ public final class CourseTimeResolver {
             "(\\d{1,2})\\s*[:：]\\s*(\\d{1,2})");
     private static final Pattern ANCHOR_PATTERN = Pattern.compile(
             "(\\d{1,2})\\s+((?:\\d{1,2})[:：](?:\\d{2}))\\s*[-~～]\\s*((?:\\d{1,2})[:：](?:\\d{2}))");
+    /** 学期起点文本的统一格式（年/月/日，月日可补零可不补）。 */
+    public static final String DEFAULT_SEMESTER_START_TEXT = "2026/3/3";
+    private static final Pattern SEMESTER_START_PATTERN = Pattern.compile(
+            "(\\d{4})\\s*[/.-]\\s*(\\d{1,2})\\s*[/.-]\\s*(\\d{1,2})");
     private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
     private static final WeekRuleParser WEEK_RULE_PARSER = new WeekRuleParser();
     private static final Settings DEFAULT_SETTINGS = new Settings(
@@ -278,6 +282,22 @@ public final class CourseTimeResolver {
         return weekForCalendars(first, current);
     }
 
+    /**
+     * 学期第一周周一 00:00（默认时区）的统一计算入口。
+     * 课表 UI、桌面组件与课程/计划提醒共用，保证周次锚点一致。
+     */
+    public static long firstWeekStartMillis(String firstWeekDayText) {
+        return firstWeekStartMillis(firstWeekDayText, TimeZone.getDefault());
+    }
+
+    /** 同 {@link #firstWeekStartMillis(String)}，供提醒调度与测试指定时区。 */
+    public static long firstWeekStartMillis(String firstWeekDayText, TimeZone timeZone) {
+        Calendar first = calendarFromText(firstWeekDayText,
+                timeZone == null ? TimeZone.getDefault() : timeZone);
+        normalizeToMonday(first);
+        return first.getTimeInMillis();
+    }
+
     public static int mondayBasedDay(Calendar date) {
         Calendar value = date == null ? Calendar.getInstance() : date;
         int day = value.get(Calendar.DAY_OF_WEEK);
@@ -413,13 +433,15 @@ public final class CourseTimeResolver {
     private static Calendar calendarFromText(String value, TimeZone timeZone) {
         Calendar date = Calendar.getInstance(timeZone);
         date.clear();
-        String[] parts = safe(value).split("/");
-        try {
-            date.set(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]) - 1,
-                    Integer.parseInt(parts[2]), 0, 0, 0);
-        } catch (Exception ignored) {
-            date.set(2026, Calendar.MARCH, 3, 0, 0, 0);
+        Matcher matcher = SEMESTER_START_PATTERN.matcher(safe(value));
+        if (!matcher.find()) {
+            // 无法解析时回退默认学期起点，与 Config.firstWeekDay 初始值一致。
+            matcher = SEMESTER_START_PATTERN.matcher(DEFAULT_SEMESTER_START_TEXT);
+            matcher.find();
         }
+        date.set(Integer.parseInt(matcher.group(1)),
+                Integer.parseInt(matcher.group(2)) - 1,
+                Integer.parseInt(matcher.group(3)), 0, 0, 0);
         return date;
     }
 

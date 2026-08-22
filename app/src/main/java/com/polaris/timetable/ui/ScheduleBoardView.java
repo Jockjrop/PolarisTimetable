@@ -1,6 +1,7 @@
 package com.polaris.timetable.ui;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -133,8 +134,12 @@ public class ScheduleBoardView extends FrameLayout {
     private int sectionHeight;
     private int timeWidth;
     private int dayHeaderHeight;
+    /** 平板横屏下列宽封顶后，网格整体相对板左侧的居中偏移（px）。 */
+    private int boardContentOffset;
     private int overlayTopInset;
     private int overlayBottomInset;
+    /** 平板横屏左侧导航 rail 占位：课表板整体右移避让（px）。 */
+    private int overlayLeftInset;
     private float boardTouchX;
     private float boardTouchY;
     private boolean waitingForLayout;
@@ -558,6 +563,11 @@ public class ScheduleBoardView extends FrameLayout {
         hash = 31 * hash + courseBlockOpacity;
         hash = 31 * hash + configuredSectionHeight;
         hash = 31 * hash + timetableHeaderOpacity;
+        // 布局尺寸参与签名：窗口 resize 导致列宽/居中偏移变化时强制重建板，
+        // 避免缓存的旧坐标错位。
+        hash = 31 * hash + dayWidth;
+        hash = 31 * hash + sectionHeight;
+        hash = 31 * hash + boardContentOffset;
         if (sectionTimes != null) {
             for (String time : sectionTimes) {
                 hash = 31 * hash + (time == null ? 0 : time.hashCode());
@@ -619,14 +629,26 @@ public class ScheduleBoardView extends FrameLayout {
             return;
         }
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
-        sectionHeight = dp(tablet ? Math.max(72, configuredSectionHeight + 8) : configuredSectionHeight);
+        boolean landscape = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        // 横屏平板纵向空间紧张：节高额外抬高，让单屏容纳更多节次并让格子接近方形。
+        int tabletSectionBoost = landscape ? 16 : 8;
+        sectionHeight = dp(tablet ? Math.max(72, configuredSectionHeight + tabletSectionBoost)
+                : configuredSectionHeight);
         timeAxis = ScheduleTimeAxis.create(
                 courses, classTimeSettings, sectionCount, sectionHeight, collapseLunchBreak);
-        timeWidth = dp(tablet ? 54 : 34);
+        timeWidth = resolveTimeWidth(getContext(), tablet);
         int availableWidth = getAvailableBoardWidth();
-        dayWidth = Math.max(dp(tablet ? 72 : 38), (availableWidth - timeWidth) / visibleDayCount);
+        // 列宽在 resolveDayWidth 内封顶 110dp：平板横屏 7 列不再被无限拉宽。
+        // floor 取整保证手机/竖屏平板 content 不超出可用宽度（仅 1~7dp 居中微移）。
+        dayWidth = resolveDayWidth(getContext(), availableWidth, visibleDayCount, tablet);
         dayHeaderHeight = dp(62);
-        lastBoardWidth = Math.max(availableWidth, timeWidth + dayWidth * visibleDayCount);
+        int contentWidth = timeWidth + dayWidth * visibleDayCount;
+        // 横屏平板：网格左侧贴边（右侧空间留给实践/今日概览面板）；
+        // 其他设备按剩余空间居中。
+        boardContentOffset = tablet && landscape
+                ? 0 : Math.max(0, (availableWidth - contentWidth) / 2);
+        lastBoardWidth = Math.max(availableWidth, contentWidth);
         int maxHeight = 0;
         for (int week = firstWeek; week <= lastWeek; week++) {
             maxHeight = Math.max(maxHeight, boardHeight(week));
@@ -662,7 +684,7 @@ public class ScheduleBoardView extends FrameLayout {
                 return false;
             });
             board.setOnLongClickListener(view -> {
-                int day = (int) ((boardTouchX - timeWidth) / dayWidth);
+                int day = (int) ((boardTouchX - boardContentOffset - timeWidth) / dayWidth);
                 int section = sectionAtY(Math.round(boardTouchY), week);
                 if (slotLongClickListener != null && day >= 0 && day < visibleDayCount
                         && section >= 1 && section <= sectionCount) {
@@ -708,11 +730,13 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private int getAvailableBoardWidth() {
-        int width = getWidth() - getPaddingLeft() - getPaddingRight();
+        // 减去左侧 rail inset：网格居中偏移须按 weekPager 的实际内容宽计算，
+        // 否则横屏平板下网格会整体偏右（视觉失衡）。
+        int width = getWidth() - getPaddingLeft() - getPaddingRight() - overlayLeftInset;
         if (width > 0) {
             return width;
         }
-        return getResources().getDisplayMetrics().widthPixels;
+        return getResources().getDisplayMetrics().widthPixels - overlayLeftInset;
     }
 
     private CharSequence courseText(Course course, boolean conflict) {
@@ -758,11 +782,12 @@ public class ScheduleBoardView extends FrameLayout {
     private void addMonthLabel(FrameLayout board) {
         TextView view = new TextView(getContext());
         view.setText("时间");
-        applyAdaptiveTextColor(view, 0, 0, timeWidth, dayHeaderHeight, false);
+        applyAdaptiveTextColor(view, boardContentOffset, 0, timeWidth, dayHeaderHeight, false);
         view.setTextSize(13);
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(timeWidth, dayHeaderHeight);
+        params.leftMargin = boardContentOffset;
         board.addView(view, params);
     }
 
@@ -779,9 +804,13 @@ public class ScheduleBoardView extends FrameLayout {
         int combinedAlpha = Math.round(alpha * sourceAlpha / 255f);
         header.setBackgroundColor(Color.argb(combinedAlpha,
                 Color.red(fill), Color.green(fill), Color.blue(fill)));
-        board.addView(header, new FrameLayout.LayoutParams(
-                Math.max(getAvailableBoardWidth(), timeWidth + dayWidth * visibleDayCount),
-                dayHeaderHeight));
+        // 表头背景与网格区完全对齐：从居中偏移处开始，宽度=时间轴+全部列。
+        // （手机端 offset 为 0，宽度即网格全宽，与原来一致。）
+        FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(
+                timeWidth + dayWidth * visibleDayCount,
+                dayHeaderHeight);
+        headerParams.leftMargin = boardContentOffset;
+        board.addView(header, headerParams);
     }
 
     private void addDayHeader(FrameLayout board, int column, int actualDay, int week) {
@@ -800,7 +829,7 @@ public class ScheduleBoardView extends FrameLayout {
         TextView weekday = new TextView(getContext());
         weekday.setText("周" + DAYS[actualDay]);
         weekday.setTextSize(tabletText(today ? 15 : 13, today ? 13 : 12));
-        int left = timeWidth + dayWidth * column;
+        int left = boardContentOffset + timeWidth + dayWidth * column;
         applyAdaptiveTextColor(weekday, left, 0, dayWidth, dayHeaderHeight / 2, !today);
         weekday.setTypeface(today ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
         weekday.setGravity(Gravity.CENTER);
@@ -908,10 +937,10 @@ public class ScheduleBoardView extends FrameLayout {
             }
         }
 
-        int width = Math.max(getAvailableBoardWidth(), timeWidth + dayWidth * visibleDayCount);
+        // 实践横幅与网格列区对齐：左右各留 8dp，不再横跨整块空白。
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                Math.max(dp(120), width - dp(16)), dp(64));
-        params.leftMargin = dp(8);
+                Math.max(dp(120), dayWidth * visibleDayCount - dp(16)), dp(64));
+        params.leftMargin = boardContentOffset + timeWidth + dp(8);
         params.topMargin = dayHeaderHeight + dp(6);
         board.addView(banner, params);
     }
@@ -1000,19 +1029,20 @@ public class ScheduleBoardView extends FrameLayout {
         number.setText(String.valueOf(section));
         int top = sectionTop(section, week);
         int rowHeight = sectionRowHeight(section);
-        applyAdaptiveTextColor(number, 0, top, timeWidth, rowHeight / 2, false);
+        applyAdaptiveTextColor(number, boardContentOffset, top, timeWidth, rowHeight / 2, false);
         number.setTextSize(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 19 : 17);
         number.setGravity(Gravity.CENTER);
         box.addView(number);
 
         TextView time = new TextView(getContext());
         time.setText(section <= sectionTimes.length ? sectionTimes[section - 1] : "");
-        applyAdaptiveTextColor(time, 0, top + rowHeight / 2, timeWidth, rowHeight / 2, true);
+        applyAdaptiveTextColor(time, boardContentOffset, top + rowHeight / 2, timeWidth, rowHeight / 2, true);
         time.setTextSize(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 10 : 9);
         time.setGravity(Gravity.CENTER);
         box.addView(time);
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(timeWidth, rowHeight);
+        params.leftMargin = boardContentOffset;
         params.topMargin = top;
         board.addView(box, params);
     }
@@ -1022,7 +1052,7 @@ public class ScheduleBoardView extends FrameLayout {
         int top = sectionTop(section, week);
         line.setBackgroundColor(PolarisVisualTheme.gridLineColor(visualTheme, darkMode));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dayWidth * visibleDayCount, dp(1));
-        params.leftMargin = timeWidth;
+        params.leftMargin = boardContentOffset + timeWidth;
         params.topMargin = top;
         board.addView(line, params);
     }
@@ -1054,7 +1084,7 @@ public class ScheduleBoardView extends FrameLayout {
             line.setBackgroundColor(PolarisVisualTheme.gridLineColor(visualTheme, darkMode));
             FrameLayout.LayoutParams params =
                     new FrameLayout.LayoutParams(dayWidth * visibleDayCount, dp(1));
-            params.leftMargin = timeWidth;
+            params.leftMargin = boardContentOffset + timeWidth;
             params.topMargin = bodyTop(week) + timeAxis.yForMinute(minute);
             board.addView(line, params);
         }
@@ -1172,7 +1202,7 @@ public class ScheduleBoardView extends FrameLayout {
         int spanHeight = timeAxis.heightForRange(
                 timeRange.startMinutes, timeRange.endMinutes);
         int availableHeight = Math.max(dp(20), spanHeight - dp(6));
-        int left = timeWidth + dayWidth * column + dp(2);
+        int left = boardContentOffset + timeWidth + dayWidth * column + dp(2);
         int top = bodyTop(week) + timeAxis.yForMinute(timeRange.startMinutes) + dp(3);
         int width;
         int height;
@@ -1335,7 +1365,7 @@ public class ScheduleBoardView extends FrameLayout {
         dragBoard.getLocationOnScreen(boardLocation);
         float boardX = rawX - boardLocation[0];
         float boardY = rawY - boardLocation[1];
-        int day = (int) ((boardX - timeWidth) / dayWidth);
+        int day = (int) ((boardX - boardContentOffset - timeWidth) / dayWidth);
         if (day < 0 || day >= visibleDayCount) {
             day = -1;
         }
@@ -1361,7 +1391,7 @@ public class ScheduleBoardView extends FrameLayout {
         highlight.setBackground(stroke);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 dayWidth - dp(4), sectionRowHeight(section));
-        params.leftMargin = timeWidth + dayWidth * day + dp(2);
+        params.leftMargin = boardContentOffset + timeWidth + dayWidth * day + dp(2);
         params.topMargin = sectionTop(section, dragWeek);
         highlight.setLayoutParams(params);
         highlight.setContentDescription("目标位置 第" + section + "节");
@@ -1840,7 +1870,7 @@ public class ScheduleBoardView extends FrameLayout {
         };
         double total = 0d;
         for (int[] point : points) {
-            total += sampleBackgroundLuminance(point[0] - getScrollX(),
+            total += sampleBackgroundLuminance(point[0] - getScrollX() + overlayLeftInset,
                     point[1] + overlayTopInset - verticalScroll.getScrollY(), viewWidth, viewHeight);
         }
         return total / points.length;
@@ -1848,8 +1878,19 @@ public class ScheduleBoardView extends FrameLayout {
 
     private void updateSchedulePadding() {
         if (weekPager != null) {
-            weekPager.setPadding(0, overlayTopInset, 0, overlayBottomInset);
+            weekPager.setPadding(overlayLeftInset, overlayTopInset, 0, overlayBottomInset);
         }
+    }
+
+    /** 平板横屏：为左侧导航 rail 预留水平 inset，课表网格整体右移避让。 */
+    public void setOverlayLeftInset(int insetPx) {
+        int bounded = Math.max(0, insetPx);
+        if (overlayLeftInset == bounded) {
+            return;
+        }
+        overlayLeftInset = bounded;
+        updateSchedulePadding();
+        renderSchedule();
     }
 
     private double sampleBackgroundLuminance(int localX, int localY, int viewWidth, int viewHeight) {
@@ -1892,6 +1933,39 @@ public class ScheduleBoardView extends FrameLayout {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static int dp(Context context, int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
+    }
+
+    /** 网格时间轴宽度（px），板内布局与外部对齐计算共用。 */
+    private static int resolveTimeWidth(Context context, boolean tablet) {
+        return dp(context, tablet ? 54 : 34);
+    }
+
+    /**
+     * 网格单列宽度（px）：可用宽度均分后按 38/72dp 下限、110dp 上限夹取。
+     * 板内布局与 MainActivity 顶栏/右侧面板对齐计算共用同一组常数。
+     */
+    private static int resolveDayWidth(Context context, int availableWidthPx,
+                                       int visibleDayCount, boolean tablet) {
+        int perDay = (availableWidthPx - resolveTimeWidth(context, tablet))
+                / Math.max(1, visibleDayCount);
+        return Math.max(dp(context, tablet ? 72 : 38), Math.min(dp(context, 110), perDay));
+    }
+
+    /**
+     * 课表网格总宽度（时间轴+全部列，px）。供顶栏等外部视图与网格左右对齐，
+     * 传入的 availableWidthPx 应为网格实际可用宽度（通常为屏幕宽度）。
+     */
+    public static int gridContentWidth(Context context, int availableWidthPx,
+                                       int visibleDayCount) {
+        boolean tablet = context.getResources().getConfiguration()
+                .smallestScreenWidthDp >= 600;
+        return resolveTimeWidth(context, tablet)
+                + resolveDayWidth(context, availableWidthPx, visibleDayCount, tablet)
+                * Math.max(1, visibleDayCount);
     }
 
     private class AdaptiveScrollView extends ScrollView {

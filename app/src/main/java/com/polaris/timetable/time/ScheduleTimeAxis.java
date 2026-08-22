@@ -4,7 +4,6 @@ import com.polaris.timetable.Course;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 /** Pure time-to-pixel mapping shared by the timetable view and unit tests. */
@@ -181,7 +180,7 @@ public final class ScheduleTimeAxis {
             return Collections.emptyList();
         }
         List<TimeGap> sorted = new ArrayList<>(source);
-        Collections.sort(sorted, Comparator.comparingInt(gap -> gap.startMinute));
+        Collections.sort(sorted, (first, second) -> first.startMinute - second.startMinute);
         List<TimeGap> merged = new ArrayList<>();
         for (TimeGap gap : sorted) {
             if (gap.endMinute <= gap.startMinute) {

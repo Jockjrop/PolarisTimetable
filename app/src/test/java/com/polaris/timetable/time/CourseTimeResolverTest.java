@@ -107,6 +107,38 @@ public class CourseTimeResolverTest {
     }
 
     @Test
+    public void firstWeekStart_acceptsSlashDotAndDashSeparators() {
+        TimeZone timeZone = TimeZone.getTimeZone("Asia/Shanghai");
+        long expected = dateTime("Asia/Shanghai", 2026, Calendar.MARCH, 2, 0, 0)
+                .getTimeInMillis();
+
+        assertEquals(expected, CourseTimeResolver.firstWeekStartMillis("2026/3/3", timeZone));
+        assertEquals(expected, CourseTimeResolver.firstWeekStartMillis("2026-03-03", timeZone));
+        assertEquals(expected, CourseTimeResolver.firstWeekStartMillis("2026.03.03", timeZone));
+    }
+
+    @Test
+    public void firstWeekStart_alignsToMondayOfWeek() {
+        TimeZone timeZone = TimeZone.getTimeZone("Asia/Shanghai");
+        // 2026-03-07 是周六，所在周周一为 03-02。
+        assertEquals(
+                dateTime("Asia/Shanghai", 2026, Calendar.MARCH, 2, 0, 0).getTimeInMillis(),
+                CourseTimeResolver.firstWeekStartMillis("2026/3/7", timeZone));
+    }
+
+    @Test
+    public void firstWeekStart_invalidText_fallsBackToDefaultSemesterStartMonday() {
+        TimeZone timeZone = TimeZone.getTimeZone("Asia/Shanghai");
+
+        assertEquals(
+                dateTime("Asia/Shanghai", 2026, Calendar.MARCH, 2, 0, 0).getTimeInMillis(),
+                CourseTimeResolver.firstWeekStartMillis("not-a-date", timeZone));
+        assertEquals(
+                dateTime("Asia/Shanghai", 2026, Calendar.MARCH, 2, 0, 0).getTimeInMillis(),
+                CourseTimeResolver.firstWeekStartMillis("", timeZone));
+    }
+
+    @Test
     public void inferSemesterWeeks_usesLargestReliableReferencedWeek() {
         assertEquals(16, CourseTimeResolver.inferSemesterWeeks(
                 Collections.singletonList(course(0, 1, 2, "课程", "1-16周")), 20, 20));
