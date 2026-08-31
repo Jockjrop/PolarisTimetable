@@ -18,14 +18,13 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.R;
 import com.polaris.timetable.time.CourseTimeResolver;
 
 public class CourseDetailDialog {
     public interface OnEditListener {
         void onEdit(Course course);
     }
-
-    private static final String[] DAYS = {"一", "二", "三", "四", "五", "六", "日"};
 
     private final Context context;
     private final Boolean darkOverride;
@@ -82,7 +81,7 @@ public class CourseDetailDialog {
         heading.addView(title);
 
         TextView subtitle = new TextView(context);
-        subtitle.setText("课程详情");
+        subtitle.setText(context.getString(R.string.detail_title));
         subtitle.setTextColor(mutedColor());
         subtitle.setTextSize(14);
         LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
@@ -105,17 +104,20 @@ public class CourseDetailDialog {
         closeParams.leftMargin = dp(12);
         header.addView(close, closeParams);
 
-        addRow(content, "时间", course.isBannerOnlyCourse()
-                ? "顶部横幅 · 无固定节次"
+        addRow(content, context.getString(R.string.detail_row_time), course.isBannerOnlyCourse()
+                ? context.getString(R.string.detail_value_banner_only)
                 : dayText(course.day) + " · " + CourseTimeResolver.format(course, timeSettings));
-        addRow(content, "周次", emptyText(course.weeks, "周次见PDF"));
-        addRow(content, "类型", course.courseType.displayName);
-        addRow(content, "学分", creditText(course.credit));
-        addRow(content, "地点", emptyText(course.location, "未识别地点"));
-        addRow(content, "教师", emptyText(course.teacher, "未识别教师"));
+        addRow(content, context.getString(R.string.detail_row_weeks),
+                emptyText(course.weeks, context.getString(R.string.detail_weeks_empty)));
+        addRow(content, context.getString(R.string.detail_row_type), course.courseType.displayName);
+        addRow(content, context.getString(R.string.detail_row_credit), creditText(course.credit));
+        addRow(content, context.getString(R.string.detail_row_location),
+                emptyText(course.location, context.getString(R.string.detail_location_unrecognized)));
+        addRow(content, context.getString(R.string.detail_row_teacher),
+                emptyText(course.teacher, context.getString(R.string.detail_teacher_unrecognized)));
 
         Button edit = new Button(context);
-        edit.setText("编辑课程");
+        edit.setText(context.getString(R.string.editor_title_edit));
         edit.setTextColor(Color.WHITE);
         edit.setTypeface(Typeface.DEFAULT_BOLD);
         edit.setTextSize(16);
@@ -189,10 +191,10 @@ public class CourseDetailDialog {
     }
 
     private String dayText(int day) {
-        if (day >= 0 && day < DAYS.length) {
-            return "周" + DAYS[day];
+        if (day >= 0 && day < WeekdayLabels.count()) {
+            return WeekdayLabels.label(context, day);
         }
-        return "未知星期";
+        return context.getString(R.string.detail_weekday_unknown);
     }
 
     private String emptyText(String value, String fallback) {
@@ -200,7 +202,9 @@ public class CourseDetailDialog {
     }
 
     private String creditText(String value) {
-        return value == null || value.length() == 0 ? "未设置" : value + " 学分";
+        return value == null || value.length() == 0
+                ? context.getString(R.string.detail_credit_unset)
+                : context.getString(R.string.detail_credit_value, value);
     }
 
     private GradientDrawable panelBg() {

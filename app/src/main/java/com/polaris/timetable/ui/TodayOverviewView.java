@@ -12,6 +12,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.R;
 import com.polaris.timetable.time.CourseTimeResolver;
 
 /** Compact, glanceable state for the current or next course. */
@@ -141,16 +142,16 @@ public final class TodayOverviewView extends LinearLayout {
     private String statusText(CourseTimeResolver.TodayStatus status) {
         switch (status) {
             case ONGOING:
-                return "上课中";
+                return getContext().getString(R.string.today_status_ongoing);
             case NEXT:
-                return "下一节";
+                return getContext().getString(R.string.today_status_next);
             case FINISHED:
-                return "已完成";
+                return getContext().getString(R.string.today_status_finished);
             case OUTSIDE_SEMESTER:
-                return "学期外";
+                return getContext().getString(R.string.today_status_outside);
             case NO_COURSES:
             default:
-                return "今日无课";
+                return getContext().getString(R.string.today_status_no_courses);
         }
     }
 
@@ -158,16 +159,16 @@ public final class TodayOverviewView extends LinearLayout {
                              CourseTimeResolver.TodayStatus status) {
         if (value != null && value.course != null) {
             String name = safe(value.course.name);
-            return name.length() == 0 ? "未命名课程" : name;
+            return name.length() == 0 ? getContext().getString(R.string.course_unnamed) : name;
         }
         switch (status) {
             case FINISHED:
-                return "今天的课程已结束";
+                return getContext().getString(R.string.today_title_finished);
             case OUTSIDE_SEMESTER:
-                return "当前不在学期范围";
+                return getContext().getString(R.string.today_title_outside);
             case NO_COURSES:
             default:
-                return "今天没有课程";
+                return getContext().getString(R.string.today_title_no_courses);
         }
     }
 
@@ -180,26 +181,25 @@ public final class TodayOverviewView extends LinearLayout {
                 detail.append(" · ").append(location);
             }
             if (status == CourseTimeResolver.TodayStatus.ONGOING) {
-                detail.append(" · 距下课")
-                        .append(CourseTimeResolver.countdownText(value.minutesToBoundary));
+                detail.append(getContext().getString(R.string.today_detail_ongoing_countdown,
+                        CourseTimeResolver.countdownText(value.minutesToBoundary)));
                 if (value.simultaneousCourseCount > 1) {
-                    detail.append(" · 时间冲突");
+                    detail.append(getContext().getString(R.string.today_detail_conflict));
                 }
             } else if (status == CourseTimeResolver.TodayStatus.NEXT) {
-                detail.append(" · ")
-                        .append(CourseTimeResolver.countdownText(value.minutesToBoundary))
-                        .append("后开始");
+                detail.append(getContext().getString(R.string.today_detail_next_countdown,
+                        CourseTimeResolver.countdownText(value.minutesToBoundary)));
             }
             return detail.toString();
         }
         switch (status) {
             case FINISHED:
-                return "今天辛苦了，可以提前看看明天的安排";
+                return getContext().getString(R.string.today_detail_finished);
             case OUTSIDE_SEMESTER:
-                return "请检查第一周日期和学期周数";
+                return getContext().getString(R.string.today_detail_outside);
             case NO_COURSES:
             default:
-                return "享受今天的空闲时间";
+                return getContext().getString(R.string.today_detail_no_courses);
         }
     }
 
@@ -212,7 +212,7 @@ public final class TodayOverviewView extends LinearLayout {
             text.append("，").append(detail);
         }
         if (value != null && value.hasCourse()) {
-            text.append("，点击查看课程详情");
+            text.append(getContext().getString(R.string.today_cd_hint));
         }
         return text.toString();
     }

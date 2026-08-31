@@ -30,8 +30,12 @@ android {
         applicationId "com.polaris.timetable"
         minSdk 23
         targetSdk 35
-        versionCode 11308
-        versionName "1.13.8"
+        versionCode 11501
+        versionName "1.15.1"
+    }
+
+    buildFeatures {
+        viewBinding true
     }
 
     signingConfigs {
@@ -73,7 +77,15 @@ if (releaseTaskRequested && !hasReleaseSigning) {
     )
 }
 
+configurations.all {
+    exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
+    exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
+}
 dependencies {
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.constraintlayout:constraintlayout:2.1.4"
+    implementation "androidx.fragment:fragment:1.8.2"
+    implementation "androidx.core:core:1.13.1"
     implementation "androidx.viewpager:viewpager:1.0.0"
     implementation "com.tom-roush:pdfbox-android:2.0.27.0"
     testImplementation "junit:junit:4.13.2"

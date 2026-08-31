@@ -33,6 +33,7 @@ import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.R;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.time.CourseTimeResolver;
 import com.polaris.timetable.time.ScheduleTimeAxis;
@@ -75,7 +76,8 @@ public class ScheduleBoardView extends FrameLayout {
         void onVerticalScroll(int scrollY, int deltaY, boolean atBottom);
     }
 
-    private static final String[] DAYS = {"一", "二", "三", "四", "五", "六", "日"};
+    /** 每天列数,与 WeekdayLabels.count() 一致。 */
+    private static final int DAY_COUNT = WeekdayLabels.count();
     private static final String[] TIMES = {
             "08:00\n08:50", "08:55\n09:45", "10:15\n11:05", "11:10\n12:00",
             "14:30\n15:20", "15:25\n16:15", "16:35\n17:25", "17:30\n18:20",
@@ -108,7 +110,7 @@ public class ScheduleBoardView extends FrameLayout {
     private int firstWeek = 1;
     private int lastWeek = 20;
     private int currentWeek = 18;
-    private int visibleDayCount = DAYS.length;
+    private int visibleDayCount = DAY_COUNT;
     private int sectionCount = TIMES.length;
     private long firstWeekStartMillis = defaultFirstWeekStartMillis();
     private boolean darkMode;
@@ -269,7 +271,7 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     public void setVisibleDayCount(int count) {
-        int nextCount = Math.max(1, Math.min(DAYS.length, count));
+        int nextCount = Math.max(1, Math.min(DAY_COUNT, count));
         if (visibleDayCount == nextCount) {
             return;
         }
@@ -742,7 +744,7 @@ public class ScheduleBoardView extends FrameLayout {
     private CharSequence courseText(Course course, boolean conflict) {
         SpannableStringBuilder text = new SpannableStringBuilder();
         if (conflict) {
-            String badge = "冲突 · ";
+            String badge = getContext().getString(R.string.board_badge_conflict);
             text.append(badge);
             text.setSpan(new RelativeSizeSpan(0.78f), 0, badge.length(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -781,7 +783,7 @@ public class ScheduleBoardView extends FrameLayout {
 
     private void addMonthLabel(FrameLayout board) {
         TextView view = new TextView(getContext());
-        view.setText("时间");
+        view.setText(getContext().getString(R.string.board_time_column));
         applyAdaptiveTextColor(view, boardContentOffset, 0, timeWidth, dayHeaderHeight, false);
         view.setTextSize(13);
         view.setTypeface(Typeface.DEFAULT_BOLD);
@@ -827,7 +829,7 @@ public class ScheduleBoardView extends FrameLayout {
         }
 
         TextView weekday = new TextView(getContext());
-        weekday.setText("周" + DAYS[actualDay]);
+        weekday.setText(WeekdayLabels.label(getContext(), actualDay));
         weekday.setTextSize(tabletText(today ? 15 : 13, today ? 13 : 12));
         int left = boardContentOffset + timeWidth + dayWidth * column;
         applyAdaptiveTextColor(weekday, left, 0, dayWidth, dayHeaderHeight / 2, !today);
@@ -881,7 +883,7 @@ public class ScheduleBoardView extends FrameLayout {
         LinearLayout heading = new LinearLayout(getContext());
         heading.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(getContext());
-        title.setText("本周实践");
+        title.setText(getContext().getString(R.string.board_practice_title));
         title.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
                 ? (darkMode ? color("#9CE9DF") : color("#075E56"))
                 : PolarisVisualTheme.accentColor(visualTheme, darkMode));
@@ -892,7 +894,7 @@ public class ScheduleBoardView extends FrameLayout {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView count = new TextView(getContext());
-        count.setText(practiceCourses.size() + " 项 · 查看");
+        count.setText(getContext().getString(R.string.board_practice_view_count, practiceCourses.size()));
         count.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
                 ? (darkMode ? color("#B7D8D4") : color("#39736D"))
                 : mutedColor());
@@ -915,7 +917,7 @@ public class ScheduleBoardView extends FrameLayout {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         summaryParams.topMargin = dp(2);
         banner.addView(summary, summaryParams);
-        banner.setContentDescription("本周实践，" + practiceCourses.size() + "项，点击查看");
+        banner.setContentDescription(getContext().getString(R.string.board_cd_practice, practiceCourses.size()));
 
         if (interactive) {
             banner.setClickable(true);
@@ -981,12 +983,12 @@ public class ScheduleBoardView extends FrameLayout {
                 summary.append(" · ");
             }
             summary.append(course.name == null || course.name.trim().isEmpty()
-                    ? "未命名实践" : course.name.trim());
+                    ? getContext().getString(R.string.board_practice_unnamed) : course.name.trim());
         }
         if (practiceCourses.size() == 1) {
             summary.append(" · ").append(practiceTimeText(practiceCourses.get(0)));
         } else if (practiceCourses.size() > visibleCount) {
-            summary.append(" 等").append(practiceCourses.size()).append("项");
+            summary.append(getContext().getString(R.string.board_practice_more, practiceCourses.size()));
         }
         return summary.toString();
     }
@@ -997,13 +999,13 @@ public class ScheduleBoardView extends FrameLayout {
 
     private String practiceTimeText(Course course) {
         if (course.isBannerOnlyCourse()) {
-            return "集中实践";
+            return getContext().getString(R.string.board_practice_concentrated);
         }
-        if (course.day >= 0 && course.day < DAYS.length && course.hasScheduledTime()) {
-            return "周" + DAYS[course.day] + " "
+        if (course.day >= 0 && course.day < DAY_COUNT && course.hasScheduledTime()) {
+            return WeekdayLabels.label(getContext(), course.day) + " "
                     + CourseTimeResolver.format(course, classTimeSettings);
         }
-        return "时间待定";
+        return getContext().getString(R.string.board_time_pending);
     }
 
     private GradientDrawable practiceBannerBg() {
@@ -1319,7 +1321,7 @@ public class ScheduleBoardView extends FrameLayout {
                 source.getPaddingRight(), source.getPaddingBottom());
         ghost.setAlpha(0.9f);
         ghost.setElevation(dp(8));
-        ghost.setContentDescription("正在拖动课程 " + course.name);
+        ghost.setContentDescription(getContext().getString(R.string.board_cd_dragging, course.name));
 
         int[] blockLocation = new int[2];
         source.getLocationOnScreen(blockLocation);
@@ -1394,7 +1396,7 @@ public class ScheduleBoardView extends FrameLayout {
         params.leftMargin = boardContentOffset + timeWidth + dayWidth * day + dp(2);
         params.topMargin = sectionTop(section, dragWeek);
         highlight.setLayoutParams(params);
-        highlight.setContentDescription("目标位置 第" + section + "节");
+        highlight.setContentDescription(getContext().getString(R.string.board_cd_drop_target, section));
         dragBoard.addView(highlight, params);
         dragTargetHighlight = highlight;
     }
@@ -1658,7 +1660,7 @@ public class ScheduleBoardView extends FrameLayout {
 
     private int courseEndWeek(Course course) {
         String weeks = course.weeks == null ? "" : course.weeks;
-        if (weeks.contains("项目")) {
+        if (weeks.contains("项目")) { // 存储格式判断,不可资源化
             return 0;
         }
         int endWeek = 0;
@@ -1716,19 +1718,19 @@ public class ScheduleBoardView extends FrameLayout {
     private String courseContentDescription(Course course, boolean conflict) {
         StringBuilder text = new StringBuilder();
         if (conflict) {
-            text.append("时间冲突，");
+            text.append(getContext().getString(R.string.board_cd_conflict_prefix));
         }
         String name = course.name == null || course.name.trim().isEmpty()
-                ? "未命名课程" : course.name.trim();
+                ? getContext().getString(R.string.course_unnamed) : course.name.trim();
         text.append(name);
-        if (course.day >= 0 && course.day < DAYS.length) {
-            text.append("，周").append(DAYS[course.day]);
+        if (course.day >= 0 && course.day < DAY_COUNT) {
+            text.append("，").append(WeekdayLabels.label(getContext(), course.day));
         }
         text.append("，").append(CourseTimeResolver.format(course, classTimeSettings));
         if (course.location != null && !course.location.trim().isEmpty()) {
-            text.append("，地点").append(course.location.trim());
+            text.append(getContext().getString(R.string.board_cd_location, course.location.trim()));
         }
-        return text.append("，点击查看详情，长按编辑").toString();
+        return text.append(getContext().getString(R.string.board_cd_course_hint)).toString();
     }
 
     private boolean containsIdentity(List<Course> source, Course target) {

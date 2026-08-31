@@ -26,6 +26,7 @@ import android.widget.Toast;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.CourseDeletionScope;
+import com.polaris.timetable.R;
 import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StableCourseId;
@@ -47,12 +48,16 @@ public final class CourseEditorDialog {
         void onEditorDismissed();
     }
 
-    private static final String[] COLOR_LABELS = {
-            "自动配色", "海盐蓝", "薄荷绿", "向日黄", "薰衣紫", "珊瑚红", "天空蓝", "青柠绿"
-    };
     private static final String[] COLOR_VALUES = {
             "", "#4FA4F3", "#36B889", "#E5A52D", "#956BD6", "#E86464", "#2E9EDB", "#73AD45"
     };
+
+    // 周次存储格式:写入 Course.weeks 并由 WeekRuleParser 回读解析,必须保持语言无关,不得改为资源。
+    private static final String COURSE_TEXT_PROJECT = "项目周";
+    private static final String COURSE_TEXT_UNKNOWN = "周次见PDF";
+    private static final String COURSE_TEXT_ALL_WEEKS = "1-20周";
+    private static final String COURSE_TEXT_ODD_WEEKS = "1-20周(单)";
+    private static final String COURSE_TEXT_EVEN_WEEKS = "1-20周(双)";
 
     private final Activity activity;
     private final Course original;
@@ -115,12 +120,14 @@ public final class CourseEditorDialog {
         back.setOnClickListener(v -> dialog.dismiss());
         header.addView(back, new LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.MATCH_PARENT));
 
-        TextView heading = text(original.name.isEmpty() ? "添加课程" : "编辑课程", inkColor, 24, true);
+        TextView heading = text(original.name.isEmpty()
+                ? activity.getString(R.string.editor_title_add)
+                : activity.getString(R.string.editor_title_edit), inkColor, 24, true);
         heading.setSingleLine(true);
         heading.setEllipsize(TextUtils.TruncateAt.END);
         header.addView(heading, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView save = text("保存", inkColor, 16, true);
+        TextView save = text(activity.getString(R.string.editor_action_save), inkColor, 16, true);
         save.setGravity(Gravity.CENTER);
         header.addView(save, new LinearLayout.LayoutParams(dp(58), LinearLayout.LayoutParams.MATCH_PARENT));
 
@@ -136,9 +143,9 @@ public final class CourseEditorDialog {
         page.addView(scrollView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        EditText name = input("课程名称", original.name);
-        EditText teacher = input("授课老师（可不填）", original.teacher);
-        EditText location = input("上课地点（可不填）", original.location);
+        EditText name = input(activity.getString(R.string.editor_hint_name), original.name);
+        EditText teacher = input(activity.getString(R.string.editor_hint_teacher), original.teacher);
+        EditText location = input(activity.getString(R.string.editor_hint_location), original.location);
 
         final String[] selectedColor = {normalizeColor(original.color)};
         final CourseType[] selectedType = {original.courseType};
@@ -163,43 +170,52 @@ public final class CourseEditorDialog {
         final WeekSelection[] selectedWeeks = {
                 WeekSelection.from(original.weeks.isEmpty() ? defaultWeeks() : original.weeks)};
 
-        View weeksAction = actionRow("周", "#12B8A6", selectedWeeks[0].displayText());
-        weeksAction.setContentDescription("选择周次，当前" + selectedWeeks[0].displayText());
+        View weeksAction = actionRow(activity.getString(R.string.editor_marker_week),
+                "#12B8A6", weekDisplayText(selectedWeeks[0]));
+        weeksAction.setContentDescription(activity.getString(
+                R.string.editor_cd_week_current, weekDisplayText(selectedWeeks[0])));
         weeksAction.setOnClickListener(v -> showWeekSelectionDialog(selectedWeeks[0], value -> {
             selectedWeeks[0] = value;
-            updateActionRow(weeksAction, value.displayText());
-            weeksAction.setContentDescription("选择周次，当前" + value.displayText());
+            updateActionRow(weeksAction, weekDisplayText(value));
+            weeksAction.setContentDescription(activity.getString(
+                    R.string.editor_cd_week_current, weekDisplayText(value)));
         }));
-        View dayAction = actionRow("日", "#168FE4", dayLabel(selectedDay[0]));
-        dayAction.setContentDescription("选择星期，当前" + dayLabel(selectedDay[0]));
+        View dayAction = actionRow(activity.getString(R.string.editor_marker_day),
+                "#168FE4", dayLabel(selectedDay[0]));
+        dayAction.setContentDescription(activity.getString(
+                R.string.editor_cd_day_current, dayLabel(selectedDay[0])));
         dayAction.setOnClickListener(v -> showDayDialog(selectedDay[0], value -> {
             selectedDay[0] = value;
             updateActionRow(dayAction, dayLabel(value));
-            dayAction.setContentDescription("选择星期，当前" + dayLabel(value));
+            dayAction.setContentDescription(activity.getString(
+                    R.string.editor_cd_day_current, dayLabel(value)));
         }));
-        View sectionAction = actionRow(
-                "节", "#FFB000", sectionLabel(selectedStart[0], selectedEnd[0]));
-        sectionAction.setContentDescription(
-                "选择节次，当前" + sectionLabel(selectedStart[0], selectedEnd[0]));
+        View sectionAction = actionRow(activity.getString(R.string.editor_marker_section),
+                "#FFB000", sectionLabel(selectedStart[0], selectedEnd[0]));
+        sectionAction.setContentDescription(activity.getString(R.string.editor_cd_section_current,
+                sectionLabel(selectedStart[0], selectedEnd[0])));
         sectionAction.setOnClickListener(v -> showSectionDialog(
                 selectedStart[0], selectedEnd[0], (start, end) -> {
                     selectedStart[0] = start;
                     selectedEnd[0] = end;
                     updateActionRow(sectionAction, sectionLabel(start, end));
-                    sectionAction.setContentDescription(
-                            "选择节次，当前" + sectionLabel(start, end));
+                    sectionAction.setContentDescription(activity.getString(
+                            R.string.editor_cd_section_current, sectionLabel(start, end)));
                 }));
 
-        View startTimeAction = actionRow(
-                "起", "#FFB000", "开始 " + minuteText(selectedStartMinute[0]));
-        View endTimeAction = actionRow(
-                "止", "#FFB000", "结束 " + minuteText(selectedEndMinute[0]));
-        startTimeAction.setContentDescription(
-                "选择开始时间，当前" + minuteText(selectedStartMinute[0]));
-        endTimeAction.setContentDescription(
-                "选择结束时间，当前" + minuteText(selectedEndMinute[0]));
+        View startTimeAction = actionRow(activity.getString(R.string.editor_marker_start),
+                "#FFB000", activity.getString(
+                        R.string.editor_label_start_time, minuteText(selectedStartMinute[0])));
+        View endTimeAction = actionRow(activity.getString(R.string.editor_marker_end),
+                "#FFB000", activity.getString(
+                        R.string.editor_label_end_time, minuteText(selectedEndMinute[0])));
+        startTimeAction.setContentDescription(activity.getString(
+                R.string.editor_cd_start_time_current, minuteText(selectedStartMinute[0])));
+        endTimeAction.setContentDescription(activity.getString(
+                R.string.editor_cd_end_time_current, minuteText(selectedEndMinute[0])));
         startTimeAction.setOnClickListener(v -> showTimeDialog(
-                "选择开始时间", selectedStartMinute[0], value -> {
+                activity.getString(R.string.editor_title_start_time),
+                selectedStartMinute[0], value -> {
                     int previousDuration = Math.max(15,
                             selectedEndMinute[0] - selectedStartMinute[0]);
                     selectedStartMinute[0] = value;
@@ -207,26 +223,29 @@ public final class CourseEditorDialog {
                         selectedEndMinute[0] = Math.min(23 * 60 + 59,
                                 value + previousDuration);
                     }
-                    updateActionRow(startTimeAction,
-                            "开始 " + minuteText(selectedStartMinute[0]));
-                    updateActionRow(endTimeAction,
-                            "结束 " + minuteText(selectedEndMinute[0]));
-                    startTimeAction.setContentDescription(
-                            "选择开始时间，当前" + minuteText(selectedStartMinute[0]));
-                    endTimeAction.setContentDescription(
-                            "选择结束时间，当前" + minuteText(selectedEndMinute[0]));
+                    updateActionRow(startTimeAction, activity.getString(
+                            R.string.editor_label_start_time, minuteText(selectedStartMinute[0])));
+                    updateActionRow(endTimeAction, activity.getString(
+                            R.string.editor_label_end_time, minuteText(selectedEndMinute[0])));
+                    startTimeAction.setContentDescription(activity.getString(
+                            R.string.editor_cd_start_time_current, minuteText(selectedStartMinute[0])));
+                    endTimeAction.setContentDescription(activity.getString(
+                            R.string.editor_cd_end_time_current, minuteText(selectedEndMinute[0])));
                 }));
         endTimeAction.setOnClickListener(v -> showTimeDialog(
-                "选择结束时间", selectedEndMinute[0], value -> {
+                activity.getString(R.string.editor_title_end_time),
+                selectedEndMinute[0], value -> {
                     if (value <= selectedStartMinute[0]) {
-                        Toast.makeText(activity, "结束时间必须晚于开始时间", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(activity,
+                                activity.getString(R.string.editor_error_end_before_start),
+                                Toast.LENGTH_SHORT).show();
                         return;
                     }
                     selectedEndMinute[0] = value;
-                    updateActionRow(endTimeAction,
-                            "结束 " + minuteText(selectedEndMinute[0]));
-                    endTimeAction.setContentDescription(
-                            "选择结束时间，当前" + minuteText(selectedEndMinute[0]));
+                    updateActionRow(endTimeAction, activity.getString(
+                            R.string.editor_label_end_time, minuteText(selectedEndMinute[0])));
+                    endTimeAction.setContentDescription(activity.getString(
+                            R.string.editor_cd_end_time_current, minuteText(selectedEndMinute[0])));
                 }));
 
         LinearLayout clockTimeRows = new LinearLayout(activity);
@@ -235,14 +254,15 @@ public final class CourseEditorDialog {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         clockTimeRows.addView(startTimeAction);
         clockTimeRows.addView(endTimeAction);
-        View timeModeAction = actionRow(
-                "时", "#FFB000", timeModeLabel(selectedTimeMode[0]));
-        timeModeAction.setContentDescription(
-                "选择时间方式，当前" + timeModeLabel(selectedTimeMode[0]));
+        View timeModeAction = actionRow(activity.getString(R.string.editor_marker_time_mode),
+                "#FFB000", timeModeLabel(selectedTimeMode[0]));
+        timeModeAction.setContentDescription(activity.getString(
+                R.string.editor_cd_time_mode_current, timeModeLabel(selectedTimeMode[0])));
         timeModeAction.setOnClickListener(v -> showTimeModeDialog(selectedTimeMode[0], value -> {
             selectedTimeMode[0] = value;
             updateActionRow(timeModeAction, timeModeLabel(value));
-            timeModeAction.setContentDescription("选择时间方式，当前" + timeModeLabel(value));
+            timeModeAction.setContentDescription(activity.getString(
+                    R.string.editor_cd_time_mode_current, timeModeLabel(value)));
             sectionAction.setVisibility(value == CourseTimeMode.SECTION ? View.VISIBLE : View.GONE);
             clockTimeRows.setVisibility(value == CourseTimeMode.CLOCK ? View.VISIBLE : View.GONE);
         }));
@@ -256,8 +276,10 @@ public final class CourseEditorDialog {
                 selectedTimeMode[0] == CourseTimeMode.SECTION ? View.VISIBLE : View.GONE);
         clockTimeRows.setVisibility(
                 selectedTimeMode[0] == CourseTimeMode.CLOCK ? View.VISIBLE : View.GONE);
-        View placementAction = actionRow("位", "#FFB000", bannerOnly[0] ? "顶部横幅" : "固定节次");
-        View typeAction = actionRow("类", "#168FE4", selectedType[0].displayName);
+        View placementAction = actionRow(activity.getString(R.string.editor_marker_placement),
+                "#FFB000", placementLabel(bannerOnly[0]));
+        View typeAction = actionRow(activity.getString(R.string.editor_marker_type),
+                "#168FE4", selectedType[0].displayName);
         typeAction.setOnClickListener(v -> showCourseTypeDialog(selectedType[0], value -> {
             selectedType[0] = value;
             if (!value.supportsBannerOnly() && bannerOnly[0]) {
@@ -283,13 +305,13 @@ public final class CourseEditorDialog {
             updateColorRow(colorAction, value);
         }));
 
-        panel.addView(sectionTitle("课程信息"));
+        panel.addView(sectionTitle(activity.getString(R.string.editor_section_info)));
         panel.addView(group(
                 editorRow("▣", "#10BFAE", name),
                 chipRow(courseNameQuickValues(), name),
                 typeAction,
                 colorAction));
-        panel.addView(sectionTitle("时间段"));
+        panel.addView(sectionTitle(activity.getString(R.string.editor_section_time)));
         panel.addView(group(
                 weeksAction,
                 placementAction,
@@ -298,14 +320,15 @@ public final class CourseEditorDialog {
                 editorRow("♙", "#168FE4", teacher),
                 editorRow("▯", "#F0334B", location)));
         if (courses.contains(original)) {
-            TextView delete = text("删除此课程", color("#E5484D"), 16, true);
+            TextView delete = text(activity.getString(R.string.editor_action_delete),
+                    color("#E5484D"), 16, true);
             delete.setGravity(Gravity.CENTER);
             delete.setMinHeight(dp(50));
             delete.setBackground(roundedStrokeBg("transparent", darkMode ? "#A94A55" : "#D96A70", 16));
-            delete.setContentDescription("删除此课程");
+            delete.setContentDescription(activity.getString(R.string.editor_action_delete));
             delete.setOnClickListener(v -> showDeleteScopeDialog(dialog));
             LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             deleteParams.topMargin = dp(24);
             panel.addView(delete, deleteParams);
         }
@@ -323,7 +346,9 @@ public final class CourseEditorDialog {
             int nextEndMinute = nextTimeMode == CourseTimeMode.CLOCK
                     ? selectedEndMinute[0] : -1;
             if (nextName.isEmpty()) {
-                Toast.makeText(activity, "请填写课程名称", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity,
+                        activity.getString(R.string.editor_error_name_required),
+                        Toast.LENGTH_SHORT).show();
                 return;
             }
             boolean validSections = nextTimeMode == CourseTimeMode.SECTION
@@ -332,7 +357,9 @@ public final class CourseEditorDialog {
                     && nextDay >= 0 && nextStartMinute >= 0
                     && nextStartMinute < nextEndMinute && nextEndMinute <= 24 * 60;
             if (!bannerOnly[0] && !validSections && !validClock) {
-                Toast.makeText(activity, "请填写课程名称和有效时间", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity,
+                        activity.getString(R.string.editor_error_name_and_time),
+                        Toast.LENGTH_SHORT).show();
                 return;
             }
             Course edited = new Course(
@@ -371,9 +398,10 @@ public final class CourseEditorDialog {
         panel.setPadding(dp(18), dp(16), dp(18), dp(14));
         panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
 
-        TextView heading = text("删除课程", inkColor, 20, true);
+        TextView heading = text(activity.getString(R.string.editor_title_delete), inkColor, 20, true);
         panel.addView(heading);
-        TextView message = text("请选择删除范围。删除后无法撤销。", mutedColor, 14, false);
+        TextView message = text(activity.getString(R.string.editor_delete_message),
+                mutedColor, 14, false);
         LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         messageParams.topMargin = dp(5);
@@ -381,19 +409,19 @@ public final class CourseEditorDialog {
         panel.addView(message, messageParams);
 
         panel.addView(deleteScopeChoice(
-                "仅删除本周此节",
-                "保留其他周相同时间的课程",
+                activity.getString(R.string.editor_delete_scope_week_title),
+                activity.getString(R.string.editor_delete_scope_week_desc),
                 () -> dispatchDelete(scopeDialog, editorDialog, CourseDeletionScope.CURRENT_WEEK)));
         panel.addView(deleteScopeChoice(
-                "删除每周此节",
-                "删除这个星期与节次的全部周次",
+                activity.getString(R.string.editor_delete_scope_meeting_title),
+                activity.getString(R.string.editor_delete_scope_meeting_desc),
                 () -> dispatchDelete(scopeDialog, editorDialog, CourseDeletionScope.CURRENT_MEETING)));
         panel.addView(deleteScopeChoice(
-                "删除该课程全部节次",
-                "删除该课程在课表中的所有时间安排",
+                activity.getString(R.string.editor_delete_scope_course_title),
+                activity.getString(R.string.editor_delete_scope_course_desc),
                 () -> dispatchDelete(scopeDialog, editorDialog, CourseDeletionScope.ALL_MEETINGS)));
 
-        TextView cancel = text("取消", inkColor, 16, true);
+        TextView cancel = text(activity.getString(R.string.editor_action_cancel), inkColor, 16, true);
         cancel.setGravity(Gravity.CENTER);
         cancel.setOnClickListener(v -> scopeDialog.dismiss());
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
@@ -520,16 +548,29 @@ public final class CourseEditorDialog {
     }
 
     private String dayLabel(int day) {
-        String[] labels = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+        String[] labels = {
+                activity.getString(R.string.weekday_mon),
+                activity.getString(R.string.weekday_tue),
+                activity.getString(R.string.weekday_wed),
+                activity.getString(R.string.weekday_thu),
+                activity.getString(R.string.weekday_fri),
+                activity.getString(R.string.weekday_sat),
+                activity.getString(R.string.weekday_sun)};
         return labels[Math.max(0, Math.min(labels.length - 1, day))];
     }
 
     private String sectionLabel(int start, int end) {
-        return "第 " + start + "–" + end + " 节";
+        return activity.getString(R.string.editor_label_sections, start, end);
     }
 
     private String timeModeLabel(CourseTimeMode mode) {
-        return mode == CourseTimeMode.CLOCK ? "具体时间" : "按节次";
+        return activity.getString(mode == CourseTimeMode.CLOCK
+                ? R.string.editor_mode_clock : R.string.editor_mode_section);
+    }
+
+    private String placementLabel(boolean bannerOnly) {
+        return activity.getString(bannerOnly
+                ? R.string.editor_placement_banner : R.string.editor_placement_fixed);
     }
 
     private String minuteText(int minuteOfDay) {
@@ -538,15 +579,18 @@ public final class CourseEditorDialog {
 
     private void showTimeModeDialog(CourseTimeMode current, TimeModeSetter setter) {
         Dialog dialog = new Dialog(activity);
-        LinearLayout panel = compactDialogPanel("选择时间方式");
-        TextView section = dialogChoice("按节次", current == CourseTimeMode.SECTION);
-        section.setContentDescription("按节次，根据学校上课时间显示");
+        LinearLayout panel = compactDialogPanel(
+                activity.getString(R.string.editor_title_time_mode));
+        TextView section = dialogChoice(activity.getString(R.string.editor_mode_section),
+                current == CourseTimeMode.SECTION);
+        section.setContentDescription(activity.getString(R.string.editor_cd_mode_section));
         section.setOnClickListener(v -> {
             setter.set(CourseTimeMode.SECTION);
             dialog.dismiss();
         });
-        TextView clock = dialogChoice("具体时间", current == CourseTimeMode.CLOCK);
-        clock.setContentDescription("具体时间，自定义当天开始和结束时间");
+        TextView clock = dialogChoice(activity.getString(R.string.editor_mode_clock),
+                current == CourseTimeMode.CLOCK);
+        clock.setContentDescription(activity.getString(R.string.editor_cd_mode_clock));
         clock.setOnClickListener(v -> {
             setter.set(CourseTimeMode.CLOCK);
             dialog.dismiss();
@@ -571,8 +615,9 @@ public final class CourseEditorDialog {
         panel.addView(picker, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView confirm = dialogChoice("确定", true);
-        confirm.setContentDescription("确定" + title);
+        TextView confirm = dialogChoice(activity.getString(R.string.editor_action_confirm), true);
+        confirm.setContentDescription(activity.getString(
+                R.string.editor_cd_confirm_with_title, title));
         confirm.setOnClickListener(v -> {
             setter.set(picker.getHour() * 60 + picker.getMinute());
             dialog.dismiss();
@@ -583,7 +628,8 @@ public final class CourseEditorDialog {
 
     private void showDayDialog(int currentDay, IntSetter setter) {
         Dialog dialog = new Dialog(activity);
-        LinearLayout panel = compactDialogPanel("选择星期");
+        LinearLayout panel = compactDialogPanel(
+                activity.getString(R.string.editor_title_day));
         for (int day = 0; day < 7; day++) {
             final int value = day;
             TextView item = dialogChoice(dayLabel(day), day == currentDay);
@@ -598,7 +644,8 @@ public final class CourseEditorDialog {
 
     private void showSectionDialog(int currentStart, int currentEnd, SectionSetter setter) {
         Dialog dialog = new Dialog(activity);
-        LinearLayout panel = compactDialogPanel("选择节次");
+        LinearLayout panel = compactDialogPanel(
+                activity.getString(R.string.editor_title_section));
 
         LinearLayout pickers = new LinearLayout(activity);
         pickers.setOrientation(LinearLayout.HORIZONTAL);
@@ -606,9 +653,9 @@ public final class CourseEditorDialog {
         pickers.setPadding(0, dp(6), 0, dp(8));
         NumberPicker startPicker = sectionPicker(currentStart);
         NumberPicker endPicker = sectionPicker(currentEnd);
-        pickers.addView(labeledPicker("开始", startPicker),
+        pickers.addView(labeledPicker(activity.getString(R.string.editor_picker_start), startPicker),
                 new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        pickers.addView(labeledPicker("结束", endPicker),
+        pickers.addView(labeledPicker(activity.getString(R.string.editor_picker_end), endPicker),
                 new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         startPicker.setOnValueChangedListener((picker, oldValue, newValue) -> {
             if (endPicker.getValue() < newValue) {
@@ -617,8 +664,8 @@ public final class CourseEditorDialog {
         });
         panel.addView(pickers);
 
-        TextView confirm = dialogChoice("确定", true);
-        confirm.setContentDescription("确定节次范围");
+        TextView confirm = dialogChoice(activity.getString(R.string.editor_action_confirm), true);
+        confirm.setContentDescription(activity.getString(R.string.editor_cd_confirm_section));
         confirm.setOnClickListener(v -> {
             int start = startPicker.getValue();
             int end = Math.max(start, endPicker.getValue());
@@ -649,7 +696,7 @@ public final class CourseEditorDialog {
                 ((TextView) child).setTextColor(inkColor);
             }
         }
-        picker.setContentDescription("节次");
+        picker.setContentDescription(activity.getString(R.string.editor_cd_section_picker));
         return picker;
     }
 
@@ -668,8 +715,9 @@ public final class CourseEditorDialog {
 
     private void showWeekSelectionDialog(WeekSelection current, WeekSelectionSetter setter) {
         Dialog dialog = new Dialog(activity);
-        LinearLayout panel = compactDialogPanel("选择周次");
-        TextView help = text("选择实际上课周，可使用快捷方式后继续微调。", mutedColor, 13, false);
+        LinearLayout panel = compactDialogPanel(
+                activity.getString(R.string.editor_title_week));
+        TextView help = text(activity.getString(R.string.editor_week_help), mutedColor, 13, false);
         help.setPadding(0, 0, 0, dp(8));
         panel.addView(help);
 
@@ -678,17 +726,17 @@ public final class CourseEditorDialog {
         final Runnable[] refresh = new Runnable[1];
 
         LinearLayout quickPrimary = weightedRow();
-        TextView all = weekSelectChip("全周");
-        TextView odd = weekSelectChip("单周");
-        TextView even = weekSelectChip("双周");
+        TextView all = weekSelectChip(activity.getString(R.string.editor_week_all));
+        TextView odd = weekSelectChip(activity.getString(R.string.editor_week_odd));
+        TextView even = weekSelectChip(activity.getString(R.string.editor_week_even));
         quickPrimary.addView(all, weightedChipParams());
         quickPrimary.addView(odd, weightedChipParams());
         quickPrimary.addView(even, weightedChipParams());
         panel.addView(quickPrimary);
 
         LinearLayout quickSpecial = weightedRow();
-        TextView project = weekSelectChip("项目周");
-        TextView unknown = weekSelectChip("待确认");
+        TextView project = weekSelectChip(activity.getString(R.string.editor_week_project));
+        TextView unknown = weekSelectChip(activity.getString(R.string.editor_week_unknown));
         quickSpecial.addView(project, weightedChipParams());
         quickSpecial.addView(unknown, weightedChipParams());
         panel.addView(quickSpecial);
@@ -698,7 +746,7 @@ public final class CourseEditorDialog {
             for (int column = 0; column < 5; column++) {
                 int week = rowIndex * 5 + column + 1;
                 TextView chip = weekSelectChip(String.valueOf(week));
-                chip.setContentDescription("第" + week + "周");
+                chip.setContentDescription(activity.getString(R.string.editor_cd_week_n, week));
                 chip.setOnClickListener(v -> {
                     working.toggleWeek(week);
                     refresh[0].run();
@@ -741,13 +789,13 @@ public final class CourseEditorDialog {
         };
         refresh[0].run();
 
-        TextView confirm = dialogChoice("确定", true);
+        TextView confirm = dialogChoice(activity.getString(R.string.editor_action_confirm), true);
         confirm.setOnClickListener(v -> {
             setter.set(working.copy());
             dialog.dismiss();
         });
         LinearLayout.LayoutParams confirmParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         confirmParams.topMargin = dp(8);
         panel.addView(confirm, confirmParams);
         showCompactDialog(dialog, panel, 360);
@@ -773,7 +821,7 @@ public final class CourseEditorDialog {
         item.setMinHeight(dp(48));
         item.setBackground(roundedBg(darkMode ? "#141E30" : "#F2F0FA", 14));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(6);
         item.setLayoutParams(params);
         return item;
@@ -787,7 +835,8 @@ public final class CourseEditorDialog {
     }
 
     private LinearLayout.LayoutParams weightedChipParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         params.setMargins(dp(3), dp(3), dp(3), dp(3));
         return params;
     }
@@ -866,16 +915,17 @@ public final class CourseEditorDialog {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(14), dp(18), dp(14));
         panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
-        panel.addView(text("课程颜色", mutedColor, 13, false));
+        panel.addView(text(activity.getString(R.string.editor_title_color), mutedColor, 13, false));
         String normalized = normalizeColor(currentColor);
-        for (int i = 0; i < COLOR_LABELS.length; i++) {
+        String[] colorLabels = colorLabels();
+        for (int i = 0; i < COLOR_VALUES.length; i++) {
             String value = COLOR_VALUES[i];
             LinearLayout item = new LinearLayout(activity);
             item.setGravity(Gravity.CENTER_VERTICAL);
             TextView dot = text("●", color(editorColor(value)), 22, true);
             dot.setGravity(Gravity.CENTER);
             item.addView(dot, new LinearLayout.LayoutParams(dp(38), dp(48)));
-            TextView label = text(COLOR_LABELS[i], inkColor, 16, value.equals(normalized));
+            TextView label = text(colorLabels[i], inkColor, 16, value.equals(normalized));
             item.addView(label, new LinearLayout.LayoutParams(0, dp(48), 1f));
             TextView check = text(value.equals(normalized) ? "✓" : "", inkColor, 22, true);
             check.setGravity(Gravity.CENTER);
@@ -906,7 +956,7 @@ public final class CourseEditorDialog {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(14), dp(18), dp(14));
         panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
-        panel.addView(text("课程类型", mutedColor, 13, false));
+        panel.addView(text(activity.getString(R.string.editor_title_type), mutedColor, 13, false));
         for (CourseType type : CourseType.values()) {
             LinearLayout item = new LinearLayout(activity);
             item.setGravity(Gravity.CENTER_VERTICAL);
@@ -941,8 +991,10 @@ public final class CourseEditorDialog {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(14), dp(18), dp(14));
         panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
-        panel.addView(text("展示位置", mutedColor, 13, false));
-        String[] labels = {"固定节次", "顶部横幅（无固定节次）"};
+        panel.addView(text(activity.getString(R.string.editor_title_placement), mutedColor, 13, false));
+        String[] labels = {
+                activity.getString(R.string.editor_placement_fixed),
+                activity.getString(R.string.editor_placement_banner_no_section)};
         boolean[] values = {false, true};
         for (int index = 0; index < labels.length; index++) {
             boolean value = values[index];
@@ -1008,8 +1060,7 @@ public final class CourseEditorDialog {
 
     private void updatePlacementRow(View row, boolean bannerOnly) {
         if (row instanceof LinearLayout) {
-            ((TextView) ((LinearLayout) row).getChildAt(1))
-                    .setText(bannerOnly ? "顶部横幅" : "固定节次");
+            ((TextView) ((LinearLayout) row).getChildAt(1)).setText(placementLabel(bannerOnly));
         }
     }
 
@@ -1114,7 +1165,14 @@ public final class CourseEditorDialog {
     }
 
     private String defaultWeeks() {
-        return "1-20周";
+        return COURSE_TEXT_ALL_WEEKS;
+    }
+
+    /** 周次操作行的展示文案:特殊周次用资源,连续周次沿用存储格式。 */
+    private String weekDisplayText(WeekSelection selection) {
+        return selection.displayText(
+                activity.getString(R.string.editor_week_project),
+                activity.getString(R.string.editor_week_unknown_full));
     }
 
     private String normalizeColor(String value) {
@@ -1128,14 +1186,27 @@ public final class CourseEditorDialog {
         return "";
     }
 
+    private String[] colorLabels() {
+        return new String[]{
+                activity.getString(R.string.editor_color_auto),
+                activity.getString(R.string.editor_color_salt_blue),
+                activity.getString(R.string.editor_color_mint_green),
+                activity.getString(R.string.editor_color_sunflower_yellow),
+                activity.getString(R.string.editor_color_lavender_purple),
+                activity.getString(R.string.editor_color_coral_red),
+                activity.getString(R.string.editor_color_sky_blue),
+                activity.getString(R.string.editor_color_lime_green)};
+    }
+
     private String colorLabel(String value) {
         String normalized = normalizeColor(value);
+        String[] labels = colorLabels();
         for (int i = 0; i < COLOR_VALUES.length; i++) {
             if (COLOR_VALUES[i].equals(normalized)) {
-                return COLOR_LABELS[i];
+                return labels[i];
             }
         }
-        return COLOR_LABELS[0];
+        return labels[0];
     }
 
     private String editorColor(String value) {
@@ -1257,35 +1328,36 @@ public final class CourseEditorDialog {
             return true;
         }
 
-        String displayText() {
+        String displayText(String projectLabel, String unknownLabel) {
             if (SPECIAL_PROJECT.equals(special)) {
-                return "项目周";
+                return projectLabel;
             }
             if (SPECIAL_UNKNOWN.equals(special)) {
-                return "周次待确认";
+                return unknownLabel;
             }
             return numberedWeeksText();
         }
 
         String toCourseText() {
             if (SPECIAL_PROJECT.equals(special)) {
-                return "项目周";
+                return COURSE_TEXT_PROJECT;
             }
             if (SPECIAL_UNKNOWN.equals(special)) {
-                return "周次见PDF";
+                return COURSE_TEXT_UNKNOWN;
             }
             return numberedWeeksText();
         }
 
+        /** 连续周次文本同时充当展示与存储格式(由 WeekRuleParser 解析),文案改动需同步解析器。 */
         private String numberedWeeksText() {
             if (isAll()) {
-                return "1-20周";
+                return COURSE_TEXT_ALL_WEEKS;
             }
             if (isOdd()) {
-                return "1-20周(单)";
+                return COURSE_TEXT_ODD_WEEKS;
             }
             if (isEven()) {
-                return "1-20周(双)";
+                return COURSE_TEXT_EVEN_WEEKS;
             }
             int first = firstSelected();
             int last = lastSelected();

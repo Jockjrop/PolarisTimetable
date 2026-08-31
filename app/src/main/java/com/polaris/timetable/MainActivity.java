@@ -4,7 +4,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.Manifest;
-import android.app.Activity;
+import androidx.appcompat.app.AppCompatActivity;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
@@ -16,6 +16,7 @@ import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Canvas;
+import android.graphics.Insets;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
@@ -44,6 +45,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.ViewParent;
@@ -105,10 +107,16 @@ import com.polaris.timetable.ui.CircleAvatarView;
 import com.polaris.timetable.ui.CourseDetailDialog;
 import com.polaris.timetable.ui.CourseEditorDialog;
 import com.polaris.timetable.ui.CourseConflictSummaryView;
+import com.polaris.timetable.ui.dialog.GlassDialogFactory;
+import com.polaris.timetable.ui.DesignTokens;
 import com.polaris.timetable.ui.PolarisThemeBackgroundView;
 import com.polaris.timetable.ui.PolarisVisualTheme;
 import com.polaris.timetable.ui.ScheduleBoardView;
 import com.polaris.timetable.ui.TodayOverviewView;
+import com.polaris.timetable.ui.page.MyPageBuilder;
+import com.polaris.timetable.ui.page.SettingsPageBuilder;
+import com.polaris.timetable.ui.shell.BottomNavView;
+import com.polaris.timetable.ui.WeekdayLabels;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -130,7 +138,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host {
     private static final String TAG = "MainActivity";
     private interface BooleanSetter {
         void set(boolean value);
@@ -205,14 +213,11 @@ public class MainActivity extends Activity {
     private FrameLayout topPanelContainer;
     private LinearLayout topPanel;
     private View topPanelGlassLayer;
-    private LinearLayout bottomNavView;
-    private ScrollView myPage;
+    private BottomNavView bottomNavView;
+    private View myPage;
     private ScrollView planPage;
     private FrameLayout settingsPage;
     private View emptyScheduleView;
-    private TextView scheduleNav;
-    private TextView planNav;
-    private TextView myNav;
     private TextView title;
     private TextView subtitle;
     private TextView returnCurrentWeekButton;
@@ -266,10 +271,21 @@ public class MainActivity extends Activity {
     private int courseCellHeight = 76;
     private int courseCornerRadius = 9;
     private int courseBlockOpacity = 100;
-    private int timetableHeaderOpacity = 78;
-    private int bottomNavOpacity = 86;
-    private int bottomNavHeight = 60;
+    private int timetableHeaderOpacity = DesignTokens.GLASS_OPACITY_HEADER_DEFAULT;
+    private int bottomNavOpacity = DesignTokens.GLASS_OPACITY_NAV_DEFAULT;
+    private int bottomNavHeight = DesignTokens.NAV_HEIGHT_DEFAULT;
     private int bottomNavRectCornerRadius = 58;
+    // 真实系统栏 inset（API 30+ 由 WindowInsets 驱动；-1 表示尚未捕获，回退反射值）。
+    private int systemTopInset = -1;
+    private int systemBottomInset = -1;
+    private int systemLeftInset = 0;
+    private int systemRightInset = 0;
+    // 上次 buildLayout 实际采用的 inset，用于判断首次捕获后是否需要重建布局。
+    private int builtTopInset = -1;
+    private int builtBottomInset = 0;
+    private int builtLeftInset = 0;
+    private int builtRightInset = 0;
+    private boolean insetsRebuildPending = false;
     private boolean shellBarsBlurEnabled = true;
     private String timetableBackground = "清爽蓝";
     private String visualTheme = PolarisVisualTheme.MINIMAL;
@@ -334,6 +350,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        applyEdgeToEdgeWindow(getWindow());
         scheduleRepository = new ScheduleRepository(this);
         planRepository = new PlanRepository(this);
         importCoordinator = new PdfImportCoordinator(this);
@@ -391,7 +408,7 @@ public class MainActivity extends Activity {
             remindersEnabled = false;
             CourseReminderScheduler.cancelAll(this);
             refreshActiveSettingsPage();
-            Toast.makeText(this, "未获得通知权限，课程提醒没有开启", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.reminder_perm_denied), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -481,14 +498,14 @@ public class MainActivity extends Activity {
                     .start();
             showActionPanel(v);
         });
-        overflowMenuButton.setContentDescription("更多操作");
+        overflowMenuButton.setContentDescription(getString(R.string.more_actions_cd));
         actions.addView(overflowMenuButton);
 
         LinearLayout headline = new LinearLayout(this);
         headline.setOrientation(LinearLayout.HORIZONTAL);
         headline.setGravity(Gravity.CENTER_VERTICAL);
         // 横屏平板且右侧空间充足：今日概览独立到右侧顶部面板，顶栏不再内嵌。
-        boolean separateTodayPanel = isLandscapeTablet() && rightPanelSpace() >= dp(240);
+        boolean separateTodayPanel = isLandscapeTablet() && rightPanelSpace() >= dp(DesignTokens.TABLET_SEPARATE_TODAY_MIN);
         if (wideTopPanel) {
             if (separateTodayPanel) {
                 // 横屏平板：标题区占满剩余空间，操作按钮置于右侧。
@@ -595,15 +612,15 @@ public class MainActivity extends Activity {
                     visualTheme, isDarkModeActive()));
             FrameLayout.LayoutParams dividerParams = new FrameLayout.LayoutParams(
                     dp(1), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
-            dividerParams.leftMargin = dp(424);
+            dividerParams.leftMargin = dp(DesignTokens.TABLET_SETTINGS_SPLIT - 1);
             paneDivider.setVisibility(View.GONE);
             contentHost.addView(paneDivider, dividerParams);
             FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-            settingsParams.leftMargin = dp(425);
+            settingsParams.leftMargin = dp(DesignTokens.TABLET_SETTINGS_SPLIT);
             contentHost.addView(settingsPage, settingsParams);
             // 课表右侧本周实践面板：毛玻璃容器（内容决定尺寸）+ 内容层，初始隐藏。
-            practiceSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, 20), 20);
+            practiceSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
             practiceSidePanelContent = new LinearLayout(this);
             practiceSidePanelContent.setOrientation(LinearLayout.VERTICAL);
             practiceSidePanel.addView(practiceSidePanelContent,
@@ -611,14 +628,14 @@ public class MainActivity extends Activity {
                             FrameLayout.LayoutParams.WRAP_CONTENT));
             practiceSidePanel.setVisibility(View.GONE);
             contentHost.addView(practiceSidePanel, new FrameLayout.LayoutParams(
-                    dp(190), FrameLayout.LayoutParams.WRAP_CONTENT,
+                    dp(DesignTokens.TABLET_PRACTICE_PANEL_WIDTH), FrameLayout.LayoutParams.WRAP_CONTENT,
                     Gravity.RIGHT | Gravity.TOP));
             if (separateTodayPanel) {
                 // 今日概览独立面板：右侧顶部，实践面板上方。
                 buildTodayOverviewPanel();
             }
             // 本周计划面板：毛玻璃容器（内容可滚动，占满右侧剩余空间）。
-            planSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, 20), 20);
+            planSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
             ScrollView planScroll = new ScrollView(this);
             planScroll.setFillViewport(true);
             planScroll.setVerticalScrollBarEnabled(false);
@@ -633,7 +650,7 @@ public class MainActivity extends Activity {
             planScroll.addView(planSidePanelContent);
             planSidePanel.setVisibility(View.GONE);
             contentHost.addView(planSidePanel, new FrameLayout.LayoutParams(
-                    dp(360), LinearLayout.LayoutParams.WRAP_CONTENT,
+                    dp(DesignTokens.TABLET_PLAN_PANEL_WIDTH), LinearLayout.LayoutParams.WRAP_CONTENT,
                     Gravity.RIGHT | Gravity.TOP));
         } else {
             contentHost.addView(myPage, new FrameLayout.LayoutParams(
@@ -655,11 +672,13 @@ public class MainActivity extends Activity {
             topParams = new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                     Gravity.TOP);
-            topParams.setMargins(dp(tablet ? 16 : 10), statusBarHeight() + dp(8),
-                    dp(tablet ? 16 : 10), 0);
+            topParams.setMargins(dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE)
+                            + systemLeftInset, statusBarHeight() + dp(DesignTokens.GAP_SHELL),
+                    dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE)
+                            + systemRightInset, 0);
         }
         topPanelContainer = new FrameLayout(this);
-        topPanelGlassLayer = glassLayer(liquidGlassBg(timetableHeaderOpacity), 24);
+        topPanelGlassLayer = glassLayer(liquidGlassBg(timetableHeaderOpacity), DesignTokens.RADIUS_TOP_PANEL);
         topPanelContainer.addView(topPanelGlassLayer, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, 0));
         topPanelContainer.addView(topPanel, new FrameLayout.LayoutParams(
@@ -675,6 +694,8 @@ public class MainActivity extends Activity {
             // 平板横屏：计划管理浮层（遮罩 + 右侧手机宽面板），盖在最上层。
             buildPlanManageOverlay();
         }
+        recordBuiltInsets();
+        attachWindowInsetsListener();
         setContentView(rootView);
         updateSystemBarAppearance(getWindow());
         if (isLandscapeTablet()) {
@@ -706,25 +727,25 @@ public class MainActivity extends Activity {
 
     private void showAiImportDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("AI 识别导入");
+        LinearLayout panel = dialogPanel(getString(R.string.import_ai_title));
 
         TextView instruction = new TextView(this);
-        instruction.setText("1. 点击下方按钮选择课表图片\n"
-                + "2. 图片和识别指令将预填到所选 AI\n"
-                + "3. 确认输入框内容和图片后，由你手动发送\n"
-                + "4. 回到 Polaris，将自动读取新复制的结果");
+        instruction.setText(getString(R.string.import_ai_instruction));
+                
+                
+                
         instruction.setTextColor(mutedColor());
         instruction.setTextSize(14);
         instruction.setLineSpacing(dp(3), 1f);
         instruction.setPadding(0, 0, 0, dp(6));
         panel.addView(instruction);
 
-        panel.addView(dialogAction("复制 AI 识别指令", v -> copyAiRecognitionPrompt()));
-        panel.addView(dialogAction("选择课表图片并跳转 AI",
+        panel.addView(dialogAction(getString(R.string.import_ai_copy_prompt), v -> copyAiRecognitionPrompt()));
+        panel.addView(dialogAction(getString(R.string.import_ai_pick_image),
                 v -> openAiRecognitionImagePicker()));
 
         EditText input = new EditText(this);
-        input.setHint("将 AI 返回内容粘贴到这里");
+        input.setHint(getString(R.string.import_ai_paste_hint));
         input.setTextColor(inkColor());
         input.setHintTextColor(mutedColor());
         input.setTextSize(15);
@@ -735,9 +756,9 @@ public class MainActivity extends Activity {
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         input.setPadding(dp(12), dp(10), dp(12), dp(10));
-        input.setBackground(roundedBg(groupColorHex(), 12));
+        input.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_CHIP));
         input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200_000)});
-        input.setContentDescription("AI 返回内容输入框");
+        input.setContentDescription(getString(R.string.import_ai_input_cd));
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(190));
         inputParams.setMargins(0, dp(8), 0, dp(4));
@@ -749,7 +770,7 @@ public class MainActivity extends Activity {
         errorView.setTextSize(14);
         errorView.setLineSpacing(dp(3), 1f);
         errorView.setPadding(dp(12), dp(10), dp(12), dp(10));
-        errorView.setBackground(roundedBg(groupColorHex(), 12));
+        errorView.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_CHIP));
         errorView.setTextIsSelectable(true);
         errorView.setVisibility(View.GONE);
         panel.addView(errorView, new LinearLayout.LayoutParams(
@@ -759,15 +780,15 @@ public class MainActivity extends Activity {
         activeAiImportInput = input;
         activeAiImportErrorView = errorView;
 
-        panel.addView(dialogAction("从剪贴板粘贴",
+        panel.addView(dialogAction(getString(R.string.import_ai_paste),
                 v -> pasteAiTextFromClipboard(input, errorView)));
 
-        TextView parse = dialogAction("解析并预览", v -> {
+        TextView parse = dialogAction(getString(R.string.import_ai_parse), v -> {
             String aiText = input.getText() == null
                     ? "" : input.getText().toString();
             if (aiText.trim().isEmpty()) {
                 showAiImportErrors(errorView,
-                        Collections.singletonList("请先粘贴或输入 AI 返回内容"));
+                        Collections.singletonList(getString(R.string.import_ai_error_empty)));
                 return;
             }
             v.setEnabled(false);
@@ -784,10 +805,10 @@ public class MainActivity extends Activity {
             showAiImportPreview((AiScheduleImportWorkflow.PrepareSuccess) prepared);
         });
         parse.setTextColor(Color.WHITE);
-        parse.setBackground(roundedBg(primaryActionFillHex(), 14));
-        parse.setContentDescription("解析 AI 返回内容并打开课程预览");
+        parse.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
+        parse.setContentDescription(getString(R.string.import_ai_parse_cd));
         panel.addView(parse);
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -803,7 +824,7 @@ public class MainActivity extends Activity {
                 aiExternalImportReturnController.cancel();
             }
         });
-        dialog.setContentView(glassDialogContent(scroll, panel, 22));
+        dialog.setContentView(glassDialogContent(scroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
         if (dialog.getWindow() != null) {
@@ -814,7 +835,7 @@ public class MainActivity extends Activity {
 
     private void copyAiRecognitionPrompt() {
         if (copyAiRecognitionPromptToClipboard()) {
-            Toast.makeText(this, "AI 识别指令已复制", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.import_ai_prompt_copied), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -822,11 +843,11 @@ public class MainActivity extends Activity {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(
                 Context.CLIPBOARD_SERVICE);
         if (clipboard == null) {
-            Toast.makeText(this, "无法访问系统剪贴板", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.import_clipboard_unavailable), Toast.LENGTH_LONG).show();
             return false;
         }
         clipboard.setPrimaryClip(ClipData.newPlainText(
-                "Polaris AI 识别指令", PolarisAiPromptV1.getPrompt()));
+                getString(R.string.import_clipboard_label), PolarisAiPromptV1.getPrompt()));
         return true;
     }
 
@@ -837,7 +858,7 @@ public class MainActivity extends Activity {
         try {
             startActivityForResult(pickImage, PICK_AI_RECOGNITION_IMAGE);
         } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, "未找到可选择图片的应用", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.import_no_image_picker), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -851,18 +872,18 @@ public class MainActivity extends Activity {
         sendImage.putExtra(Intent.EXTRA_TEXT, PolarisAiPromptV1.getPrompt());
         sendImage.putExtra(Intent.EXTRA_STREAM, scheduleImageUri);
         sendImage.setClipData(ClipData.newRawUri(
-                "Polaris 课表图片", scheduleImageUri));
+                getString(R.string.import_ai_share_image_label), scheduleImageUri));
         sendImage.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         aiExternalImportReturnController.begin(readClipboardText());
-        Toast.makeText(this, "请确认 AI 输入框中的图片和指令，再手动发送",
+        Toast.makeText(this, getString(R.string.import_ai_send_hint),
                 Toast.LENGTH_LONG).show();
         try {
             startActivity(Intent.createChooser(
-                    sendImage, "选择支持图片识别的 AI"));
+                    sendImage, getString(R.string.import_ai_chooser_title)));
         } catch (ActivityNotFoundException exception) {
             aiExternalImportReturnController.cancel();
-            Toast.makeText(this, "未找到可接收课表图片的 AI 应用",
+            Toast.makeText(this, getString(R.string.import_no_ai_app),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -877,7 +898,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (!result.hasNewClipboardText()) {
-            Toast.makeText(this, "未检测到新复制的 AI 返回文本",
+            Toast.makeText(this, getString(R.string.import_ai_return_none),
                     Toast.LENGTH_SHORT).show();
             return;
         }
@@ -887,8 +908,8 @@ public class MainActivity extends Activity {
         activeAiImportInput.setText(result.newClipboardText);
         activeAiImportInput.setSelection(activeAiImportInput.length());
         activeAiImportErrorView.setVisibility(View.GONE);
-        activeAiImportInput.announceForAccessibility("已自动读取 AI 返回内容");
-        Toast.makeText(this, "已自动读取 AI 返回内容",
+        activeAiImportInput.announceForAccessibility(getString(R.string.import_ai_return_read_cd));
+        Toast.makeText(this, getString(R.string.import_ai_return_read_cd),
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -909,26 +930,26 @@ public class MainActivity extends Activity {
     private void pasteAiTextFromClipboard(EditText input, TextView errorView) {
         String text = readClipboardText();
         if (text.trim().isEmpty()) {
-            Toast.makeText(this, "剪贴板中没有可用文本", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.import_clipboard_empty), Toast.LENGTH_SHORT).show();
             return;
         }
         input.setText(text);
         input.setSelection(input.length());
         errorView.setVisibility(View.GONE);
-        input.announceForAccessibility("已从剪贴板粘贴 AI 返回内容");
+        input.announceForAccessibility(getString(R.string.import_ai_paste_done_cd));
     }
 
     private void showAiImportErrors(TextView errorView, List<String> messages) {
-        StringBuilder text = new StringBuilder("请检查以下问题：");
+        StringBuilder text = new StringBuilder(getString(R.string.import_ai_errors_header));
         if (messages == null || messages.isEmpty()) {
-            text.append("\nAI 识别结果无法解析");
+            text.append("\n").append(getString(R.string.import_ai_parse_failed));
         } else {
             for (String message : messages) {
                 text.append("\n\n").append(message);
             }
         }
         errorView.setText(text.toString());
-        errorView.setContentDescription("AI 导入错误，" + text);
+        errorView.setContentDescription(getString(R.string.import_ai_errors_cd, text));
         errorView.setVisibility(View.VISIBLE);
         errorView.announceForAccessibility(text);
     }
@@ -967,19 +988,19 @@ public class MainActivity extends Activity {
     private void showAiImportPreview(AiScheduleImportWorkflow.PrepareSuccess prepared) {
         ScheduleImportPreviewData preview = prepared.preview;
         if (preview == null || preview.isEmpty()) {
-            Toast.makeText(this, "没有识别到可导入课程", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.import_ai_no_courses), Toast.LENGTH_LONG).show();
             return;
         }
 
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("检查 AI 识别结果");
+        LinearLayout panel = dialogPanel(getString(R.string.import_ai_review_title));
         addScheduleImportCandidatePreview(panel, preview);
 
         boolean replacingExisting = !structuredCourses.isEmpty();
         TextView replacementNotice = new TextView(this);
         replacementNotice.setText(replacingExisting
-                ? "确认后将覆盖当前正在查看的课表。识别学期和教学班仅用于本次预览。"
-                : "确认后将导入当前正在查看的课表。识别学期和教学班仅用于本次预览。");
+                ? getString(R.string.import_ai_note_overwrite)
+                : getString(R.string.import_ai_note_import));
         replacementNotice.setTextColor(replacingExisting
                 ? Color.parseColor(isDarkModeActive() ? "#FFC266" : "#8A4B00")
                 : mutedColor());
@@ -989,7 +1010,7 @@ public class MainActivity extends Activity {
         panel.addView(replacementNotice);
 
         ScheduleImportConfirmation confirmation = new ScheduleImportConfirmation();
-        String confirmText = replacingExisting ? "确认并覆盖当前课表" : "确认导入";
+        String confirmText = replacingExisting ? getString(R.string.import_confirm_overwrite) : getString(R.string.import_confirm_short);
         TextView confirm = dialogAction(confirmText, v -> {
             if (isFinishing()
                     || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
@@ -1004,21 +1025,21 @@ public class MainActivity extends Activity {
                 int courseCount = candidates.size();
                 applyCurrentScheduleImport(
                         candidates,
-                        "外部 AI 识别 · " + courseCount + " 门课程 · "
-                                + preview.meetingCount() + " 条安排",
-                        "识别来源：外部多模态 AI\n"
-                                + "协议：Polaris Schedule JSON v1\n"
-                                + "文件写入：已由用户预览并确认\n"
-                                + "课程数量：" + courseCount + "\n"
-                                + "上课安排：" + preview.meetingCount(),
-                        "课表导入成功，共 " + courseCount + " 门课程");
+                        getString(R.string.import_ai_summary, courseCount,
+                                preview.meetingCount()),
+                        getString(R.string.import_ai_detail, courseCount,
+                                /* 协议与写入说明在资源内 */
+                                
+                                
+                                preview.meetingCount()),
+                        getString(R.string.import_ai_success_toast, courseCount));
             });
         });
         confirm.setTextColor(Color.WHITE);
-        confirm.setBackground(roundedBg(primaryActionFillHex(), 14));
-        confirm.setContentDescription(confirmText + "，确认后才会覆盖当前课表数据");
+        confirm.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
+        confirm.setContentDescription(confirmText + getString(R.string.import_confirm_cd_overwrite));
         panel.addView(confirm);
-        panel.addView(dialogAction("取消", v -> {
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> {
             confirmation.cancel();
             dialog.dismiss();
         }));
@@ -1032,20 +1053,20 @@ public class MainActivity extends Activity {
         dialog.setCanceledOnTouchOutside(false);
         dialog.setOnCancelListener(ignored -> confirmation.cancel());
         dialog.setOnDismissListener(ignored -> confirmation.cancel());
-        dialog.setContentView(glassDialogContent(scroll, panel, 22));
+        dialog.setContentView(glassDialogContent(scroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private void addScheduleImportCandidatePreview(
             LinearLayout panel, ScheduleImportPreviewData preview) {
-        panel.addView(importReviewHeading("课程候选"));
-        panel.addView(importReviewLine("识别到",
-                preview.regularCourseCount() + " 门普通课程 · "
-                        + preview.practiceCourseCount() + " 门实践课程",
+        panel.addView(importReviewHeading(getString(R.string.import_candidates_heading)));
+        panel.addView(importReviewLine(getString(R.string.import_review_recognized),
+                getString(R.string.import_candidates_count, preview.regularCourseCount(),
+                        preview.practiceCourseCount()),
                 false));
         if (preview.semester != null && !preview.semester.trim().isEmpty()) {
-            panel.addView(importReviewLine("识别学期", preview.semester, false));
+            panel.addView(importReviewLine(getString(R.string.import_review_semester), preview.semester, false));
         }
 
         for (StructuredCourse course : preview.courses) {
@@ -1055,9 +1076,9 @@ public class MainActivity extends Activity {
         }
 
         if (!preview.warnings.isEmpty()) {
-            panel.addView(importReviewHeading("需要检查"));
+            panel.addView(importReviewHeading(getString(R.string.import_review_needs_check)));
             for (String warning : preview.warnings) {
-                panel.addView(importReviewLine("提示", warning, true));
+                panel.addView(importReviewLine(getString(R.string.import_review_hint), warning, true));
             }
         }
     }
@@ -1067,8 +1088,8 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(roundedBg(groupColorHex(), 14));
-        card.setContentDescription("待导入课程，" + course.name);
+        card.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_CARD));
+        card.setContentDescription(getString(R.string.import_course_cd, course.name));
 
         TextView name = new TextView(this);
         name.setText(course.name);
@@ -1079,10 +1100,10 @@ public class MainActivity extends Activity {
         card.addView(name);
 
         if (!course.teacher.trim().isEmpty()) {
-            card.addView(scheduleImportDetail("教师：" + course.teacher, false));
+            card.addView(scheduleImportDetail(getString(R.string.import_detail_teacher, course.teacher), false));
         }
         if (!course.credit.trim().isEmpty()) {
-            card.addView(scheduleImportDetail("学分：" + course.credit, false));
+            card.addView(scheduleImportDetail(getString(R.string.import_detail_credit, course.credit), false));
         }
         for (ScheduleImportPreviewData.Detail detail : preview.detailsFor(course)) {
             String note = detail.note.isEmpty() ? "" : "（" + detail.note + "）";
@@ -1120,10 +1141,10 @@ public class MainActivity extends Activity {
     private String scheduleImportMeetingText(StructuredCourse course,
                                              CourseMeeting meeting) {
         String weeks = meeting.weekRule == null
-                ? "周次待确认" : meeting.weekRule.displayText();
+                ? getString(R.string.editor_week_unknown_full) : meeting.weekRule.displayText();
         if (course.courseType == CourseType.PRACTICE
                 && meeting.timeMode == CourseTimeMode.NONE) {
-            return weeks + "\n无固定上课时间";
+            return weeks + "\n" + getString(R.string.import_no_fixed_time);
         }
 
         StringBuilder text = new StringBuilder();
@@ -1135,7 +1156,7 @@ public class MainActivity extends Activity {
                     .append(twoDigits(meeting.endMinuteOfDay % 60));
         } else {
             text.append(meeting.startSection).append('-')
-                    .append(meeting.endSection).append("节");
+                    .append(meeting.endSection).append(getString(R.string.import_section_suffix));
         }
         text.append('\n').append(weeks);
         if (!meeting.location.trim().isEmpty()) {
@@ -1149,7 +1170,7 @@ public class MainActivity extends Activity {
                                             String diagnosticsText,
                                             String successMessage) {
         if (importedCourses == null || importedCourses.isEmpty()) {
-            Toast.makeText(this, "没有识别到可导入课程", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.import_ai_no_courses), Toast.LENGTH_LONG).show();
             return;
         }
         replaceCanonicalCourses(importedCourses);
@@ -1185,10 +1206,10 @@ public class MainActivity extends Activity {
 
     private void showImportOverwriteDialog(Uri uri) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("导入到当前课表？");
+        LinearLayout panel = dialogPanel(getString(R.string.import_overwrite_title));
         final SchoolParserModel[] importParserModel = {selectedParserModel};
         TextView message = new TextView(this);
-        message.setText("先解析 PDF 并检查课程、缺失字段和冲突；只有在检查页再次确认后，才会覆盖当前课表。请先选择学校解析模型。");
+        message.setText(getString(R.string.import_overwrite_message));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -1198,46 +1219,46 @@ public class MainActivity extends Activity {
         panel.addView(message, messageParams);
         final TextView[] parserChoice = new TextView[1];
         parserChoice[0] = dialogAction(importParserModel[0] == null
-                ? "选择学校解析模型"
-                : "学校：" + importParserModel[0].label, v -> {
+                ? getString(R.string.import_pick_model)
+                : getString(R.string.import_school_value, importParserModel[0].label), v -> {
             Dialog chooser = new Dialog(this);
-            LinearLayout chooserPanel = dialogPanel("选择学校");
+            LinearLayout chooserPanel = dialogPanel(getString(R.string.import_school_chooser_title));
             for (SchoolParserModel model : SchoolParserModel.values()) {
                 chooserPanel.addView(dialogAction(model.label, item -> {
                     importParserModel[0] = model;
-                    parserChoice[0].setText("学校：" + model.label);
+                    parserChoice[0].setText(getString(R.string.import_school_value, model.label));
                     chooser.dismiss();
                 }));
             }
-            chooser.setContentView(glassDialogContent(chooserPanel, 22));
+            chooser.setContentView(glassDialogContent(chooserPanel, DesignTokens.RADIUS_DIALOG_SHEET));
             chooser.show();
             transparentDialog(chooser);
         });
         panel.addView(parserChoice[0]);
-        TextView cover = dialogAction("解析并检查", v -> {
+        TextView cover = dialogAction(getString(R.string.import_parse_and_check), v -> {
             if (importParserModel[0] == null) {
-                Toast.makeText(this, "请先选择学校解析模型", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.import_error_pick_model), Toast.LENGTH_SHORT).show();
                 return;
             }
             dialog.dismiss();
             loadPdf(uri, new ImportDestination(activeScheduleId, scheduleName,
                     importParserModel[0], false, courses));
         });
-        TextView create = dialogAction("新建课表并检查", v -> {
+        TextView create = dialogAction(getString(R.string.import_create_and_check), v -> {
             if (importParserModel[0] == null) {
-                Toast.makeText(this, "新课表必须先选择学校解析模型", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.import_error_create_pick_model), Toast.LENGTH_SHORT).show();
                 return;
             }
             dialog.dismiss();
             showImportNameDialog(uri, true, importParserModel[0]);
         });
-        TextView cancel = dialogAction("取消", v -> {
+        TextView cancel = dialogAction(getString(R.string.editor_action_cancel), v -> {
             dialog.dismiss();
         });
         panel.addView(cover);
         panel.addView(create);
         panel.addView(cancel);
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -1249,7 +1270,7 @@ public class MainActivity extends Activity {
         item.setTextSize(17);
         item.setTypeface(Typeface.DEFAULT_BOLD);
         item.setTextColor(inkColor());
-        item.setBackground(roundedBg(cardColorHex(), 14));
+        item.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         item.setOnClickListener(listener);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
@@ -1260,18 +1281,18 @@ public class MainActivity extends Activity {
 
     private void showImportNameDialog(Uri uri, boolean createNewSchedule, SchoolParserModel parserModel) {
         if (parserModel == null) {
-            Toast.makeText(this, "新课表必须先选择学校解析模型", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.import_error_create_pick_model), Toast.LENGTH_SHORT).show();
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("设置课表名称");
-        EditText nameInput = input("课表名称", createNewSchedule ? nextScheduleName()
+        LinearLayout panel = dialogPanel(getString(R.string.import_name_title));
+        EditText nameInput = input(getString(R.string.settings_row_schedule_name), createNewSchedule ? nextScheduleName()
                 : scheduleName.length() == 0 ? nextScheduleName() : scheduleName);
         panel.addView(nameInput);
-        TextView startImport = dialogAction("开始解析并检查", v -> {
+        TextView startImport = dialogAction(getString(R.string.import_start_parse), v -> {
             String name = nameInput.getText().toString().trim();
             if (name.length() == 0) {
-                Toast.makeText(this, "课表名称不能为空", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.import_error_name_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
             dialog.dismiss();
@@ -1280,9 +1301,9 @@ public class MainActivity extends Activity {
                     createNewSchedule ? Collections.<Course>emptyList() : courses));
         });
         startImport.setTextColor(Color.WHITE);
-        startImport.setBackground(roundedBg(primaryActionFillHex(), 14));
+        startImport.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         panel.addView(startImport);
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -1294,7 +1315,7 @@ public class MainActivity extends Activity {
 
     private void loadPdf(Uri uri, ImportDestination destination) {
         if (pdfImportInProgress) {
-            Toast.makeText(this, "课表正在解析，请稍候", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.import_parsing_busy), Toast.LENGTH_SHORT).show();
             return;
         }
         pdfImportInProgress = true;
@@ -1303,7 +1324,7 @@ public class MainActivity extends Activity {
                     new PdfImportCoordinator.Callback() {
             @Override
             public void onImportStarted(String displayName) {
-                setHeader(displayName, "正在解析课表...");
+                setHeader(displayName, getString(R.string.import_parsing_header));
             }
 
             @Override
@@ -1321,20 +1342,20 @@ public class MainActivity extends Activity {
             public void onImportFailed(Exception exception) {
                 pdfImportInProgress = false;
                 String reason = exception.getMessage() == null
-                        ? "未知原因" : exception.getMessage();
-                lastParseDiagnosticsSummary = "解析失败";
-                lastParseDiagnosticsText = "解析状态：失败\n原因：" + reason;
-                setHeader(currentTitle, "导入失败");
-                Toast.makeText(MainActivity.this, "PDF解析失败：" + reason,
+                        ? getString(R.string.import_reason_unknown) : exception.getMessage();
+                lastParseDiagnosticsSummary = getString(R.string.import_diag_failed);
+                lastParseDiagnosticsText = getString(R.string.import_diag_failure, reason);
+                setHeader(currentTitle, getString(R.string.import_failed_header));
+                Toast.makeText(MainActivity.this, getString(R.string.import_pdf_failed, reason),
                         Toast.LENGTH_LONG).show();
             }
             });
         } catch (RuntimeException exception) {
             pdfImportInProgress = false;
             String reason = exception.getMessage() == null
-                    ? "未知原因" : exception.getMessage();
-            setHeader(currentTitle, "导入失败");
-            Toast.makeText(this, "无法启动 PDF 解析：" + reason,
+                    ? getString(R.string.import_reason_unknown) : exception.getMessage();
+            setHeader(currentTitle, getString(R.string.import_failed_header));
+            Toast.makeText(this, getString(R.string.import_launch_failed, reason),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -1349,12 +1370,12 @@ public class MainActivity extends Activity {
                 result, comparisonCourses, importedSemesterWeeks);
 
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("检查导入结果");
+        LinearLayout panel = dialogPanel(getString(R.string.import_review_title));
         TextView summary = new TextView(this);
         summary.setText(review.canImport()
-                ? "识别到 " + review.courseCount + " 门课程 · "
-                        + review.meetingCount + " 条上课安排"
-                : "没有识别到可导入的课程");
+                ? getString(R.string.import_review_count, review.courseCount,
+                        review.meetingCount)
+                : getString(R.string.import_review_empty));
         summary.setTextColor(inkColor());
         summary.setTextSize(18);
         summary.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1365,73 +1386,73 @@ public class MainActivity extends Activity {
         String importedSemester = result.semesterName.length() > 0
                 ? result.semesterName
                 : SemesterStartDateDefaults.resolveSemesterName(Calendar.getInstance());
-        panel.addView(importReviewLine("学校", destination.parserModel.label, false));
-        panel.addView(importReviewLine("学期", importedSemester, false));
-        panel.addView(importReviewLine("PDF 页数", Math.max(0, result.pageCount) + " 页", false));
-        panel.addView(importReviewLine("开学日期", "确认后设置", false));
+        panel.addView(importReviewLine(getString(R.string.import_review_label_school), destination.parserModel.label, false));
+        panel.addView(importReviewLine(getString(R.string.import_review_label_semester), importedSemester, false));
+        panel.addView(importReviewLine(getString(R.string.import_review_pages), getString(R.string.import_pages_value, Math.max(0, result.pageCount)), false));
+        panel.addView(importReviewLine(getString(R.string.import_review_start_date), getString(R.string.import_review_date_pending), false));
 
         panel.addView(importReviewHeading(destination.createNewSchedule
-                ? "将创建新课表"
-                : replacingExisting ? "与当前课表对比" : "将导入当前课表"));
-        panel.addView(importReviewLine("新增安排", review.addedCount + " 条", false));
-        panel.addView(importReviewLine("修改安排", review.modifiedCount + " 条",
+                ? getString(R.string.import_review_destination_new)
+                : replacingExisting ? getString(R.string.import_review_destination_compare) : getString(R.string.import_review_destination_current)));
+        panel.addView(importReviewLine(getString(R.string.import_review_added), getString(R.string.import_count_value, review.addedCount), false));
+        panel.addView(importReviewLine(getString(R.string.import_review_modified), getString(R.string.import_count_value, review.modifiedCount),
                 review.modifiedCount > 0));
-        panel.addView(importReviewLine("移除安排", review.removedCount + " 条",
+        panel.addView(importReviewLine(getString(R.string.import_review_removed), getString(R.string.import_count_value, review.removedCount),
                 review.removedCount > 0));
 
-        panel.addView(importReviewHeading("需要检查"));
+        panel.addView(importReviewHeading(getString(R.string.import_review_needs_check)));
         if (!review.hasIssues()) {
-            panel.addView(importReviewLine("检查结果", "未发现明显问题", false));
+            panel.addView(importReviewLine(getString(R.string.import_review_check_result), getString(R.string.import_review_no_issues), false));
         } else {
             if (review.errorCount > 0) {
-                panel.addView(importReviewLine("解析错误", review.errorCount + " 条", true));
+                panel.addView(importReviewLine(getString(R.string.import_review_parse_errors), getString(R.string.import_count_value, review.errorCount), true));
             }
             if (review.warningCount > 0) {
-                panel.addView(importReviewLine("解析提示", review.warningCount + " 条", true));
+                panel.addView(importReviewLine(getString(R.string.import_review_warnings), getString(R.string.import_count_value, review.warningCount), true));
             }
             if (review.unknownWeekCount > 0) {
-                panel.addView(importReviewLine("周次不确定",
-                        review.unknownWeekCount + " 条安排", true));
+                panel.addView(importReviewLine(getString(R.string.import_review_unknown_weeks),
+                        getString(R.string.import_arrangements_value, review.unknownWeekCount), true));
             }
             if (review.missingLocationCount > 0) {
-                panel.addView(importReviewLine("缺少教室",
-                        review.missingLocationCount + " 条安排", true));
+                panel.addView(importReviewLine(getString(R.string.import_review_missing_location),
+                        getString(R.string.import_arrangements_value, review.missingLocationCount), true));
             }
             if (review.missingTeacherCount > 0) {
-                panel.addView(importReviewLine("缺少教师",
-                        review.missingTeacherCount + " 条安排", true));
+                panel.addView(importReviewLine(getString(R.string.import_review_missing_teacher),
+                        getString(R.string.import_arrangements_value, review.missingTeacherCount), true));
             }
             if (review.conflictCount > 0) {
-                panel.addView(importReviewLine("课程冲突",
-                        review.conflictCount + " 组", true));
+                panel.addView(importReviewLine(getString(R.string.import_review_conflicts),
+                        getString(R.string.import_conflict_value, review.conflictCount), true));
             }
         }
 
         if (lastParseDiagnosticsText.length() > 0) {
-            panel.addView(dialogAction("查看解析诊断", v -> showParseDiagnosticsDialog()));
+            panel.addView(dialogAction(getString(R.string.import_review_diagnostics), v -> showParseDiagnosticsDialog()));
         }
         if (review.canImport()) {
             String confirmText = destination.createNewSchedule
-                    ? "确认并创建新课表"
-                    : replacingExisting ? "确认并覆盖当前课表" : "确认导入课表";
+                    ? getString(R.string.import_confirm_new)
+                    : replacingExisting ? getString(R.string.import_confirm_overwrite) : getString(R.string.import_confirm_import_pdf);
             TextView confirm = dialogAction(confirmText, v -> {
                 dialog.dismiss();
                 applyReviewedImport(result, destination, importedSemesterWeeks);
             });
             confirm.setTextColor(Color.WHITE);
-            confirm.setBackground(roundedBg(primaryActionFillHex(), 14));
-            confirm.setContentDescription(confirmText + "，此操作将在确认后写入课程数据");
+            confirm.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
+            confirm.setContentDescription(confirmText + getString(R.string.import_confirm_cd_review));
             panel.addView(confirm);
         } else {
             TextView blocked = new TextView(this);
-            blocked.setText("当前课表不会发生任何变更。请查看解析诊断后重新选择 PDF。");
+            blocked.setText(getString(R.string.import_blocked_message));
             blocked.setTextColor(mutedColor());
             blocked.setTextSize(14);
             blocked.setLineSpacing(dp(3), 1f);
             blocked.setPadding(0, dp(8), 0, dp(4));
             panel.addView(blocked);
         }
-        panel.addView(dialogAction(review.canImport() ? "取消导入" : "关闭",
+        panel.addView(dialogAction(review.canImport() ? getString(R.string.import_cancel_import) : getString(R.string.import_close),
                 v -> dialog.dismiss()));
 
         ScrollView reviewScroll = new ScrollView(this);
@@ -1441,7 +1462,7 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
         dialog.setCanceledOnTouchOutside(false);
-        dialog.setContentView(glassDialogContent(reviewScroll, panel, 22));
+        dialog.setContentView(glassDialogContent(reviewScroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -1467,7 +1488,7 @@ public class MainActivity extends Activity {
         line.setLineSpacing(dp(2), 1f);
         line.setPadding(0, dp(3), 0, dp(3));
         line.setContentDescription(needsAttention
-                ? "需要检查，" + label + "，" + value : label + "，" + value);
+                ? getString(R.string.review_needs_check_line, label, value) : getString(R.string.review_line, label, value));
         return line;
     }
 
@@ -1476,7 +1497,7 @@ public class MainActivity extends Activity {
                                      int importedSemesterWeeks) {
         if (!result.courses.isEmpty() && result.structuredCourses.isEmpty()) {
             Toast.makeText(this,
-                    "结构化课程数据不可用，已取消写入以保护当前课表", Toast.LENGTH_LONG).show();
+                    getString(R.string.structured_data_missing), Toast.LENGTH_LONG).show();
             return;
         }
         if (destination.createNewSchedule) {
@@ -1512,12 +1533,12 @@ public class MainActivity extends Activity {
     private String parseSubtitle(ParseResult result) {
         if (result.courses.isEmpty()) {
             String reason = firstParseMessage(result);
-            return reason.length() == 0 ? "未识别到课程，请确认PDF是教务系统课表" : reason;
+            return reason.length() == 0 ? getString(R.string.parse_no_courses_hint) : reason;
         }
         if (result.errors.isEmpty()) {
-            return "已导入 " + result.courses.size() + " 门课程 · " + result.pageCount + " 页";
+            return getString(R.string.parse_ok_summary, result.courses.size(), result.pageCount);
         }
-        return "已导入 " + result.courses.size() + " 门课程 · 有 " + result.errors.size() + " 条提示";
+        return getString(R.string.parse_ok_summary_warnings, result.courses.size(), result.errors.size());
     }
 
     private String parseToast(ParseResult result) {
@@ -1526,9 +1547,9 @@ public class MainActivity extends Activity {
             return message;
         }
         if (!result.success) {
-            return "解析失败，请确认PDF是文字型教务课表";
+            return getString(R.string.parse_failed_hint);
         }
-        return "部分字段未识别完整，可继续查看课表";
+        return getString(R.string.parse_partial_hint);
     }
 
     private String firstParseMessage(ParseResult result) {
@@ -1607,7 +1628,7 @@ public class MainActivity extends Activity {
     private void handleCourseDragDrop(Course course, int day, int section) {
         if (course == null || !StableMeetingId.isValid(course.meetingId)
                 || !StableCourseId.isValid(course.structuredCourseId)) {
-            Toast.makeText(this, "这门课程无法拖动调整", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.drag_not_allowed), Toast.LENGTH_SHORT).show();
             return;
         }
         int courseIndex = -1;
@@ -1631,7 +1652,7 @@ public class MainActivity extends Activity {
             }
         }
         if (courseIndex < 0 || meetingIndex < 0) {
-            Toast.makeText(this, "课程数据已变化，请重试", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.drag_stale_retry), Toast.LENGTH_SHORT).show();
             return;
         }
         CourseMeeting original = structuredCourses.get(courseIndex)
@@ -1656,7 +1677,7 @@ public class MainActivity extends Activity {
         List<StructuredCourse> previous = new ArrayList<>(structuredCourses);
         if (!CourseEditManager.updateMeeting(structuredCourses,
                 course.structuredCourseId, original.id, edited)) {
-            Toast.makeText(this, "移动课程失败，请重试", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.drag_move_failed), Toast.LENGTH_SHORT).show();
             return;
         }
         refreshCourseView();
@@ -1667,7 +1688,7 @@ public class MainActivity extends Activity {
         updateConflictSummary();
         showCourseSavedUndo(previous);
         if (conflict) {
-            Toast.makeText(this, "该位置与其他课程时间重叠", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.drag_overlap_warning), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1754,7 +1775,7 @@ public class MainActivity extends Activity {
 
     /** 右侧实践面板是否需要至少 150dp 空间。 */
     private boolean hasPracticePanelSpace() {
-        return isLandscapeTablet() && rightPanelSpace() >= dp(150);
+        return isLandscapeTablet() && rightPanelSpace() >= dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH);
     }
 
     private int practicePanelWidth() {
@@ -1762,9 +1783,9 @@ public class MainActivity extends Activity {
             // 与今日概览面板同宽。
             return todayOverviewPanel.getWidth() > 0
                     ? todayOverviewPanel.getWidth()
-                    : Math.min(dp(440), rightPanelSpace());
+                    : Math.min(dp(DesignTokens.PANEL_MAX_WIDTH), rightPanelSpace());
         }
-        return Math.max(dp(150), Math.min(dp(210), rightPanelSpace()));
+        return Math.max(dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH), Math.min(dp(DesignTokens.TABLET_PRACTICE_MAX_WIDTH), rightPanelSpace()));
     }
 
     private List<Course> practiceCoursesForCurrentWeek() {
@@ -1801,7 +1822,7 @@ public class MainActivity extends Activity {
         practiceSidePanelContent.removeAllViews();
 
         TextView title = new TextView(this);
-        title.setText("本周实践");
+        title.setText(getString(R.string.board_practice_title));
         title.setTextColor(inkColor());
         title.setTextSize(14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1843,7 +1864,7 @@ public class MainActivity extends Activity {
         if (todayOverviewPanel == null) {
             return;
         }
-        boolean visible = isLandscapeTablet() && rightPanelSpace() >= dp(240)
+        boolean visible = isLandscapeTablet() && rightPanelSpace() >= dp(DesignTokens.TABLET_SEPARATE_TODAY_MIN)
                 && activeTab == 0
                 && (settingsPage == null
                 || settingsPage.getVisibility() != View.VISIBLE);
@@ -1853,7 +1874,7 @@ public class MainActivity extends Activity {
         }
         FrameLayout.LayoutParams params =
                 (FrameLayout.LayoutParams) todayOverviewPanel.getLayoutParams();
-        params.width = Math.min(dp(440), rightPanelSpace());
+        params.width = Math.min(dp(DesignTokens.PANEL_MAX_WIDTH), rightPanelSpace());
         // 与左侧顶栏顶部平齐。
         params.topMargin = statusBarHeight() + dp(8);
         params.rightMargin = dp(12);
@@ -1864,7 +1885,7 @@ public class MainActivity extends Activity {
     private View buildTodayOverviewPanel() {
         todayOverviewView.setLarge(true);
         // 毛玻璃容器（BackdropBlurView 按内容定尺寸）+ 大号今日概览内容。
-        FrameLayout host = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, 20), 20);
+        FrameLayout host = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -1889,7 +1910,7 @@ public class MainActivity extends Activity {
         if (planSidePanel == null) {
             return;
         }
-        boolean visible = isLandscapeTablet() && rightPanelSpace() >= dp(240)
+        boolean visible = isLandscapeTablet() && rightPanelSpace() >= dp(DesignTokens.TABLET_SEPARATE_TODAY_MIN)
                 && activeTab == 0
                 && (settingsPage == null
                 || settingsPage.getVisibility() != View.VISIBLE);
@@ -1905,14 +1926,14 @@ public class MainActivity extends Activity {
         // 内容层已有 8dp 水平 padding，这里与「本周实践」面板标题的缩进保持一致。
         header.setPadding(dp(6), dp(10), dp(6), dp(4));
         TextView title = new TextView(this);
-        title.setText("本周计划");
+        title.setText(getString(R.string.side_panel_plan_title));
         title.setTextColor(inkColor());
         title.setTextSize(14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         header.addView(title, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView manage = new TextView(this);
-        manage.setText("管理");
+        manage.setText(getString(R.string.common_manage));
         manage.setTextSize(13);
         manage.setTypeface(Typeface.DEFAULT_BOLD);
         manage.setTextColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
@@ -1935,7 +1956,7 @@ public class MainActivity extends Activity {
         });
         if (weekPlans.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("本周暂无计划，点「管理」新建");
+            empty.setText(getString(R.string.side_panel_plan_empty));
             empty.setTextColor(mutedColor());
             empty.setTextSize(13);
             empty.setGravity(Gravity.CENTER);
@@ -1992,7 +2013,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(8), dp(14), dp(8));
-        card.setBackground(roundedBg(cardColorHex(), 14));
+        card.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         card.setClickable(true);
         card.setFocusable(true);
         card.setOnClickListener(v -> new CourseDetailDialog(
@@ -2001,7 +2022,7 @@ public class MainActivity extends Activity {
 
         TextView name = new TextView(this);
         name.setText(course.name == null || course.name.trim().isEmpty()
-                ? "未命名实践" : course.name.trim());
+                ? getString(R.string.board_practice_unnamed) : course.name.trim());
         name.setTextColor(inkColor());
         name.setTextSize(14);
         name.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2010,12 +2031,12 @@ public class MainActivity extends Activity {
         card.addView(name);
 
         StringBuilder meta = new StringBuilder(course.isBannerOnlyCourse()
-                ? "集中实践" : courseTimeInlineText(course));
+                ? getString(R.string.board_practice_concentrated) : courseTimeInlineText(course));
         if (course.location != null && !course.location.trim().isEmpty()) {
             meta.append(" · ").append(course.location.trim());
         }
         if (course.teacher != null && !course.teacher.trim().isEmpty()) {
-            meta.append(" · 老师 ").append(course.teacher.trim());
+            meta.append(getString(R.string.practice_meta_teacher, course.teacher.trim()));
         }
         TextView metaView = new TextView(this);
         metaView.setText(meta.toString());
@@ -2046,10 +2067,10 @@ public class MainActivity extends Activity {
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("第 " + currentWeek + " 周课程冲突");
+        LinearLayout panel = dialogPanel(getString(R.string.conflict_week_title, currentWeek));
 
         TextView explanation = new TextView(this);
-        explanation.setText("以下课程在当前周的上课时间重叠。点击一组冲突，可选择要编辑的课程。");
+        explanation.setText(getString(R.string.conflict_explanation));
         explanation.setTextColor(mutedColor());
         explanation.setTextSize(14);
         explanation.setPadding(0, 0, 0, dp(8));
@@ -2074,8 +2095,8 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 Math.min(dp(360), Math.max(dp(80), Math.min(4, conflicts.size()) * dp(84))));
         panel.addView(scroll, scrollParams);
-        panel.addView(dialogAction("关闭", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.import_close), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -2100,17 +2121,17 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(76));
         params.setMargins(0, dp(5), 0, dp(5));
         item.setLayoutParams(params);
-        item.setContentDescription(firstName + "与" + secondName + "时间冲突，"
-                + dayText(conflict.day) + section + "，" + conflict.commonWeeksText()
-                + "，点击选择要编辑的课程");
+        item.setContentDescription(getString(R.string.conflict_item_cd, firstName, secondName,
+                dayText(conflict.day) + section + "，" + conflict.commonWeeksText()
+                ));
         return item;
     }
 
     private void showConflictCourseChoice(Dialog conflictDialog,
                                           CourseConflictDetector.Conflict conflict) {
         Dialog chooser = new Dialog(this);
-        LinearLayout panel = dialogPanel("选择要编辑的课程");
-        TextView firstAction = dialogAction("编辑：" + courseChoiceText(conflict.first), v -> {
+        LinearLayout panel = dialogPanel(getString(R.string.conflict_edit_prefix));
+        TextView firstAction = dialogAction(getString(R.string.conflict_edit_prefix, courseChoiceText(conflict.first)), v -> {
             chooser.dismiss();
             conflictDialog.dismiss();
             showCourseEditor(conflict.first);
@@ -2118,7 +2139,7 @@ public class MainActivity extends Activity {
         firstAction.setSingleLine(true);
         firstAction.setEllipsize(TextUtils.TruncateAt.END);
         panel.addView(firstAction);
-        TextView secondAction = dialogAction("编辑：" + courseChoiceText(conflict.second), v -> {
+        TextView secondAction = dialogAction(getString(R.string.conflict_edit_prefix, courseChoiceText(conflict.second)), v -> {
             chooser.dismiss();
             conflictDialog.dismiss();
             showCourseEditor(conflict.second);
@@ -2126,8 +2147,8 @@ public class MainActivity extends Activity {
         secondAction.setSingleLine(true);
         secondAction.setEllipsize(TextUtils.TruncateAt.END);
         panel.addView(secondAction);
-        panel.addView(dialogAction("取消", v -> chooser.dismiss()));
-        chooser.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> chooser.dismiss()));
+        chooser.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         chooser.show();
         transparentDialog(chooser);
     }
@@ -2141,14 +2162,15 @@ public class MainActivity extends Activity {
 
     private String safeCourseName(Course course) {
         if (course == null || course.name == null || course.name.trim().isEmpty()) {
-            return "未命名课程";
+            return getString(R.string.course_unnamed);
         }
         return course.name.trim();
     }
 
     private String dayText(int day) {
-        String[] days = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
-        return day >= 0 && day < days.length ? days[day] : "日期待定";
+        
+        return day >= 0 && day < WeekdayLabels.count() ? WeekdayLabels.label(this, day)
+                : getString(R.string.weekday_undetermined);
     }
 
     private int scheduleOverlayTopInset(boolean tablet) {
@@ -2174,7 +2196,7 @@ public class MainActivity extends Activity {
         }
 
         TextView titleView = new TextView(this);
-        titleView.setText("还没有课程");
+        titleView.setText(getString(R.string.empty_courses_title));
         titleView.setTextColor(inkColor());
         titleView.setTextSize(22);
         titleView.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2182,7 +2204,7 @@ public class MainActivity extends Activity {
         card.addView(titleView);
 
         TextView message = new TextView(this);
-        message.setText("选择学校后导入教务系统 PDF，Polaris 会解析课程，并在写入前让你检查结果。");
+        message.setText(getString(R.string.empty_courses_message));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setGravity(Gravity.CENTER);
@@ -2200,7 +2222,7 @@ public class MainActivity extends Activity {
         importButton.setTypeface(Typeface.DEFAULT_BOLD);
         importButton.setGravity(Gravity.CENTER);
         importButton.setMinHeight(dp(52));
-        importButton.setBackground(roundedBg(primaryActionFillHex(), 15));
+        importButton.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_SMALL));
         importButton.setOnClickListener(v -> openPdfPicker());
         attachPressFeedback(importButton);
         LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(
@@ -2221,9 +2243,9 @@ public class MainActivity extends Activity {
 
     private void showParserModelDialog(Runnable onSelected) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("选择学校");
+        LinearLayout panel = dialogPanel(getString(R.string.import_school_chooser_title));
         TextView message = new TextView(this);
-        message.setText("选择匹配的学校解析格式，Polaris 会按对应的课表格式识别课程和上课时间；也可以自定义学校名称。");
+        message.setText(getString(R.string.school_picker_message));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -2243,23 +2265,23 @@ public class MainActivity extends Activity {
                 }
             }));
         }
-        panel.addView(dialogAction("自定义学校…", v -> {
+        panel.addView(dialogAction(getString(R.string.school_custom_action), v -> {
             dialog.dismiss();
             showCustomSchoolDialog(onSelected);
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private void showCustomSchoolDialog(Runnable onSelected) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("自定义学校");
-        EditText schoolInput = input("输入学校名称", "");
+        LinearLayout panel = dialogPanel(getString(R.string.school_custom_title));
+        EditText schoolInput = input(getString(R.string.school_custom_hint_input), "");
         schoolInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(48)});
         panel.addView(schoolInput);
         TextView hint = new TextView(this);
-        hint.setText("输入学校名称后，接着设置这所学校的上课时间（节次作息表）。导入 PDF 时仍需选择匹配的学校解析格式。");
+        hint.setText(getString(R.string.school_custom_hint));
         hint.setTextColor(mutedColor());
         hint.setTextSize(13);
         hint.setLineSpacing(dp(3), 1f);
@@ -2267,7 +2289,7 @@ public class MainActivity extends Activity {
         panel.addView(pageSaveButton(() -> {
             String value = schoolInput.getText().toString().trim();
             if (value.length() == 0) {
-                Toast.makeText(this, "学校名称不能为空", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.school_error_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
             selectedParserModel = null;
@@ -2279,7 +2301,7 @@ public class MainActivity extends Activity {
             refreshMyPage();
             showClassTimeTableEditor(onSelected);
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -2290,9 +2312,9 @@ public class MainActivity extends Activity {
 
     private void showClassTimeTableEditor(final Runnable onClosed) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("上课时间");
+        LinearLayout panel = dialogPanel(getString(R.string.classtime_title));
         TextView hint = new TextView(this);
-        hint.setText("按学校作息设置每节课的开始与结束时间；可先「填入示例」再修改，或直接「粘贴作息文本」。");
+        hint.setText(getString(R.string.classtime_hint));
         hint.setTextColor(mutedColor());
         hint.setTextSize(13);
         hint.setLineSpacing(dp(3), 1f);
@@ -2314,7 +2336,7 @@ public class MainActivity extends Activity {
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        TextView example = compactDialogAction("填入示例", v -> showChoiceDialog(v, "填入示例作息",
+        TextView example = compactDialogAction(getString(R.string.classtime_fill_example), v -> showChoiceDialog(v, getString(R.string.classtime_fill_example_title),
                 new String[]{SchoolParserModel.XUPT.label,
                         SchoolParserModel.XAUT.label, SchoolParserModel.HDU.label},
                 "", value -> {
@@ -2327,9 +2349,9 @@ public class MainActivity extends Activity {
                         }
                     }
                 }));
-        TextView paste = compactDialogAction("从文本粘贴", v ->
+        TextView paste = compactDialogAction(getString(R.string.classtime_paste_action), v ->
                 showClassTimePasteDialog(rows, rowsContainer, dialog, scroll));
-        TextView addRow = compactDialogAction("＋ 添加一节", v -> {
+        TextView addRow = compactDialogAction(getString(R.string.classtime_add_row), v -> {
             rows.add(nextClassTimeRow(rows));
             renderClassTimeRows(rowsContainer, rows, dialog, scroll, true);
         });
@@ -2347,12 +2369,12 @@ public class MainActivity extends Activity {
             dialog.dismiss();
             renderSchedule();
             refreshActiveSettingsPage();
-            Toast.makeText(this, "上课时间已保存并应用", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.classtime_saved_toast), Toast.LENGTH_SHORT).show();
         }));
         if (onClosed != null) {
             dialog.setOnDismissListener(ignored -> onClosed.run());
         }
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -2361,46 +2383,46 @@ public class MainActivity extends Activity {
                                           final LinearLayout rowsContainer,
                                           final Dialog owner, final ScrollView scroll) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("粘贴作息文本");
+        LinearLayout panel = dialogPanel(getString(R.string.classtime_paste_title));
         TextView hint = new TextView(this);
-        hint.setText("每行一个节次，格式：节次 开始-结束。例如：\n1 08:00-08:50\n2 08:55-09:45");
+        hint.setText(getString(R.string.classtime_paste_hint));
         hint.setTextColor(mutedColor());
         hint.setTextSize(13);
         hint.setLineSpacing(dp(3), 1f);
         panel.addView(hint);
 
         EditText textInput = new EditText(this);
-        textInput.setHint("粘贴学校作息表…");
+        textInput.setHint(getString(R.string.classtime_paste_input_hint));
         textInput.setHintTextColor(mutedColor());
         textInput.setTextColor(inkColor());
         textInput.setTextSize(15);
         textInput.setGravity(Gravity.TOP | Gravity.START);
         textInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        textInput.setBackground(roundedBg(cardColorHex(), 12));
+        textInput.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(150));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH));
         inputParams.topMargin = dp(8);
         panel.addView(textInput, inputParams);
 
-        TextView apply = dialogAction("解析并填入", v -> {
+        TextView apply = dialogAction(getString(R.string.classtime_parse_apply), v -> {
             List<int[]> parsed = parseClassTimeText(textInput.getText().toString());
             if (parsed.isEmpty()) {
                 Toast.makeText(this,
-                        "没有识别到节次时间行；每行格式如 1 08:00-08:50", Toast.LENGTH_LONG).show();
+                        getString(R.string.classtime_paste_no_rows), Toast.LENGTH_LONG).show();
                 return;
             }
             rows.clear();
             rows.addAll(parsed);
             renderClassTimeRows(rowsContainer, rows, owner, scroll, true);
             dialog.dismiss();
-            Toast.makeText(this, "已填入 " + parsed.size() + " 节课，可继续逐节修改",
+            Toast.makeText(this, getString(R.string.classtime_paste_done, parsed.size()),
                     Toast.LENGTH_SHORT).show();
         });
         apply.setTextColor(Color.WHITE);
-        apply.setBackground(roundedBg(primaryActionFillHex(), 14));
+        apply.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         panel.addView(apply);
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -2415,7 +2437,7 @@ public class MainActivity extends Activity {
             row.setGravity(Gravity.CENTER_VERTICAL);
 
             TextView label = new TextView(this);
-            label.setText("第" + (index + 1) + "节");
+            label.setText(getString(R.string.classtime_section_ordinal, index + 1));
             label.setTextColor(mutedColor());
             label.setTextSize(14);
             label.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2423,7 +2445,7 @@ public class MainActivity extends Activity {
             row.addView(label, new LinearLayout.LayoutParams(dp(54), dp(42)));
 
             TextView startPill = classTimePill(timeTextMinute(rows.get(index)[0]), v ->
-                    showTimeDialog("第" + (index + 1) + "节开始",
+                    showTimeDialog(getString(R.string.classtime_section_start_title, index + 1),
                             timeTextMinute(rows.get(index)[0]), value -> {
                                 rows.get(index)[0] = minutesFromTimeText(value);
                                 renderClassTimeRows(container, rows, owner, scroll, false);
@@ -2438,7 +2460,7 @@ public class MainActivity extends Activity {
             row.addView(dash, new LinearLayout.LayoutParams(dp(22), dp(42)));
 
             TextView endPill = classTimePill(timeTextMinute(rows.get(index)[1]), v ->
-                    showTimeDialog("第" + (index + 1) + "节结束",
+                    showTimeDialog(getString(R.string.classtime_section_end_title, index + 1),
                             timeTextMinute(rows.get(index)[1]), value -> {
                                 rows.get(index)[1] = minutesFromTimeText(value);
                                 renderClassTimeRows(container, rows, owner, scroll, false);
@@ -2474,7 +2496,7 @@ public class MainActivity extends Activity {
         pill.setTextSize(15);
         pill.setTypeface(Typeface.DEFAULT_BOLD);
         pill.setGravity(Gravity.CENTER);
-        pill.setBackground(roundedBg(groupColorHex(), 12));
+        pill.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_CHIP));
         pill.setOnClickListener(listener);
         return pill;
     }
@@ -2486,7 +2508,7 @@ public class MainActivity extends Activity {
         item.setTextSize(14);
         item.setTypeface(Typeface.DEFAULT_BOLD);
         item.setTextColor(inkColor());
-        item.setBackground(roundedBg(cardColorHex(), 12));
+        item.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
         item.setOnClickListener(listener);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1f);
         params.setMargins(dp(3), dp(8), dp(3), dp(4));
@@ -2594,14 +2616,14 @@ public class MainActivity extends Activity {
 
     private boolean validateClassTimeRows(List<int[]> rows) {
         if (rows.isEmpty()) {
-            Toast.makeText(this, "至少需要一节课", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.classtime_error_min_one), Toast.LENGTH_SHORT).show();
             return false;
         }
         boolean overlap = false;
         for (int i = 0; i < rows.size(); i++) {
             int[] row = rows.get(i);
             if (row[1] <= row[0]) {
-                Toast.makeText(this, "第" + (i + 1) + "节结束时间必须晚于开始时间",
+                Toast.makeText(this, getString(R.string.classtime_error_end_before_start, i + 1),
                         Toast.LENGTH_SHORT).show();
                 return false;
             }
@@ -2610,7 +2632,7 @@ public class MainActivity extends Activity {
             }
         }
         if (overlap) {
-            Toast.makeText(this, "部分节次时间重叠，已按输入保存，请核对",
+            Toast.makeText(this, getString(R.string.classtime_warn_overlap_saved),
                     Toast.LENGTH_LONG).show();
         }
         return true;
@@ -2635,10 +2657,10 @@ public class MainActivity extends Activity {
     private String classTimeTableSummary() {
         List<int[]> rows = loadClassTimeRows();
         if (rows.isEmpty()) {
-            return "未设置";
+            return getString(R.string.classtime_summary_unset);
         }
-        return rows.size() + " 节 · 第1节 "
-                + timeTextMinute(rows.get(0)[0]) + "–" + timeTextMinute(rows.get(0)[1]);
+        return getString(R.string.classtime_summary_value, rows.size(),
+                timeTextMinute(rows.get(0)[0]) + "–" + timeTextMinute(rows.get(0)[1]));
     }
 
     private boolean hasClassTimeTable(String value) {
@@ -2706,7 +2728,7 @@ public class MainActivity extends Activity {
         BackgroundImageCrop nextCrop = crop == null ? BackgroundImageCrop.full() : crop;
         if (scheduleBoard != null && !scheduleBoard.setBackgroundImage(nextBackgroundUri, nextCrop)) {
             scheduleBoard.setBackgroundImage(backgroundImageUri, backgroundImageCrop);
-            Toast.makeText(this, "无法读取所选图片，请重新选择", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.image_read_failed), Toast.LENGTH_LONG).show();
             return;
         }
         backgroundImageUri = nextBackgroundUri;
@@ -2731,23 +2753,23 @@ public class MainActivity extends Activity {
                     this, uri, Math.max(1, targetWidth), Math.max(1, targetHeight));
         } catch (Exception exception) {
             Log.w(TAG, "Unable to preview selected background", exception);
-            Toast.makeText(this, "无法预览所选图片，请重新选择", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.profile_preview_image_failed), Toast.LENGTH_LONG).show();
             return;
         } catch (OutOfMemoryError error) {
             Log.e(TAG, "Insufficient memory for background preview", error);
-            Toast.makeText(this, "图片尺寸过大，无法作为课表背景", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.profile_background_too_large), Toast.LENGTH_LONG).show();
             return;
         }
         if (previewBitmap == null) {
             Log.w(TAG, "Background preview decoder returned no drawable");
-            Toast.makeText(this, "无法预览所选图片，请重新选择", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.profile_preview_image_failed), Toast.LENGTH_LONG).show();
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("调整展示区域");
+        LinearLayout panel = dialogPanel(getString(R.string.profile_crop_area_title));
 
         TextView instruction = new TextView(this);
-        instruction.setText("单指拖动图片，双指缩放；白色框内将作为课表背景");
+        instruction.setText(getString(R.string.profile_crop_instruction));
         instruction.setTextColor(mutedColor());
         instruction.setTextSize(14);
         instruction.setGravity(Gravity.CENTER);
@@ -2759,7 +2781,7 @@ public class MainActivity extends Activity {
 
         float targetAspect = targetWidth / (float) Math.max(1, targetHeight);
         BackgroundCropView cropView = new BackgroundCropView(this, previewBitmap, targetAspect);
-        cropView.setBackground(roundedBg("#101827", 18));
+        cropView.setBackground(roundedBg("#101827", DesignTokens.RADIUS_LARGE));
         cropView.setClipToOutline(true);
         int previewHeight = Math.min(dp(420), Math.max(dp(200),
                 getResources().getDisplayMetrics().heightPixels - dp(260)));
@@ -2769,11 +2791,11 @@ public class MainActivity extends Activity {
         panel.addView(cropView, imageParams);
 
         Button use = new Button(this);
-        use.setText("应用此展示区域");
-        use.setContentDescription("应用当前背景展示区域");
+        use.setText(getString(R.string.profile_apply_area));
+        use.setContentDescription(getString(R.string.profile_apply_area_cd));
         use.setTextColor(Color.WHITE);
         use.setTypeface(Typeface.DEFAULT_BOLD);
-        use.setBackground(roundedBg(primaryActionFillHex(), 14));
+        use.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         use.setOnClickListener(v -> {
             BackgroundImageCrop selection = cropView.getCropSelection();
             dialog.dismiss();
@@ -2783,9 +2805,9 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
 
         Button chooseAgain = new Button(this);
-        chooseAgain.setText("重新选择");
+        chooseAgain.setText(getString(R.string.profile_choose_again));
         chooseAgain.setTextColor(inkColor());
-        chooseAgain.setBackground(roundedBg(cardColorHex(), 14));
+        chooseAgain.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         chooseAgain.setOnClickListener(v -> {
             dialog.dismiss();
             openBackgroundPicker();
@@ -2800,7 +2822,7 @@ public class MainActivity extends Activity {
         dialogScroll.setClipToPadding(false);
         dialogScroll.addView(panel, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
-        dialog.setContentView(glassDialogContent(dialogScroll, panel, 22));
+        dialog.setContentView(glassDialogContent(dialogScroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.setOnDismissListener(ignored -> cropView.releaseBitmap());
         dialog.show();
         transparentDialog(dialog);
@@ -2815,13 +2837,13 @@ public class MainActivity extends Activity {
 
         Dialog dialog = new Dialog(this);
         accountProfileDialog = dialog;
-        LinearLayout panel = dialogPanel("编辑账户资料");
+        LinearLayout panel = dialogPanel(getString(R.string.profile_editor_title));
 
         accountAvatarPreview = new CircleAvatarView(this);
         accountAvatarPreview.setProfile(accountName, draftAvatarImageUri, draftAvatarImageCrop);
         accountAvatarPreview.setPlaceholderColor(
                 isDarkModeActive() ? color("#31527D") : color("#172033"));
-        accountAvatarPreview.setContentDescription("选择并裁剪头像");
+        accountAvatarPreview.setContentDescription(getString(R.string.profile_choose_avatar_cd));
         accountAvatarPreview.setClickable(true);
         accountAvatarPreview.setFocusable(true);
         accountAvatarPreview.setOnClickListener(v -> openAvatarPicker());
@@ -2830,7 +2852,7 @@ public class MainActivity extends Activity {
         panel.addView(accountAvatarPreview, avatarParams);
 
         TextView avatarHint = new TextView(this);
-        avatarHint.setText("点击头像可从相册选择并裁剪");
+        avatarHint.setText(getString(R.string.profile_avatar_hint));
         avatarHint.setTextColor(mutedColor());
         avatarHint.setTextSize(13);
         avatarHint.setGravity(Gravity.CENTER);
@@ -2839,15 +2861,15 @@ public class MainActivity extends Activity {
         hintParams.bottomMargin = dp(12);
         panel.addView(avatarHint, hintParams);
 
-        accountNameInput = input("账户名称", accountName);
+        accountNameInput = input(getString(R.string.profile_name_hint), accountName);
         accountNameInput.setSingleLine(true);
         accountNameInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(24)});
         panel.addView(accountNameInput);
 
         Button chooseAvatar = new Button(this);
-        chooseAvatar.setText("从相册选择头像");
+        chooseAvatar.setText(getString(R.string.profile_choose_avatar));
         chooseAvatar.setTextColor(inkColor());
-        chooseAvatar.setBackground(roundedBg(cardColorHex(), 14));
+        chooseAvatar.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         chooseAvatar.setOnClickListener(v -> openAvatarPicker());
         LinearLayout.LayoutParams chooseParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
@@ -2857,7 +2879,7 @@ public class MainActivity extends Activity {
         panel.addView(pageSaveButton(() -> saveAccountProfile(dialog)));
 
         Button cancel = new Button(this);
-        cancel.setText("取消");
+        cancel.setText(getString(R.string.editor_action_cancel));
         cancel.setTextColor(mutedColor());
         cancel.setBackgroundColor(Color.TRANSPARENT);
         cancel.setOnClickListener(v -> dialog.dismiss());
@@ -2873,7 +2895,7 @@ public class MainActivity extends Activity {
                 accountAvatarPreview = null;
             }
         });
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -2891,23 +2913,23 @@ public class MainActivity extends Activity {
             previewBitmap = BackgroundImageLoader.decode(this, uri, dp(640), dp(640));
         } catch (Exception exception) {
             Log.w(TAG, "Unable to preview selected avatar", exception);
-            Toast.makeText(this, "无法预览所选头像，请重新选择", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.profile_avatar_preview_failed), Toast.LENGTH_LONG).show();
             return;
         } catch (OutOfMemoryError error) {
             Log.e(TAG, "Insufficient memory for avatar preview", error);
-            Toast.makeText(this, "图片尺寸过大，无法设置为头像", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.profile_avatar_too_large), Toast.LENGTH_LONG).show();
             return;
         }
         if (previewBitmap == null) {
-            Toast.makeText(this, "无法预览所选头像，请重新选择", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.profile_avatar_preview_failed), Toast.LENGTH_LONG).show();
             return;
         }
 
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("裁剪头像");
+        LinearLayout panel = dialogPanel(getString(R.string.avatar_crop_title));
 
         TextView instruction = new TextView(this);
-        instruction.setText("单指拖动，双指缩放；圆形区域将作为头像");
+        instruction.setText(getString(R.string.avatar_crop_instruction));
         instruction.setTextColor(mutedColor());
         instruction.setTextSize(14);
         instruction.setGravity(Gravity.CENTER);
@@ -2917,8 +2939,8 @@ public class MainActivity extends Activity {
         panel.addView(instruction, instructionParams);
 
         BackgroundCropView cropView = new BackgroundCropView(this, previewBitmap, 1f, true);
-        cropView.setContentDescription("头像裁剪区域，可单指拖动、双指缩放");
-        cropView.setBackground(roundedBg("#101827", 18));
+        cropView.setContentDescription(getString(R.string.avatar_crop_cd));
+        cropView.setBackground(roundedBg("#101827", DesignTokens.RADIUS_LARGE));
         cropView.setClipToOutline(true);
         LinearLayout.LayoutParams cropParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(310));
@@ -2926,10 +2948,10 @@ public class MainActivity extends Activity {
         panel.addView(cropView, cropParams);
 
         Button use = new Button(this);
-        use.setText("使用此头像");
+        use.setText(getString(R.string.avatar_use));
         use.setTextColor(Color.WHITE);
         use.setTypeface(Typeface.DEFAULT_BOLD);
-        use.setBackground(roundedBg(primaryActionFillHex(), 14));
+        use.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         use.setOnClickListener(v -> {
             try {
                 getContentResolver().takePersistableUriPermission(
@@ -2951,7 +2973,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
 
         Button cancel = new Button(this);
-        cancel.setText("取消");
+        cancel.setText(getString(R.string.editor_action_cancel));
         cancel.setTextColor(mutedColor());
         cancel.setBackgroundColor(Color.TRANSPARENT);
         cancel.setOnClickListener(v -> dialog.dismiss());
@@ -2966,7 +2988,7 @@ public class MainActivity extends Activity {
         dialogScroll.addView(panel, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         dialog.setOnDismissListener(ignored -> cropView.releaseBitmap());
-        dialog.setContentView(glassDialogContent(dialogScroll, panel, 22));
+        dialog.setContentView(glassDialogContent(dialogScroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -2975,7 +2997,7 @@ public class MainActivity extends Activity {
         String nextName = accountNameInput == null
                 ? accountName : accountNameInput.getText().toString().trim();
         if (nextName.length() == 0) {
-            Toast.makeText(this, "账户名称不能为空", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.profile_name_empty), Toast.LENGTH_SHORT).show();
             return;
         }
         accountName = nextName;
@@ -2993,7 +3015,7 @@ public class MainActivity extends Activity {
 
         dialog.dismiss();
         refreshMyPage();
-        Toast.makeText(this, "账户资料已保存", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.profile_saved), Toast.LENGTH_SHORT).show();
     }
 
     private Button transparentTopButton(String text, View.OnClickListener listener) {
@@ -3005,7 +3027,7 @@ public class MainActivity extends Activity {
         button.setOnClickListener(listener);
         button.setOnTouchListener((view, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                view.setBackground(roundedBg(pressColorHex(), 15));
+                view.setBackground(roundedBg(pressColorHex(), DesignTokens.RADIUS_SMALL));
                 view.animate().scaleX(0.92f).scaleY(0.92f).setDuration(70).start();
             } else if (event.getAction() == MotionEvent.ACTION_UP
                     || event.getAction() == MotionEvent.ACTION_CANCEL) {
@@ -3030,7 +3052,7 @@ public class MainActivity extends Activity {
         action.setGravity(Gravity.CENTER);
         action.setPadding(dp(12), 0, dp(12), 0);
         action.setMinHeight(dp(40));
-        action.setBackground(roundedBg(cardColorHex(), 14));
+        action.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         action.setOnClickListener(listener);
         attachPressFeedback(action);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -3161,7 +3183,7 @@ public class MainActivity extends Activity {
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(18), 0, dp(8), 0);
-        bar.setContentDescription("课程已保存，可以撤销本次保存");
+        bar.setContentDescription(getString(R.string.save_undo_cd));
         GradientDrawable background = new GradientDrawable();
         background.setColor(isDarkModeActive() ? color("#EE1F2D43") : color("#EE172033"));
         background.setCornerRadius(dp(18));
@@ -3183,7 +3205,7 @@ public class MainActivity extends Activity {
         undo.setTypeface(Typeface.DEFAULT_BOLD);
         undo.setGravity(Gravity.CENTER);
         undo.setMinWidth(dp(64));
-        undo.setContentDescription("撤销本次课程保存");
+        undo.setContentDescription(getString(R.string.save_undo_button_cd));
         undo.setOnClickListener(v -> restoreCoursesFromUndo(previousCourses, bar));
         bar.addView(undo, new LinearLayout.LayoutParams(dp(72), dp(48)));
 
@@ -3196,7 +3218,7 @@ public class MainActivity extends Activity {
         rootView.addView(bar, params);
         courseSaveUndoView = bar;
         bar.animate().alpha(1f).translationY(0f).setDuration(180L).start();
-        bar.announceForAccessibility("课程已保存，可以撤销");
+        bar.announceForAccessibility(getString(R.string.save_undo_announce));
         bar.postDelayed(() -> dismissCourseSaveUndo(bar), 6000L);
     }
 
@@ -3244,27 +3266,27 @@ public class MainActivity extends Activity {
         panel.setBackground(dialogGlassBg(18, ACTION_PANEL_OPACITY_PERCENT));
 
         PopupWindow popup = new PopupWindow();
-        panel.addView(popupMenuAction("导入 PDF", v -> {
+        panel.addView(popupMenuAction(getString(R.string.action_import_pdf), v -> {
             popup.dismiss();
             openPdfPicker();
         }));
-        panel.addView(popupMenuAction("AI 识别导入", v -> {
+        panel.addView(popupMenuAction(getString(R.string.action_import_ai), v -> {
             popup.dismiss();
             showAiImportDialog();
         }));
-        panel.addView(popupMenuAction("导入课表文件", v -> {
+        panel.addView(popupMenuAction(getString(R.string.action_import_file), v -> {
             popup.dismiss();
             openSharedScheduleFilePicker();
         }));
-        panel.addView(popupMenuAction("手动添加课程", v -> {
+        panel.addView(popupMenuAction(getString(R.string.action_add_course), v -> {
             popup.dismiss();
             showCourseEditor(new Course(0, 1, 2, "", defaultWeeks(), "", "", ""));
         }));
-        panel.addView(popupMenuAction("分享课表文件", v -> {
+        panel.addView(popupMenuAction(getString(R.string.share_chooser_file), v -> {
             popup.dismiss();
             shareScheduleFile();
         }));
-        panel.addView(popupMenuAction("导出课表", v -> {
+        panel.addView(popupMenuAction(getString(R.string.export_dialog_title), v -> {
             popup.dismiss();
             showWeekExportDialog();
         }));
@@ -3306,20 +3328,20 @@ public class MainActivity extends Activity {
         try {
             startActivityForResult(intent, PICK_SHARED_SCHEDULE_FILE);
         } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, "未找到可选择课表文件的应用", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.import_no_file_picker), Toast.LENGTH_LONG).show();
         }
     }
 
     private void shareScheduleFile() {
         if (courses.isEmpty()) {
-            Toast.makeText(this, "还没有课程，先导入或添加课程后再分享", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.share_no_courses), Toast.LENGTH_SHORT).show();
             return;
         }
         try {
             String link = ScheduleShareCodec.encodeLink(courses);
             File directory = new File(getCacheDir(), ExportFileProvider.EXPORT_DIRECTORY);
             if (!directory.exists() && !directory.mkdirs()) {
-                throw new IllegalStateException("无法创建课表分享目录");
+                throw new IllegalStateException(getString(R.string.share_dir_failed));
             }
             File file = new File(directory, "Polaris课表" + ScheduleShareFile.EXTENSION);
             try (FileOutputStream output = new FileOutputStream(file, false)) {
@@ -3328,14 +3350,14 @@ public class MainActivity extends Activity {
             Uri uri = ExportFileProvider.uriForFile(this, file);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType(ScheduleShareFile.MIME_TYPE);
-            share.putExtra(Intent.EXTRA_SUBJECT, scheduleName + " · Polaris课表");
-            share.putExtra(Intent.EXTRA_TEXT, "使用 Polaris课程表 打开附件即可预览并导入。");
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.share_file_subject, scheduleName));
+            share.putExtra(Intent.EXTRA_TEXT, getString(R.string.share_file_text));
             share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.setClipData(ClipData.newRawUri("Polaris课表文件", uri));
+            share.setClipData(ClipData.newRawUri(getString(R.string.share_clip_label), uri));
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(share, "分享课表文件"));
+            startActivity(Intent.createChooser(share, getString(R.string.share_chooser_file)));
         } catch (Exception exception) {
-            Toast.makeText(this, "生成课表分享文件失败：" + exception.getMessage(),
+            Toast.makeText(this, getString(R.string.share_file_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -3347,7 +3369,7 @@ public class MainActivity extends Activity {
             byte[] bytes = ScheduleBackupManager.encode(bundle);
             File directory = new File(getCacheDir(), ExportFileProvider.EXPORT_DIRECTORY);
             if (!directory.exists() && !directory.mkdirs()) {
-                throw new IllegalStateException("无法创建备份目录");
+                throw new IllegalStateException(getString(R.string.backup_dir_failed));
             }
             String stamp = new SimpleDateFormat("yyyyMMdd-HHmm", Locale.ROOT)
                     .format(new Date());
@@ -3360,15 +3382,15 @@ public class MainActivity extends Activity {
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType(ScheduleBackupManager.MIME_TYPE);
             share.putExtra(Intent.EXTRA_SUBJECT,
-                    "Polaris课程表备份 · " + scheduleName);
+                    getString(R.string.backup_share_subject, scheduleName));
             share.putExtra(Intent.EXTRA_TEXT,
-                    "使用 Polaris课程表 的「恢复备份」导入，即可完整还原课表与设置。");
+                    getString(R.string.backup_share_text));
             share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.setClipData(ClipData.newRawUri("Polaris备份文件", uri));
+            share.setClipData(ClipData.newRawUri(getString(R.string.backup_clip_label), uri));
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(share, "导出备份"));
+            startActivity(Intent.createChooser(share, getString(R.string.backup_chooser_title)));
         } catch (Exception exception) {
-            Toast.makeText(this, "生成备份文件失败：" + exception.getMessage(),
+            Toast.makeText(this, getString(R.string.backup_share_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -3380,7 +3402,7 @@ public class MainActivity extends Activity {
         try {
             startActivityForResult(intent, PICK_BACKUP_FILE);
         } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, "未找到可选择文件的应用", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.backup_picker_missing), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -3391,26 +3413,26 @@ public class MainActivity extends Activity {
             showBackupRestoreConfirmDialog(bundle);
         } catch (Exception exception) {
             String reason = exception.getMessage() == null
-                    ? "无法读取备份文件" : exception.getMessage();
-            Toast.makeText(this, "备份文件读取失败：" + reason,
+                    ? getString(R.string.backup_read_unknown) : exception.getMessage();
+            Toast.makeText(this, getString(R.string.backup_read_failed, reason),
                     Toast.LENGTH_LONG).show();
         }
     }
 
     private void showBackupRestoreConfirmDialog(ScheduleBackupManager.BackupBundle bundle) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("恢复备份");
+        LinearLayout panel = dialogPanel(getString(R.string.settings_row_restore_backup));
         ScheduleBackupManager.BackupSummary summary =
                 ScheduleBackupManager.summaryOf(bundle);
         TextView message = new TextView(this);
         String sourceVersion = summary.appVersion.length() == 0
-                ? "未知版本" : "v" + summary.appVersion;
-        message.setText("备份创建于 " + summary.createdAt
-                + "（来源 " + sourceVersion + "）\n"
-                + "包含 " + summary.scheduleCount + " 个课表 · 共 "
-                + summary.courseCount + " 门课程\n\n"
-                + "恢复将覆盖本机当前所有课表和设置，且无法撤销。"
-                + "建议先导出当前数据作为备份。");
+                ? getString(R.string.backup_version_unknown) : "v" + summary.appVersion;
+        message.setText(getString(R.string.backup_confirm_message, summary.createdAt,
+                sourceVersion,
+                summary.scheduleCount,
+                summary.courseCount));
+                
+                
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -3418,15 +3440,15 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         messageParams.setMargins(0, 0, 0, dp(8));
         panel.addView(message, messageParams);
-        TextView confirm = dialogAction("恢复并覆盖本机数据", v -> {
+        TextView confirm = dialogAction(getString(R.string.backup_confirm_action), v -> {
             dialog.dismiss();
             applyBackupRestore(bundle);
         });
         confirm.setTextColor(Color.WHITE);
-        confirm.setBackground(roundedBg(primaryActionFillHex(), 14));
+        confirm.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         panel.addView(confirm);
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -3440,7 +3462,7 @@ public class MainActivity extends Activity {
                 restoredCourseCount += backup.structuredCourses.size();
             }
         } catch (Exception exception) {
-            Toast.makeText(this, "恢复失败：" + exception.getMessage(),
+            Toast.makeText(this, getString(R.string.backup_restore_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -3458,8 +3480,8 @@ public class MainActivity extends Activity {
         refreshCourseManageList();
         refreshMyPage();
         switchTab(0);
-        Toast.makeText(this, "已从备份恢复：" + bundle.schedules.size()
-                + " 个课表 · " + restoredCourseCount + " 门课程", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, getString(R.string.backup_restored_toast, bundle.schedules.size(),
+                restoredCourseCount), Toast.LENGTH_LONG).show();
     }
 
     private String appVersionName() {
@@ -3474,7 +3496,7 @@ public class MainActivity extends Activity {
 
     private void showWeekExportDialog() {
         if (scheduleExportInProgress) {
-            Toast.makeText(this, "课表文件正在生成，请稍候", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
         }
         int maxWeek = Math.max(1, semesterWeeks);
@@ -3482,24 +3504,24 @@ public class MainActivity extends Activity {
                 Math.max(1, Math.min(maxWeek, currentWeek))
         };
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("导出课表");
+        LinearLayout panel = dialogPanel(getString(R.string.export_dialog_title));
 
         TextView message = new TextView(this);
-        message.setText("选择周次导出单周课表，或把全学期课程合并到一张课表中导出。");
+        message.setText(getString(R.string.export_dialog_message));
         message.setTextColor(mutedColor());
         message.setTextSize(14);
         message.setPadding(0, 0, 0, dp(8));
         panel.addView(message);
 
         EditText weekInput = stepInput(String.valueOf(selectedWeek[0]));
-        weekInput.setContentDescription("导出周次");
+        weekInput.setContentDescription(getString(R.string.export_cd_week));
         LinearLayout weekRow = new LinearLayout(this);
         weekRow.setOrientation(LinearLayout.HORIZONTAL);
         weekRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView minus = stepButton("−");
         TextView plus = stepButton("+");
-        minus.setContentDescription("上一周");
-        plus.setContentDescription("下一周");
+        minus.setContentDescription(getString(R.string.export_cd_prev_week));
+        plus.setContentDescription(getString(R.string.export_cd_next_week));
         minus.setOnClickListener(v -> {
             selectedWeek[0] = Math.max(1, parseBounded(
                     weekInput.getText().toString(), 1, maxWeek, selectedWeek[0]) - 1);
@@ -3517,49 +3539,49 @@ public class MainActivity extends Activity {
         weekRow.addView(plus);
         panel.addView(weekRow);
 
-        panel.addView(dialogAction("导出指定周图片", v -> {
+        panel.addView(dialogAction(getString(R.string.export_action_week_image), v -> {
             int week = parseBounded(weekInput.getText().toString(),
                     1, maxWeek, selectedWeek[0]);
             dialog.dismiss();
             exportWeekImage(week);
         }));
-        panel.addView(dialogAction("导出指定周 PDF", v -> {
+        panel.addView(dialogAction(getString(R.string.export_action_week_pdf), v -> {
             int week = parseBounded(weekInput.getText().toString(),
                     1, maxWeek, selectedWeek[0]);
             dialog.dismiss();
             exportWeekPdf(week);
         }));
-        panel.addView(dialogAction("导出整学期 PDF", v -> {
+        panel.addView(dialogAction(getString(R.string.export_action_semester_pdf), v -> {
             dialog.dismiss();
             exportSemesterPdf();
         }));
-        panel.addView(dialogAction("导出 iCal 日历 (.ics)", v -> {
+        panel.addView(dialogAction(getString(R.string.export_action_ics), v -> {
             dialog.dismiss();
             exportICal();
         }));
-        panel.addView(dialogAction("导出 CSV (.csv)", v -> {
+        panel.addView(dialogAction(getString(R.string.export_action_csv), v -> {
             dialog.dismiss();
             exportCsv();
         }));
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private void exportWeekImage(int week) {
         if (scheduleExportInProgress) {
-            Toast.makeText(this, "课表文件正在生成，请稍候", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
         }
         ScheduleImageExporter.Request request = scheduleExportRequest(week);
         if (!ScheduleImageExporter.hasExportableContent(request)) {
-            Toast.makeText(this, "本周没有课程，请切换到有课周后再导出",
+            Toast.makeText(this, getString(R.string.export_week_empty),
                     Toast.LENGTH_LONG).show();
             return;
         }
         scheduleExportInProgress = true;
-        Toast.makeText(this, "正在生成第 " + request.week + " 周课表图片…",
+        Toast.makeText(this, getString(R.string.export_generating_week_image, request.week),
                 Toast.LENGTH_SHORT).show();
         try {
             scheduleExportExecutor.execute(() -> {
@@ -3573,12 +3595,12 @@ public class MainActivity extends Activity {
                         }
                     });
                 } catch (Exception exception) {
-                    handleScheduleExportFailure(exception, "导出图片失败：");
+                    handleScheduleExportFailure(exception, getString(R.string.export_failed_image));
                 }
             });
         } catch (RuntimeException exception) {
             scheduleExportInProgress = false;
-            Toast.makeText(this, "导出任务启动失败，请重试", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.export_start_failed), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -3599,17 +3621,17 @@ public class MainActivity extends Activity {
 
     private void exportWeekPdf(int week) {
         if (scheduleExportInProgress) {
-            Toast.makeText(this, "课表文件正在生成，请稍候", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
         }
         ScheduleImageExporter.Request request = scheduleExportRequest(week);
         if (!ScheduleImageExporter.hasExportableContent(request)) {
-            Toast.makeText(this, "本周没有课程，请切换到有课周后再导出",
+            Toast.makeText(this, getString(R.string.export_week_empty),
                     Toast.LENGTH_LONG).show();
             return;
         }
         scheduleExportInProgress = true;
-        Toast.makeText(this, "正在生成第 " + request.week + " 周课表 PDF…",
+        Toast.makeText(this, getString(R.string.export_generating_week_pdf, request.week),
                 Toast.LENGTH_SHORT).show();
         try {
             scheduleExportExecutor.execute(() -> {
@@ -3623,28 +3645,28 @@ public class MainActivity extends Activity {
                         }
                     });
                 } catch (Exception exception) {
-                    handleScheduleExportFailure(exception, "导出 PDF 失败：");
+                    handleScheduleExportFailure(exception, getString(R.string.export_failed_pdf));
                 }
             });
         } catch (RuntimeException exception) {
             scheduleExportInProgress = false;
-            Toast.makeText(this, "导出任务启动失败，请重试", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.export_start_failed), Toast.LENGTH_LONG).show();
         }
     }
 
     private void exportSemesterPdf() {
         if (scheduleExportInProgress) {
-            Toast.makeText(this, "课表文件正在生成，请稍候", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
         }
         if (courses.isEmpty()) {
-            Toast.makeText(this, "当前课表没有课程，请先导入或添加课程",
+            Toast.makeText(this, getString(R.string.export_semester_empty),
                     Toast.LENGTH_LONG).show();
             return;
         }
         ScheduleImageExporter.Request request = scheduleExportRequest(currentWeek);
         scheduleExportInProgress = true;
-        Toast.makeText(this, "正在生成整学期合并课表 PDF…", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.export_generating_semester), Toast.LENGTH_SHORT).show();
         try {
             scheduleExportExecutor.execute(() -> {
                 try {
@@ -3657,18 +3679,18 @@ public class MainActivity extends Activity {
                         }
                     });
                 } catch (Exception exception) {
-                    handleScheduleExportFailure(exception, "导出整学期 PDF 失败：");
+                    handleScheduleExportFailure(exception, getString(R.string.export_failed_semester));
                 }
             });
         } catch (RuntimeException exception) {
             scheduleExportInProgress = false;
-            Toast.makeText(this, "导出任务启动失败，请重试", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.export_start_failed), Toast.LENGTH_LONG).show();
         }
     }
 
     private void handleScheduleExportFailure(Exception exception, String prefix) {
         String reason = exception.getMessage() == null
-                ? "未知原因" : exception.getMessage();
+                ? getString(R.string.import_reason_unknown) : exception.getMessage();
         runOnUiThread(() -> {
             scheduleExportInProgress = false;
             if (!isFinishing() && !isDestroyed()) {
@@ -3682,14 +3704,14 @@ public class MainActivity extends Activity {
             Uri uri = ExportFileProvider.uriForFile(this, image);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType("image/png");
-            share.putExtra(Intent.EXTRA_SUBJECT, scheduleName + " · 第 " + week + " 周");
-            share.putExtra(Intent.EXTRA_TEXT, "Polaris课程表 · 第 " + week + " 周");
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_week_subject, scheduleName, week));
+            share.putExtra(Intent.EXTRA_TEXT, getString(R.string.export_share_week_text, week));
             share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.setClipData(ClipData.newRawUri("Polaris课表图片", uri));
+            share.setClipData(ClipData.newRawUri(getString(R.string.export_clip_week_image), uri));
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(share, "分享本周课表图片"));
+            startActivity(Intent.createChooser(share, getString(R.string.export_share_week_image_chooser)));
         } catch (RuntimeException exception) {
-            Toast.makeText(this, "图片已生成，但无法打开系统分享面板",
+            Toast.makeText(this, getString(R.string.export_share_panel_failed_image),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -3699,14 +3721,14 @@ public class MainActivity extends Activity {
             Uri uri = ExportFileProvider.uriForFile(this, pdf);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType("application/pdf");
-            share.putExtra(Intent.EXTRA_SUBJECT, scheduleName + " · 第 " + week + " 周");
-            share.putExtra(Intent.EXTRA_TEXT, "Polaris课程表 · 第 " + week + " 周");
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_week_subject, scheduleName, week));
+            share.putExtra(Intent.EXTRA_TEXT, getString(R.string.export_share_week_text, week));
             share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.setClipData(ClipData.newRawUri("Polaris课表 PDF", uri));
+            share.setClipData(ClipData.newRawUri(getString(R.string.export_clip_week_pdf), uri));
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(share, "分享本周课表 PDF"));
+            startActivity(Intent.createChooser(share, getString(R.string.export_share_week_pdf_chooser)));
         } catch (RuntimeException exception) {
-            Toast.makeText(this, "PDF 已生成，但无法打开系统分享面板",
+            Toast.makeText(this, getString(R.string.export_share_panel_failed_pdf),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -3716,21 +3738,21 @@ public class MainActivity extends Activity {
             Uri uri = ExportFileProvider.uriForFile(this, pdf);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType("application/pdf");
-            share.putExtra(Intent.EXTRA_SUBJECT, scheduleName + " · 整学期合并课表");
-            share.putExtra(Intent.EXTRA_TEXT, "Polaris课程表 · 整学期合并课表");
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_subject_semester, scheduleName));
+            share.putExtra(Intent.EXTRA_TEXT, getString(R.string.export_share_text_semester));
             share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.setClipData(ClipData.newRawUri("Polaris整学期课表 PDF", uri));
+            share.setClipData(ClipData.newRawUri(getString(R.string.export_clip_semester_pdf), uri));
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(share, "分享整学期课表 PDF"));
+            startActivity(Intent.createChooser(share, getString(R.string.export_share_semester_chooser)));
         } catch (RuntimeException exception) {
-            Toast.makeText(this, "整学期 PDF 已生成，但无法打开系统分享面板",
+            Toast.makeText(this, getString(R.string.export_share_panel_failed_semester),
                     Toast.LENGTH_LONG).show();
         }
     }
 
     private void exportICal() {
         if (structuredCourses.isEmpty()) {
-            Toast.makeText(this, "当前课表没有课程，请先导入或添加课程",
+            Toast.makeText(this, getString(R.string.export_semester_empty),
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -3739,17 +3761,17 @@ public class MainActivity extends Activity {
             String content = ScheduleCalendarExporter.buildICal(context, structuredCourses);
             shareExportedCalendarFile(
                     writeCalendarExport(content.getBytes("UTF-8"),
-                            ScheduleCalendarExporter.safeFileName(scheduleName) + "-日历.ics"),
-                    "text/calendar", "iCal 日历");
+                            ScheduleCalendarExporter.safeFileName(scheduleName) + getString(R.string.export_ics_suffix)),
+                    "text/calendar", getString(R.string.export_ics_label));
         } catch (Exception exception) {
-            Toast.makeText(this, "导出 iCal 日历失败：" + exception.getMessage(),
+            Toast.makeText(this, getString(R.string.export_ics_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
         }
     }
 
     private void exportCsv() {
         if (structuredCourses.isEmpty()) {
-            Toast.makeText(this, "当前课表没有课程，请先导入或添加课程",
+            Toast.makeText(this, getString(R.string.export_semester_empty),
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -3761,7 +3783,7 @@ public class MainActivity extends Activity {
                             ScheduleCalendarExporter.safeFileName(scheduleName) + ".csv"),
                     "text/csv", "CSV");
         } catch (Exception exception) {
-            Toast.makeText(this, "导出 CSV 失败：" + exception.getMessage(),
+            Toast.makeText(this, getString(R.string.export_csv_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -3778,7 +3800,7 @@ public class MainActivity extends Activity {
     private File writeCalendarExport(byte[] bytes, String fileName) throws Exception {
         File directory = new File(getCacheDir(), ExportFileProvider.EXPORT_DIRECTORY);
         if (!directory.exists() && !directory.mkdirs()) {
-            throw new IllegalStateException("无法创建导出目录");
+            throw new IllegalStateException(getString(R.string.export_dir_failed));
         }
         File file = new File(directory, fileName);
         try (FileOutputStream output = new FileOutputStream(file, false)) {
@@ -3794,13 +3816,13 @@ public class MainActivity extends Activity {
             share.setType(mimeType);
             share.putExtra(Intent.EXTRA_SUBJECT, scheduleName + " · " + label);
             share.putExtra(Intent.EXTRA_TEXT,
-                    "Polaris课程表 · " + label + " · " + file.getName());
+                    getString(R.string.calendar_share_subject, label, file.getName()));
             share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.setClipData(ClipData.newRawUri("Polaris" + label + "文件", uri));
+            share.setClipData(ClipData.newRawUri(getString(R.string.calendar_clip_label, label), uri));
             share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(share, "分享" + label + "文件"));
+            startActivity(Intent.createChooser(share, getString(R.string.calendar_share_chooser, label)));
         } catch (RuntimeException exception) {
-            Toast.makeText(this, label + "已生成，但无法打开系统分享面板",
+            Toast.makeText(this, getString(R.string.calendar_share_panel_failed, label),
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -3822,22 +3844,22 @@ public class MainActivity extends Activity {
             String link = ScheduleShareFile.read(input);
             Uri shareUri = Uri.parse(link);
             if (!ScheduleShareCodec.isImportLink(shareUri)) {
-                throw new IllegalArgumentException("文件中的课表数据无效");
+                throw new IllegalArgumentException(getString(R.string.shared_file_invalid));
             }
             startSharedScheduleImportFlow(shareUri);
         } catch (Exception exception) {
             String reason = exception.getMessage() == null
-                    ? "无法读取文件内容" : exception.getMessage();
-            Toast.makeText(this, "课表文件导入失败：" + reason,
+                    ? getString(R.string.shared_file_read_failed) : exception.getMessage();
+            Toast.makeText(this, getString(R.string.shared_file_import_failed, reason),
                     Toast.LENGTH_LONG).show();
         }
     }
 
     private void showSharedLinkInputDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("链接导入");
+        LinearLayout panel = dialogPanel(getString(R.string.shared_link_title));
         TextView message = new TextView(this);
-        message.setText("粘贴 Polaris 课程表分享链接，确认后可直接导入。");
+        message.setText(getString(R.string.shared_link_message));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -3847,18 +3869,18 @@ public class MainActivity extends Activity {
         panel.addView(pageSaveButton(() -> {
             String link = extractSharedScheduleLink(linkInput.getText().toString());
             if (link.length() == 0) {
-                Toast.makeText(this, "请先粘贴分享链接", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.shared_link_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
             Uri uri = Uri.parse(link);
             if (!ScheduleShareCodec.isImportLink(uri)) {
-                Toast.makeText(this, "这不是有效的 Polaris 课表分享链接", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, getString(R.string.shared_link_invalid), Toast.LENGTH_LONG).show();
                 return;
             }
             dialog.dismiss();
             startSharedScheduleImportFlow(uri);
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -3889,7 +3911,7 @@ public class MainActivity extends Activity {
         try {
             List<Course> sharedCourses = ScheduleShareCodec.decodeLink(uri);
             if (sharedCourses.isEmpty()) {
-                Toast.makeText(this, "分享链接里没有可导入的课程", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, getString(R.string.shared_link_no_courses), Toast.LENGTH_LONG).show();
                 return;
             }
             if (courses.isEmpty()) {
@@ -3898,15 +3920,15 @@ public class MainActivity extends Activity {
             }
             showSharedImportOverwriteDialog(sharedCourses);
         } catch (Exception exception) {
-            Toast.makeText(this, "课表分享链接无效：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.shared_link_invalid_toast, exception.getMessage()), Toast.LENGTH_LONG).show();
         }
     }
 
     private void showSharedImportOverwriteDialog(List<Course> sharedCourses) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("导入分享课表？");
+        LinearLayout panel = dialogPanel(getString(R.string.shared_import_title));
         TextView message = new TextView(this);
-        message.setText("分享链接包含 " + sharedCourses.size() + " 门课程，继续导入会覆盖当前课表。");
+        message.setText(getString(R.string.shared_import_message, sharedCourses.size()));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -3914,31 +3936,31 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         messageParams.setMargins(0, 0, 0, dp(8));
         panel.addView(message, messageParams);
-        panel.addView(dialogAction("确认导入", v -> {
+        panel.addView(dialogAction(getString(R.string.import_confirm_short), v -> {
             dialog.dismiss();
             showSharedImportNameDialog(sharedCourses);
         }));
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private void showSharedImportNameDialog(List<Course> sharedCourses) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("设置课表名称");
-        EditText nameInput = input("课表名称", scheduleName.length() == 0 ? "分享课表" : scheduleName);
+        LinearLayout panel = dialogPanel(getString(R.string.import_name_title));
+        EditText nameInput = input(getString(R.string.settings_row_schedule_name), scheduleName.length() == 0 ? "分享课表" : scheduleName);
         panel.addView(nameInput);
         panel.addView(pageSaveButton(() -> {
             String name = nameInput.getText().toString().trim();
             if (name.length() == 0) {
-                Toast.makeText(this, "课表名称不能为空", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.import_error_name_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
             dialog.dismiss();
             applySharedCourses(sharedCourses, name);
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -3961,7 +3983,7 @@ public class MainActivity extends Activity {
         renderSchedule();
         updateEmptyScheduleView();
         refreshMyPage();
-        Toast.makeText(this, "已导入分享课表：" + courses.size() + " 门课程", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, getString(R.string.shared_import_done, courses.size()), Toast.LENGTH_LONG).show();
         showImportedFirstWeekDayDialog();
     }
 
@@ -3974,7 +3996,7 @@ public class MainActivity extends Activity {
             visibleDayCount = 7;
         }
         renderSchedule();
-        Toast.makeText(this, "已显示 " + visibleDayCount + " 天", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.days_visible_toast, visibleDayCount), Toast.LENGTH_SHORT).show();
     }
 
     private void showSettingsDialog() {
@@ -3985,14 +4007,14 @@ public class MainActivity extends Activity {
         panel.setBackgroundColor(backgroundColor());
 
         TextView heading = new TextView(this);
-        heading.setText("设置");
+        heading.setText(getString(R.string.settings_title));
         heading.setTextColor(inkColor());
         heading.setTypeface(Typeface.DEFAULT_BOLD);
         heading.setTextSize(22);
         panel.addView(heading);
 
         TextView description = new TextView(this);
-        description.setText("选择课表页显示几天");
+        description.setText(getString(R.string.settings_days_description));
         description.setTextColor(mutedColor());
         description.setTextSize(14);
         description.setPadding(0, dp(6), 0, dp(14));
@@ -4001,11 +4023,11 @@ public class MainActivity extends Activity {
         LinearLayout choices = new LinearLayout(this);
         choices.setOrientation(LinearLayout.HORIZONTAL);
         panel.addView(choices);
-        choices.addView(dayChoice("5天", 5, dialog));
-        choices.addView(dayChoice("6天", 6, dialog));
-        choices.addView(dayChoice("7天", 7, dialog));
+        choices.addView(dayChoice(getString(R.string.settings_days_option, 5), 5, dialog));
+        choices.addView(dayChoice(getString(R.string.settings_days_option, 6), 6, dialog));
+        choices.addView(dayChoice(getString(R.string.settings_days_option, 7), 7, dialog));
 
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -4031,7 +4053,7 @@ public class MainActivity extends Activity {
                         if (!CourseEditManager.applyStructuredEdit(
                                 structuredCourses, original, edited)) {
                             Toast.makeText(MainActivity.this,
-                                    "课程已发生变化，请重新打开后编辑", Toast.LENGTH_SHORT).show();
+                                    getString(R.string.editor_course_changed), Toast.LENGTH_SHORT).show();
                             return;
                         }
                         refreshCourseView();
@@ -4050,7 +4072,7 @@ public class MainActivity extends Activity {
                                 structuredCourses, original, scope, currentWeek, semesterWeeks);
                         if (deleted <= 0) {
                             Toast.makeText(MainActivity.this,
-                                    "本周没有这节课程，无需删除", Toast.LENGTH_SHORT).show();
+                                    getString(R.string.delete_no_this_week), Toast.LENGTH_SHORT).show();
                             return;
                         }
                         refreshCourseView();
@@ -4075,12 +4097,12 @@ public class MainActivity extends Activity {
 
     private String deletionSuccessMessage(CourseDeletionScope scope) {
         if (scope == CourseDeletionScope.CURRENT_WEEK) {
-            return "已删除本周此节课程";
+            return getString(R.string.delete_done_week);
         }
         if (scope == CourseDeletionScope.CURRENT_MEETING) {
-            return "已删除每周此节课程";
+            return getString(R.string.delete_done_meeting);
         }
-        return "已删除该课程全部节次";
+        return getString(R.string.delete_done_all);
     }
 
     private void showPracticeCourses(List<Course> practiceCourses) {
@@ -4088,7 +4110,7 @@ public class MainActivity extends Activity {
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("本周实践");
+        LinearLayout panel = dialogPanel(getString(R.string.board_practice_title));
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
         scroll.setVerticalScrollBarEnabled(practiceCourses.size() > 5);
@@ -4098,9 +4120,9 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         for (Course course : practiceCourses) {
             String time = course.isBannerOnlyCourse()
-                    ? "集中实践" : courseTimeInlineText(course);
+                    ? getString(R.string.board_practice_concentrated) : courseTimeInlineText(course);
             String name = course.name == null || course.name.trim().isEmpty()
-                    ? "未命名实践" : course.name.trim();
+                    ? getString(R.string.board_practice_unnamed) : course.name.trim();
             TextView item = dialogAction(name + " · " + time, v -> {
                 dialog.dismiss();
                 new CourseDetailDialog(this, isDarkModeActive(), dialogBlurSource(), courseTimeSettings())
@@ -4115,7 +4137,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 Math.min(dp(320), Math.max(dp(60), practiceCourses.size() * dp(60))));
         panel.addView(scroll, scrollParams);
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -4198,11 +4220,11 @@ public class MainActivity extends Activity {
         close.setTextSize(30);
         close.setTypeface(Typeface.DEFAULT_BOLD);
         close.setGravity(Gravity.CENTER);
-        close.setContentDescription("关闭计划管理");
+        close.setContentDescription(getString(R.string.plan_overlay_close_cd));
         close.setOnClickListener(v -> closePlanManagePanel());
         header.addView(close, new LinearLayout.LayoutParams(dp(52), dp(54)));
         TextView title = new TextView(this);
-        title.setText("计划");
+        title.setText(getString(R.string.plan_title));
         title.setTextColor(inkColor());
         title.setTextSize(21);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4221,7 +4243,7 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         TextView addButton = new TextView(this);
-        addButton.setText("＋ 新建计划");
+        addButton.setText(getString(R.string.plan_action_new));
         addButton.setTextColor(Color.WHITE);
         addButton.setTextSize(15);
         addButton.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4282,7 +4304,7 @@ public class MainActivity extends Activity {
         scrollView.addView(page);
 
         TextView addButton = new TextView(this);
-        addButton.setText("＋ 新建计划");
+        addButton.setText(getString(R.string.plan_action_new));
         addButton.setTextColor(Color.WHITE);
         addButton.setTextSize(15);
         addButton.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4315,7 +4337,7 @@ public class MainActivity extends Activity {
         planListContainer.removeAllViews();
         if (studyPlans.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("还没有计划，点击上方「＋ 新建计划」");
+            empty.setText(getString(R.string.plan_empty_hint));
             empty.setTextColor(mutedColor());
             empty.setTextSize(15);
             empty.setGravity(Gravity.CENTER);
@@ -4331,7 +4353,7 @@ public class MainActivity extends Activity {
         Collections.sort(pending, (a, b) -> weekDayValue(a) - weekDayValue(b));
         Collections.sort(finished, (a, b) -> weekDayValue(b) - weekDayValue(a));
         if (!pending.isEmpty()) {
-            planListContainer.addView(sectionHeader("待完成"));
+            planListContainer.addView(sectionHeader(getString(R.string.plan_section_pending)));
             LinearLayout group = settingsGroup();
             for (StudyPlan plan : pending) {
                 group.addView(planRow(plan));
@@ -4339,7 +4361,7 @@ public class MainActivity extends Activity {
             planListContainer.addView(group);
         }
         if (!finished.isEmpty()) {
-            planListContainer.addView(sectionHeader("已完成"));
+            planListContainer.addView(sectionHeader(getString(R.string.plan_section_done)));
             LinearLayout group = settingsGroup();
             for (StudyPlan plan : finished) {
                 group.addView(planRow(plan));
@@ -4390,7 +4412,7 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        row.setBackground(roundedBg(cardColorHex(), 16));
+        row.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_MEDIUM));
         row.setOnClickListener(v -> showPlanEditor(plan));
         attachCardPressFeedback(row, 16);
 
@@ -4400,7 +4422,7 @@ public class MainActivity extends Activity {
         check.setGravity(Gravity.CENTER);
         check.setTextColor(plan.done
                 ? PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()) : mutedColor());
-        check.setContentDescription(plan.done ? "标记为未完成" : "标记为完成");
+        check.setContentDescription(plan.done ? getString(R.string.plan_cd_mark_undone) : getString(R.string.plan_cd_mark_done));
         check.setOnClickListener(v -> togglePlanDone(plan));
         attachPressFeedback(check);
         row.addView(check, new LinearLayout.LayoutParams(dp(44), dp(44)));
@@ -4409,7 +4431,7 @@ public class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
-        title.setText(plan.title.length() == 0 ? "未命名计划" : plan.title);
+        title.setText(plan.title.length() == 0 ? getString(R.string.plan_unnamed) : plan.title);
         title.setTextColor(inkColor());
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4421,13 +4443,13 @@ public class MainActivity extends Activity {
         }
         content.addView(title);
 
-        StringBuilder meta = new StringBuilder("第").append(plan.week).append("周 · ")
+        StringBuilder meta = new StringBuilder(getString(R.string.plan_meta_week, plan.week))
                 .append(dayText(plan.dayOfWeek));
         if (plan.hasCourse()) {
             meta.append(" · ").append(plan.courseName);
         }
         if (plan.hasReminder()) {
-            meta.append(" · 提醒 ").append(remindTimeText(plan.remindMinute));
+            meta.append(getString(R.string.plan_meta_remind, remindTimeText(plan.remindMinute)));
         }
         TextView metaView = new TextView(this);
         metaView.setText(meta.toString());
@@ -4448,7 +4470,7 @@ public class MainActivity extends Activity {
         edit.setTextSize(18);
         edit.setGravity(Gravity.CENTER);
         edit.setTextColor(mutedColor());
-        edit.setContentDescription("编辑计划");
+        edit.setContentDescription(getString(R.string.plan_edit));
         edit.setOnClickListener(v -> showPlanEditor(plan));
         attachPressFeedback(edit);
         row.addView(edit, new LinearLayout.LayoutParams(dp(44), dp(44)));
@@ -4500,7 +4522,7 @@ public class MainActivity extends Activity {
 
     private void showPlanEditor(StudyPlan existing) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(existing == null ? "新建计划" : "编辑计划");
+        LinearLayout panel = dialogPanel(existing == null ? getString(R.string.plan_editor_new) : getString(R.string.plan_edit));
 
         final String[] titleValue = {existing == null ? "" : existing.title};
         final String[] courseValue = {existing == null ? "" : existing.courseName};
@@ -4511,13 +4533,13 @@ public class MainActivity extends Activity {
         final int[] remindMinuteValue = {
                 existing == null ? StudyPlan.REMIND_DEFAULT_MINUTE : existing.remindMinute};
 
-        EditText titleInput = input("计划内容，如：预习高数第3章", titleValue[0]);
+        EditText titleInput = input(getString(R.string.plan_editor_title_hint), titleValue[0]);
         panel.addView(titleInput);
 
         final String[] choices = courseNameChoices();
         String currentCourseLabel = courseValue[0].length() == 0 ? "不关联" : courseValue[0];
-        View courseRow = settingValueRow("关联课程", currentCourseLabel, v ->
-                showChoiceDialog(v, "关联课程", choices, currentCourseLabel, value -> {
+        View courseRow = settingValueRow(getString(R.string.plan_row_related_course), currentCourseLabel, v ->
+                showChoiceDialog(v, getString(R.string.plan_row_related_course), choices, currentCourseLabel, value -> {
                     courseValue[0] = "不关联".equals(value) ? "" : value;
                     updateSettingValueRow(v, "不关联".equals(value) ? "不关联" : value);
                 }));
@@ -4528,14 +4550,14 @@ public class MainActivity extends Activity {
         weekRow.setOrientation(LinearLayout.HORIZONTAL);
         weekRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView weekLabel = new TextView(this);
-        weekLabel.setText("周次");
+        weekLabel.setText(getString(R.string.plan_row_week));
         weekLabel.setTextColor(inkColor());
         weekLabel.setTextSize(15);
         weekLabel.setTypeface(Typeface.DEFAULT_BOLD);
         weekRow.addView(weekLabel, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         EditText weekInput = stepInput(String.valueOf(weekValue[0]));
-        weekInput.setContentDescription("计划周次");
+        weekInput.setContentDescription(getString(R.string.plan_cd_week));
         TextView minus = stepButton("−");
         TextView plus = stepButton("+");
         minus.setOnClickListener(v -> {
@@ -4561,7 +4583,7 @@ public class MainActivity extends Activity {
         panel.addView(weekRow);
 
         // 周几选择
-        final String[] weekdays = {"一", "二", "三", "四", "五", "六", "日"};
+        
         LinearLayout dayRow = new LinearLayout(this);
         dayRow.setOrientation(LinearLayout.HORIZONTAL);
         dayRow.setGravity(Gravity.CENTER);
@@ -4570,7 +4592,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < 7; i++) {
             final int day = i;
             TextView chip = new TextView(this);
-            chip.setText("周" + weekdays[i]);
+            chip.setText(WeekdayLabels.label(this, i));
             chip.setTextSize(13);
             chip.setGravity(Gravity.CENTER);
             chip.setTypeface(day == dayValue[0] ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
@@ -4608,7 +4630,7 @@ public class MainActivity extends Activity {
         remindRow.setGravity(Gravity.CENTER_VERTICAL);
         remindRow.setPadding(dp(2), dp(10), dp(2), dp(4));
         TextView remindLabel = new TextView(this);
-        remindLabel.setText("到期提醒");
+        remindLabel.setText(getString(R.string.plan_row_reminder));
         remindLabel.setTextColor(inkColor());
         remindLabel.setTextSize(15);
         remindLabel.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4624,19 +4646,19 @@ public class MainActivity extends Activity {
         panel.addView(remindRow);
 
         // 提醒时间
-        View timeRow = settingValueRow("提醒时间",
+        View timeRow = settingValueRow(getString(R.string.plan_row_remind_time),
                 remindTimeText(remindMinuteValue[0]), v ->
-                        showTimeDialog("提醒时间", remindTimeText(remindMinuteValue[0]), value -> {
+                        showTimeDialog(getString(R.string.plan_row_remind_time), remindTimeText(remindMinuteValue[0]), value -> {
                             int[] time = timeFromText(value);
                             remindMinuteValue[0] = time[0] * 60 + time[1];
                             updateSettingValueRow(v, remindTimeText(remindMinuteValue[0]));
                         }));
         panel.addView(timeRow);
 
-        panel.addView(dialogAction("保存", v -> {
+        panel.addView(dialogAction(getString(R.string.editor_action_save), v -> {
             String title = titleInput.getText() == null ? "" : titleInput.getText().toString().trim();
             if (title.length() == 0) {
-                Toast.makeText(this, "请填写计划内容", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.plan_error_title_required), Toast.LENGTH_SHORT).show();
                 return;
             }
             savePlan(existing, title, courseValue[0], weekValue[0], dayValue[0],
@@ -4644,13 +4666,13 @@ public class MainActivity extends Activity {
             dialog.dismiss();
         }));
         if (existing != null) {
-            panel.addView(dialogAction("删除计划", v -> {
+            panel.addView(dialogAction(getString(R.string.plan_action_delete), v -> {
                 deletePlan(existing);
                 dialog.dismiss();
             }));
         }
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -4677,11 +4699,11 @@ public class MainActivity extends Activity {
             int scheduled = PlanReminderScheduler.reschedule(this);
             if (scheduled == 0) {
                 if (!PlanReminderScheduler.hasPermission(this)) {
-                    Toast.makeText(this, "未获得通知权限，计划提醒不会生效，请在系统设置中允许通知",
+                    Toast.makeText(this, getString(R.string.plan_toast_no_permission),
                             Toast.LENGTH_LONG).show();
                     openNotificationSettings();
                 } else {
-                    Toast.makeText(this, "提醒时间已过，不会触发通知，请调整计划周次或提醒时间",
+                    Toast.makeText(this, getString(R.string.plan_toast_remind_time_passed),
                             Toast.LENGTH_LONG).show();
                 }
             }
@@ -4696,7 +4718,7 @@ public class MainActivity extends Activity {
         editText.setText(value);
         editText.setTextColor(inkColor());
         editText.setHintTextColor(mutedColor());
-        editText.setBackground(roundedBg(cardColorHex(), 12));
+        editText.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
         editText.setTextSize(15);
         editText.setSingleLine(true);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -4712,7 +4734,7 @@ public class MainActivity extends Activity {
         view.setGravity(Gravity.CENTER);
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setTextColor(inkColor());
-        view.setBackground(roundedBg(cardColorHex(), 12));
+        view.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
         view.setOnClickListener(v -> target.setText(value));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1f);
         params.setMargins(dp(3), dp(8), dp(3), 0);
@@ -4728,7 +4750,7 @@ public class MainActivity extends Activity {
         choice.setTypeface(Typeface.DEFAULT_BOLD);
         boolean active = count == visibleDayCount;
         choice.setTextColor(active ? selectedTextColor() : inkColor());
-        choice.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), 12));
+        choice.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), DesignTokens.RADIUS_CHIP));
         choice.setOnClickListener(v -> {
             visibleDayCount = count;
             renderSchedule();
@@ -4740,108 +4762,43 @@ public class MainActivity extends Activity {
         return choice;
     }
 
-    private LinearLayout bottomNav() {
-        if (isLandscapeTablet()) {
-            return tabletBottomBar();
-        }
-        // 手机（含竖屏平板）：课表/计划/我的 三 tab，矩形悬浮条样式。
-        LinearLayout nav = new LinearLayout(this);
-        nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        nav.setPadding(dp(10), 0, dp(10), 0);
-        nav.setBackground(null);
-        scheduleNav = navItem(navText("课表", activeTab == 0), activeTab == 0, 0);
-        planNav = navItem(navText("计划", activeTab == 1), activeTab == 1, 1);
-        myNav = navItem(navText("我的", activeTab == 2), activeTab == 2, 2);
-        scheduleNav.setBackgroundColor(Color.TRANSPARENT);
-        planNav.setBackgroundColor(Color.TRANSPARENT);
-        myNav.setBackgroundColor(Color.TRANSPARENT);
-        FrameLayout container = new FrameLayout(this);
-        container.addView(glassLayer(floatingPanelBg(bottomNavOpacity, bottomNavRadius()), bottomNavRadius()),
-                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT));
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER);
-        row.setPadding(dp(10), 0, dp(10), 0);
-        row.addView(scheduleNav);
-        row.addView(planNav);
-        row.addView(myNav);
-        container.addView(row, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        nav.addView(container, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight())));
-        return nav;
+    private BottomNavView bottomNav() {
+        bottomNavView = new BottomNavView(this, this);
+        return bottomNavView;
     }
 
-    private TextView navItem(String text, boolean active, int tab) {
-        TextView item = new TextView(this);
-        item.setText(styledNavText(text));
-        item.setGravity(Gravity.CENTER);
-        item.setTextSize(14);
-        item.setLineSpacing(0f, 0.92f);
-        item.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-        item.setTextColor(active ? inkColor() : mutedColor());
-        item.setOnClickListener(v -> switchTab(tab));
-        attachPressFeedback(item);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        item.setLayoutParams(params);
-        return item;
-    }
 
     /**
      * 横屏平板底部导航：矩形悬浮条样式，宽度由 bottomNavLayoutParams
      * 限制为居中限宽（不横跨全屏）。
      */
-    private LinearLayout tabletBottomBar() {
-        LinearLayout nav = new LinearLayout(this);
-        nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        scheduleNav = navItem(navText("课表", activeTab == 0), activeTab == 0, 0);
-        myNav = navItem(navText("我的", activeTab == 2), activeTab == 2, 2);
-        scheduleNav.setPadding(0, 0, 0, 0);
-        myNav.setPadding(0, 0, 0, 0);
-        FrameLayout container = new FrameLayout(this);
-        container.addView(glassLayer(floatingPanelBg(bottomNavOpacity, bottomNavRadius()),
-                        bottomNavRadius()),
-                new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT));
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER);
-        row.setPadding(dp(10), 0, dp(10), 0);
-        row.addView(scheduleNav);
-        row.addView(myNav);
-        container.addView(row, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        nav.addView(container, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight())));
-        return nav;
-    }
 
     private FrameLayout.LayoutParams bottomNavLayoutParams() {
         if (isLandscapeTablet()) {
             // 底部导航：固定宽度、水平居中，不横跨全屏。
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                    dp(240), dp(navVisualHeight()), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            params.setMargins(0, 0, 0, dp(18));
+                    dp(DesignTokens.NAV_TABLET_WIDTH), dp(navVisualHeight()),
+                    Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            params.setMargins(0, 0, 0, dp(DesignTokens.NAV_FLOATING_MARGIN) + Math.max(systemBottomInset, 0));
             return params;
         }
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
-        int bottomMargin = dp(18);
+        int bottomMargin = dp(DesignTokens.NAV_FLOATING_MARGIN) + Math.max(systemBottomInset, 0);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()), Gravity.BOTTOM);
-        int side = dp(tablet ? 16 : 10);
-        params.setMargins(side, 0, side, bottomMargin);
+        int side = dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE);
+        params.setMargins(side + systemLeftInset, 0, side + systemRightInset, bottomMargin);
         return params;
     }
 
     private int navVisualHeight() {
-        return Math.max(56, Math.min(120, bottomNavHeight));
+        return Math.max(DesignTokens.NAV_HEIGHT_MIN,
+                Math.min(DesignTokens.NAV_HEIGHT_MAX, bottomNavHeight));
     }
 
-    private int bottomContentInset() {
-        return dp(navVisualHeight() + 12);
+    @Override
+    public int bottomContentInset() {
+        return dp(navVisualHeight() + 12) + Math.max(systemBottomInset, 0);
     }
 
     private void handleScheduleVerticalScroll(int scrollY, int deltaY, boolean atBottom) {
@@ -4934,20 +4891,8 @@ public class MainActivity extends Activity {
             bottomNavView.setLayoutParams(bottomNavLayoutParams());
             showBottomNav(false);
         }
-        if (scheduleNav != null) {
-            scheduleNav.setText(styledNavText(navText("课表", schedule)));
-            scheduleNav.setTypeface(schedule ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            scheduleNav.setTextColor(schedule ? inkColor() : mutedColor());
-        }
-        if (planNav != null) {
-            planNav.setText(styledNavText(navText("计划", plan)));
-            planNav.setTypeface(plan ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            planNav.setTextColor(plan ? inkColor() : mutedColor());
-        }
-        if (myNav != null) {
-            myNav.setText(styledNavText(navText("我的", mine)));
-            myNav.setTypeface(mine ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            myNav.setTextColor(mine ? inkColor() : mutedColor());
+        if (bottomNavView != null) {
+            bottomNavView.updateTabs(schedule, plan, mine);
         }
         if (schedule) {
             updateHeader();
@@ -4977,268 +4922,34 @@ public class MainActivity extends Activity {
         }
     }
 
-    private ScrollView buildMyPage() {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(pageSurfaceColor());
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(0, statusBarHeight() + dp(34), 0, bottomContentInset() + dp(48));
-        if (!isLandscapeTablet()) {
-            int columnWidth = contentColumnWidth();
-            if (columnWidth < getResources().getDisplayMetrics().widthPixels) {
-                // 横屏平板除外：内容列封顶居中（双栏模式下左栏宽度由宿主决定）。
-                page.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
-                        LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
-            }
-        }
-        scrollView.addView(page);
-        if (isMinimalVisualTheme()) {
-            page.addView(profileHeader());
-            page.addView(mySettingCard("课表设置", "schedule", v -> showScheduleSettings()));
-            page.addView(mySettingCard("全局设置", "settings", v -> showGlobalSettings()));
-            page.addView(mySettingCard("安全设置", "shield", v -> showSecuritySettings()));
-            page.addView(mySettingCard("更多", "more", v -> showMoreSettings()));
-        } else {
-            page.addView(themedProfileHeader());
-            page.addView(themedMySettingCard("课表设置", "schedule", v -> showScheduleSettings()));
-            page.addView(themedMySettingCard("全局设置", "settings", v -> showGlobalSettings()));
-            page.addView(themedMySettingCard("安全设置", "shield", v -> showSecuritySettings()));
-            page.addView(themedMySettingCard("更多", "more", v -> showMoreSettings()));
-        }
-        TextView versionLine = new TextView(this);
-        versionLine.setText(appVersionText());
-        versionLine.setTextColor(mutedColor());
-        versionLine.setTextSize(13);
-        versionLine.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams versionParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        versionParams.topMargin = dp(24);
-        page.addView(versionLine, versionParams);
-        return scrollView;
+    private View buildMyPage() {
+        // 阶段 5-3：ViewBinding 壳层 + Builder 委托，视觉零变化，myPage 升级为 View 以承载 Fragment 壳层
+        com.polaris.timetable.databinding.FragmentMyBinding binding = com.polaris.timetable.databinding.FragmentMyBinding.inflate(getLayoutInflater());
+        View builderView = new MyPageBuilder(this).build(this);
+        binding.myPageContainer.removeAllViews();
+        binding.myPageContainer.addView(builderView,
+                new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        binding.myRoot.setBackgroundColor(pageSurfaceColor());
+        // 同步状态栏与底部 inset：绑定壳层的 myPageContainer 顶部由 Builder 内部处理，此处仅保证根背景
+        return binding.getRoot();
     }
 
     private String appVersionText() {
         try {
             String versionName = getPackageManager()
                     .getPackageInfo(getPackageName(), 0).versionName;
-            return "Polaris课程表 v" + (versionName == null ? "" : versionName);
+            return getString(R.string.my_version_value, versionName == null ? "" : versionName);
         } catch (PackageManager.NameNotFoundException exception) {
-            return "Polaris课程表";
+            return getString(R.string.app_name);
         }
-    }
-
-    private View themedProfileHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(18), dp(18), dp(18), dp(18));
-        header.setBackground(roundedBg(cardColorHex(), 26));
-        applyThemeElevation(header, 4);
-
-        CircleAvatarView avatar = new CircleAvatarView(this);
-        avatar.setProfile(accountName, avatarImageUri, avatarImageCrop);
-        avatar.setPlaceholderColor(PolarisVisualTheme.accentColor(
-                visualTheme, isDarkModeActive()));
-        avatar.setContentDescription("修改账户名称和头像");
-        avatar.setClickable(true);
-        avatar.setFocusable(true);
-        avatar.setOnClickListener(v -> showAccountProfileEditor());
-        header.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
-
-        LinearLayout identity = new LinearLayout(this);
-        identity.setOrientation(LinearLayout.VERTICAL);
-        identity.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams identityParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        identityParams.leftMargin = dp(18);
-        header.addView(identity, identityParams);
-
-        TextView name = new TextView(this);
-        name.setText(accountName);
-        name.setTextColor(inkColor());
-        name.setTextSize(22);
-        name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        identity.addView(name);
-
-        TextView school = themedProfileLine(displaySchoolName());
-        LinearLayout.LayoutParams schoolParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        schoolParams.topMargin = dp(6);
-        identity.addView(school, schoolParams);
-
-        TextView semester = themedProfileLine(displaySemesterName());
-        LinearLayout.LayoutParams semesterParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        semesterParams.topMargin = dp(3);
-        identity.addView(semester, semesterParams);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(menuCardWidth(0.88f)),
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.CENTER_HORIZONTAL;
-        params.setMargins(0, dp(8), 0, dp(18));
-        header.setLayoutParams(params);
-        return header;
-    }
-
-    private TextView themedProfileLine(String value) {
-        TextView line = new TextView(this);
-        line.setText(value);
-        line.setTextColor(mutedColor());
-        line.setTextSize(13);
-        line.setSingleLine(true);
-        line.setEllipsize(TextUtils.TruncateAt.END);
-        return line;
-    }
-
-    private View themedMySettingCard(String titleText, String iconType,
-                                     View.OnClickListener listener) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(16), dp(10), dp(14), dp(10));
-        card.setBackground(roundedBg(cardColorHex(), 22));
-        applyThemeElevation(card, 3);
-        card.setOnClickListener(listener);
-        attachCardPressFeedback(card, 22);
-
-        FrameLayout iconSurface = new FrameLayout(this);
-        iconSurface.setBackground(roundedBg(PolarisVisualTheme.hex(
-                PolarisVisualTheme.accentSurfaceColor(visualTheme, isDarkModeActive())), 16));
-        applyThemeElevation(iconSurface, 2);
-        MySettingIconView icon = new MySettingIconView(this, iconType,
-                themedIconColor(iconType), mutedColor());
-        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                dp(27), dp(27), Gravity.CENTER);
-        iconSurface.addView(icon, iconParams);
-        card.addView(iconSurface, new LinearLayout.LayoutParams(dp(46), dp(46)));
-
-        LinearLayout copy = new LinearLayout(this);
-        copy.setOrientation(LinearLayout.VERTICAL);
-        copy.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        copyParams.leftMargin = dp(16);
-        card.addView(copy, copyParams);
-
-        TextView label = new TextView(this);
-        label.setText(titleText);
-        label.setTextColor(inkColor());
-        label.setTextSize(16);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        copy.addView(label);
-
-        TextView description = new TextView(this);
-        description.setText(themedSettingDescription(iconType));
-        description.setTextColor(mutedColor());
-        description.setTextSize(12);
-        LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        descriptionParams.topMargin = dp(3);
-        copy.addView(description, descriptionParams);
-
-        TextView arrow = new TextView(this);
-        arrow.setText("›");
-        arrow.setTextColor(mutedColor());
-        arrow.setTextSize(26);
-        arrow.setGravity(Gravity.CENTER);
-        card.addView(arrow, new LinearLayout.LayoutParams(dp(30), dp(48)));
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(menuCardWidth(0.88f)), dp(78));
-        params.gravity = Gravity.CENTER_HORIZONTAL;
-        params.setMargins(0, 0, 0, dp(12));
-        card.setLayoutParams(params);
-        return card;
-    }
-
-    private String themedSettingDescription(String iconType) {
-        if ("schedule".equals(iconType)) {
-            return "管理课表与上课时间";
-        }
-        if ("settings".equals(iconType)) {
-            return "主题、通知与显示设置";
-        }
-        if ("more".equals(iconType)) {
-            return "版本、联系与更多设置";
-        }
-        return "账户与本机数据保护";
-    }
-
-    private int themedIconColor(String iconType) {
-        if ("settings".equals(iconType)) {
-            return color(isDarkModeActive() ? "#70D8F0" : "#238AB4");
-        }
-        if ("shield".equals(iconType)) {
-            return color(isDarkModeActive() ? "#7FE0B5" : "#2E8F68");
-        }
-        return PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
-    }
-
-    private View profileHeader() {
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.setGravity(Gravity.CENTER);
-        header.setPadding(0, dp(14), 0, dp(20));
-
-        CircleAvatarView avatar = new CircleAvatarView(this);
-        avatar.setProfile(accountName, avatarImageUri, avatarImageCrop);
-        avatar.setPlaceholderColor(isDarkModeActive() ? color("#31527D") : color("#172033"));
-        avatar.setContentDescription("修改账户名称和头像");
-        avatar.setClickable(true);
-        avatar.setFocusable(true);
-        avatar.setOnClickListener(v -> showAccountProfileEditor());
-        header.addView(avatar, new LinearLayout.LayoutParams(dp(72), dp(72)));
-
-        TextView name = new TextView(this);
-        name.setText(accountName);
-        name.setTextColor(inkColor());
-        name.setTextSize(20);
-        name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setGravity(Gravity.CENTER);
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(
-                Math.round(menuCardWidth(0.82f)),
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        nameParams.topMargin = dp(10);
-        header.addView(name, nameParams);
-
-        TextView school = profileInfoLine(displaySchoolName());
-        LinearLayout.LayoutParams schoolParams = new LinearLayout.LayoutParams(
-                Math.round(menuCardWidth(0.82f)),
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        schoolParams.topMargin = dp(5);
-        header.addView(school, schoolParams);
-
-        TextView semester = profileInfoLine(displaySemesterName());
-        LinearLayout.LayoutParams semesterParams = new LinearLayout.LayoutParams(
-                Math.round(menuCardWidth(0.82f)),
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        semesterParams.topMargin = dp(2);
-        header.addView(semester, semesterParams);
-        return header;
-    }
-
-    private TextView profileInfoLine(String text) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextColor(mutedColor());
-        view.setTextSize(13);
-        view.setGravity(Gravity.CENTER);
-        view.setSingleLine(true);
-        view.setEllipsize(TextUtils.TruncateAt.END);
-        return view;
     }
 
     private String displaySemesterName() {
-        return semesterName.length() == 0 ? "未设置学期" : semesterName;
+        return semesterName.length() == 0 ? getString(R.string.settings_semester_not_set) : semesterName;
     }
 
     private String displaySchoolName() {
-        return schoolName.length() == 0 ? "未选择学校" : schoolName;
+        return schoolName.length() == 0 ? getString(R.string.settings_school_not_set) : schoolName;
     }
 
     private TextView settingCard(String titleText, String bodyText, View.OnClickListener listener) {
@@ -5251,43 +4962,11 @@ public class MainActivity extends Activity {
         card.setTypeface(Typeface.DEFAULT_BOLD);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(18), dp(12), dp(18), dp(12));
-        card.setBackground(roundedBg(cardColorHex(), 18));
+        card.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_LARGE));
         card.setOnClickListener(listener);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 Math.round(menuCardWidth(0.86f)),
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.CENTER_HORIZONTAL;
-        params.setMargins(0, 0, 0, dp(10));
-        card.setLayoutParams(params);
-        return card;
-    }
-
-    private View mySettingCard(String titleText, String iconType, View.OnClickListener listener) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(18), dp(10), dp(18), dp(10));
-        card.setBackground(roundedBg(cardColorHex(), 18));
-        card.setOnClickListener(listener);
-        attachCardPressFeedback(card, 18);
-
-        MySettingIconView icon = new MySettingIconView(this, iconType, inkColor(), mutedColor());
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(28), dp(28));
-        iconParams.leftMargin = dp(6);
-        iconParams.rightMargin = dp(18);
-        card.addView(icon, iconParams);
-
-        TextView label = new TextView(this);
-        label.setText(titleText);
-        label.setTextColor(inkColor());
-        label.setTextSize(16);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        label.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-        card.addView(label, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(menuCardWidth(0.86f)),
-                dp(58));
         params.gravity = Gravity.CENTER_HORIZONTAL;
         params.setMargins(0, 0, 0, dp(10));
         card.setLayoutParams(params);
@@ -5320,12 +4999,586 @@ public class MainActivity extends Activity {
         return (active ? "●" : "○") + "\n" + label;
     }
 
+    @Override
+    public boolean navDarkMode() {
+        return isDarkModeActive();
+    }
+
+    @Override
+    public boolean navMinimalTheme() {
+        return isMinimalVisualTheme();
+    }
+
+    @Override
+    public String navVisualTheme() {
+        return visualTheme;
+    }
+
+    @Override
+    public boolean navBlurEnabled() {
+        return shellBarsBlurEnabled;
+    }
+
+    @Override
+    public int navOpacity() {
+        return bottomNavOpacity;
+    }
+
+    @Override
+    public int navRadius() {
+        return bottomNavRadius();
+    }
+
+    @Override
+    public int navHeight() {
+        return navVisualHeight();
+    }
+
+    @Override
+    public int navBottomInset() {
+        return Math.max(systemBottomInset, 0);
+    }
+
+    @Override
+    public int navInkColor() {
+        return inkColor();
+    }
+
+    @Override
+    public int navMutedColor() {
+        return mutedColor();
+    }
+
+    @Override
+    public boolean navTabActive(int tab) {
+        return activeTab == tab;
+    }
+
+    @Override
+    public void onNavTabSelected(int tab) {
+        switchTab(tab);
+    }
+
+    @Override
+    public View navContentSource() {
+        return contentHost;
+    }
+
+    @Override
+    public CharSequence navLabel(int tab, boolean active) {
+        String label = tab == 0 ? "课表" : tab == 1 ? "计划" : "我的";
+        return styledNavText(navText(label, active));
+    }
+
+    @Override
+    public void attachNavPressFeedback(View item) {
+        attachPressFeedback(item);
+    }
+
+    // ===== MyPageBuilder.Host 实现:全部委托既有状态与方法,不新增状态 =====
+
+    @Override
+    public String visualTheme() {
+        return visualTheme;
+    }
+
+    @Override
+    public int contentColumnWidthPx() {
+        return contentColumnWidth();
+    }
+
+    @Override
+    public int menuCardWidthPx(float percent) {
+        return menuCardWidth(percent);
+    }
+
+    @Override
+    public int statusBarInsetPx() {
+        return statusBarHeight();
+    }
+
+    @Override
+    public int bottomContentInsetPx() {
+        return bottomContentInset();
+    }
+
+    @Override
+    public int colorValue(String hex) {
+        return color(hex);
+    }
+
+    @Override
+    public android.graphics.drawable.Drawable roundedCardBackground(String hex, int radiusDp) {
+        return roundedBg(hex, radiusDp);
+    }
+
+
+
+    @Override
+    public String accountName() {
+        return accountName;
+    }
+
+    @Override
+    public String avatarImageUri() {
+        return avatarImageUri;
+    }
+
+    @Override
+    public BackgroundImageCrop avatarImageCrop() {
+        return avatarImageCrop;
+    }
+
+    @Override
+    public String schoolDisplayName() {
+        return displaySchoolName();
+    }
+
+    @Override
+    public String semesterDisplayName() {
+        return displaySemesterName();
+    }
+
+    @Override
+    public String versionText() {
+        return appVersionText();
+    }
+
+    @Override
+    public void openScheduleSettings() {
+        showScheduleSettings();
+    }
+
+    @Override
+    public void openGlobalSettings() {
+        showGlobalSettings();
+    }
+
+    @Override
+    public void openSecuritySettings() {
+        showSecuritySettings();
+    }
+
+    @Override
+    public void openMoreSettings() {
+        showMoreSettings();
+    }
+
+    @Override
+    public void editAccountProfile() {
+        showAccountProfileEditor();
+    }
+
+    // ===== SettingsPageBuilder.Host 实现:设置页数据与动作委托 =====
+
+    @Override
+    public String scheduleName() {
+        return scheduleName;
+    }
+
+    @Override
+    public String currentWeekValue() {
+        return getString(R.string.settings_current_week_value, currentWeekFromDate());
+    }
+
+    @Override
+    public boolean showSaturday() {
+        return showSaturday;
+    }
+
+    @Override
+    public boolean showSunday() {
+        return showSunday;
+    }
+
+    @Override
+    public boolean showOutOfWeek() {
+        return showOutOfWeekCourses;
+    }
+
+    @Override
+    public boolean remindersEnabled() {
+        return remindersEnabled;
+    }
+
+    @Override
+    public int reminderMinutesBefore() {
+        return reminderMinutesBefore;
+    }
+
+    @Override
+    public String reminderStatusText() {
+        return courseReminderStatusText();
+    }
+
+    @Override
+    public String classTimeSummary() {
+        return classTimeTableSummary();
+    }
+
+    @Override
+    public String firstWeekDay() {
+        return firstWeekDay;
+    }
+
+    @Override
+    public int semesterWeeks() {
+        return semesterWeeks;
+    }
+
+    @Override
+    public int coursesSize() {
+        return courses.size();
+    }
+
+    @Override
+    public String parseDiagnosticsSummary() {
+        return lastParseDiagnosticsSummary;
+    }
+
+    @Override
+    public void onShowSaturdayChanged(boolean value) {
+        showSaturday = value;
+        updateVisibleDayCount();
+        saveConfig();
+        renderSchedule();
+    }
+
+    @Override
+    public void onShowSundayChanged(boolean value) {
+        showSunday = value;
+        updateVisibleDayCount();
+        saveConfig();
+        renderSchedule();
+    }
+
+    @Override
+    public void onShowOutOfWeekChanged(boolean value) {
+        showOutOfWeekCourses = value;
+        saveConfig();
+        renderSchedule();
+    }
+
+    @Override
+    public void onReminderEnabledChanged(boolean value) {
+        handleCourseReminderToggle(value);
+    }
+
+    @Override
+    public void onReminderLeadClicked(View anchor) {
+        showChoiceDialog(anchor, getString(R.string.settings_row_reminder_lead),
+                new String[]{getString(R.string.settings_minutes_5), getString(R.string.settings_minutes_10), getString(R.string.settings_minutes_15), getString(R.string.settings_minutes_30)},
+                getString(R.string.settings_minutes_value, reminderMinutesBefore), value -> {
+                    reminderMinutesBefore = Integer.parseInt(value.split(" ")[0]);
+                    saveConfig();
+                    refreshActiveSettingsPage();
+                });
+    }
+
+    @Override
+    public void onReminderStatusClicked() {
+        handleCourseReminderStatusClick();
+    }
+
+    @Override
+    public void onClassTimeClicked() {
+        showClassTimeTableEditor();
+    }
+
+    @Override
+    public void onFirstWeekDayClicked(View anchor) {
+        showDateDialog(getString(R.string.settings_row_first_week_day), firstWeekDay, value -> {
+            firstWeekDay = value;
+            currentWeek = currentWeekFromDate();
+            saveConfig();
+            renderSchedule();
+            refreshActiveSettingsPage();
+        });
+    }
+
+    @Override
+    public void onSemesterWeeksClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_semester_weeks), 1, 20, semesterWeeks, 1, value -> {
+            semesterWeeks = value;
+            currentWeek = Math.max(1, Math.min(semesterWeeks, currentWeekFromDate()));
+            saveConfig();
+            renderSchedule();
+            updateHeader();
+            refreshActiveSettingsPage();
+        });
+    }
+
+    @Override
+    public void onViewAllCoursesClicked() {
+        showCourseManagePage();
+    }
+
+    @Override
+    public void onParseDiagnosticsClicked() {
+        showParseDiagnosticsDialog();
+    }
+
+    @Override
+    public String darkMode() {
+        return darkMode;
+    }
+
+    @Override
+    public String backgroundDisplayValue() {
+        return backgroundImageUri.length() == 0 ? getString(R.string.settings_common_not_set) : getString(R.string.settings_album_value);
+    }
+
+    @Override
+    public boolean showPracticeBanner() {
+        return showPracticeBanner;
+    }
+
+    @Override
+    public boolean collapseLunchBreak() {
+        return collapseLunchBreak;
+    }
+
+    @Override
+    public boolean shellBlurEnabled() {
+        return shellBarsBlurEnabled;
+    }
+
+    @Override
+    public int headerOpacity() {
+        return timetableHeaderOpacity;
+    }
+
+    @Override
+    public int cellHeight() {
+        return courseCellHeight;
+    }
+
+    @Override
+    public int cellRadius() {
+        return courseCornerRadius;
+    }
+
+    @Override
+    public int cellOpacity() {
+        return courseBlockOpacity;
+    }
+
+    @Override
+    public void onScheduleSwitchClicked(View anchor) {
+        showScheduleSwitchDialog();
+    }
+
+    @Override
+    public void onVisualThemeClicked(View anchor) {
+        showChoiceDialog(anchor, getString(R.string.settings_row_visual_theme), PolarisVisualTheme.NAMES,
+                visualTheme, this::applyVisualTheme);
+    }
+
+    @Override
+    public void onDarkModeClicked(View anchor) {
+        showChoiceDialog(anchor, getString(R.string.settings_row_dark_mode), new String[]{getString(R.string.settings_dark_follow_system), getString(R.string.settings_dark_light), getString(R.string.settings_dark_dark)}, darkMode,
+                value -> {
+                    darkMode = value;
+                    scheduleRepository.saveGlobalDarkMode(darkMode);
+                    saveConfig();
+                    applyShellAppearance();
+                    refreshMyPageBehindSettings();
+                    refreshPlanTheme();
+                    renderSchedule();
+                    SettingsPageBuilder.updateSettingValueRow(anchor, darkMode);
+                    refreshVisibleSettingsTheme();
+                });
+    }
+
+    @Override
+    public void onBoardBackgroundClicked(View anchor) {
+        showChoiceDialog(anchor, getString(R.string.settings_row_board_background), new String[]{"从系统相册选择", "清除背景"}, backgroundImageUri.length() == 0 ? "清除背景" : "从系统相册选择",
+                value -> {
+                    if (value.startsWith("从")) {
+                        openBackgroundPicker();
+                    } else {
+                        backgroundImageUri = "";
+                        backgroundImageCrop = BackgroundImageCrop.full();
+                        timetableBackground = "清爽蓝";
+                        saveGlobalAppearance();
+                        applyShellAppearance();
+                        refreshPlanTheme();
+                        renderSchedule();
+                        SettingsPageBuilder.updateSettingValueRow(anchor, getString(R.string.settings_common_not_set));
+                        refreshVisibleSettingsTheme();
+                    }
+                });
+    }
+
+    @Override
+    public void onShowPracticeChanged(boolean value) {
+        showPracticeBanner = value;
+        saveGlobalAppearance();
+        renderSchedule();
+        updatePracticeSidePanel();
+    }
+
+    @Override
+    public void onCollapseLunchChanged(boolean value) {
+        collapseLunchBreak = value;
+        saveGlobalAppearance();
+        renderSchedule();
+    }
+
+    @Override
+    public void onAppearancePresetClicked(View anchor) {
+        showChoiceDialog(anchor, getString(R.string.settings_row_appearance_preset), APPEARANCE_PRESETS,
+                appearancePresetName(), this::applyAppearancePreset);
+    }
+
+    @Override
+    public void onShellBlurChanged(boolean value) {
+        shellBarsBlurEnabled = value;
+        saveGlobalAppearance();
+        applyShellAppearance();
+    }
+
+    @Override
+    public void onHeaderOpacityClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_header_opacity), 40, 100, timetableHeaderOpacity, value -> {
+            timetableHeaderOpacity = Math.max(40, Math.min(100, value));
+            saveGlobalAppearance();
+            applyShellAppearance();
+            SettingsPageBuilder.updateSettingValueRow(anchor, timetableHeaderOpacity + "%");
+        });
+    }
+
+    @Override
+    public void onNavOpacityClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_nav_opacity), 40, 100, bottomNavOpacity, value -> {
+            bottomNavOpacity = Math.max(40, Math.min(100, value));
+            saveGlobalAppearance();
+            applyShellAppearance();
+            SettingsPageBuilder.updateSettingValueRow(anchor, bottomNavOpacity + "%");
+        });
+    }
+
+    @Override
+    public void onNavHeightClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_nav_height), 56, 120, bottomNavHeight, 1, value -> {
+            bottomNavHeight = Math.max(56, Math.min(120, value));
+            saveGlobalAppearance();
+            applyShellAppearance();
+            refreshMyPageBehindSettings();
+            renderSchedule();
+            SettingsPageBuilder.updateSettingValueRow(anchor, bottomNavHeight + " dp");
+        });
+    }
+
+    @Override
+    public void onNavRadiusClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_nav_radius), 0, 72, bottomNavRadius(), value -> {
+            bottomNavRectCornerRadius = Math.max(0, Math.min(72, value));
+            saveGlobalAppearance();
+            applyShellAppearance();
+            SettingsPageBuilder.updateSettingValueRow(anchor, bottomNavRadius() + " dp");
+        });
+    }
+
+    @Override
+    public void onCellHeightClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_cell_height), 56, 120, courseCellHeight, value -> {
+            courseCellHeight = Math.max(56, Math.min(120, value));
+            saveGlobalAppearance();
+            renderSchedule();
+            SettingsPageBuilder.updateSettingValueRow(anchor, courseCellHeight + " dp");
+        });
+    }
+
+    @Override
+    public void onCellRadiusClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_cell_radius), 0, 24, courseCornerRadius, value -> {
+            courseCornerRadius = Math.max(0, Math.min(24, value));
+            saveGlobalAppearance();
+            renderSchedule();
+            SettingsPageBuilder.updateSettingValueRow(anchor, courseCornerRadius + " dp");
+        });
+    }
+
+    @Override
+    public void onCellOpacityClicked(View anchor) {
+        showNumberDialog(getString(R.string.settings_row_cell_opacity), 45, 100, courseBlockOpacity, value -> {
+            courseBlockOpacity = Math.max(45, Math.min(100, value));
+            saveGlobalAppearance();
+            renderSchedule();
+            SettingsPageBuilder.updateSettingValueRow(anchor, courseBlockOpacity + "%");
+        });
+    }
+
+    @Override
+    public String semesterNameDisplay() {
+        return displaySemesterName();
+    }
+
+    @Override
+    public String schoolNameDisplay() {
+        return displaySchoolName();
+    }
+
+    @Override
+    public String contactEmail() {
+        return CONTACT_EMAIL;
+    }
+
+    @Override
+    public String githubDisplay() {
+        return PROJECT_HOME_URL.replace("https://", "");
+    }
+
+    @Override
+    public void onSemesterNameClicked() {
+        showSemesterNameDialog();
+    }
+
+    @Override
+    public void onSchoolClicked() {
+        showParserModelDialog();
+    }
+
+    @Override
+    public void onExportBackupClicked() {
+        exportScheduleBackup();
+    }
+
+    @Override
+    public void onRestoreBackupClicked() {
+        openBackupFilePicker();
+    }
+
+    @Override
+    public void onVersionClicked() {
+        copyTextToClipboard(appVersionText());
+        android.widget.Toast.makeText(this, getString(R.string.settings_toast_version_copied), android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onContactClicked() {
+        copyTextToClipboard(CONTACT_EMAIL);
+        android.widget.Toast.makeText(this, getString(R.string.settings_toast_email_copied, CONTACT_EMAIL), android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onGithubClicked() {
+        copyTextToClipboard(PROJECT_HOME_URL);
+        android.widget.Toast.makeText(this, getString(R.string.settings_toast_github_copied, PROJECT_HOME_URL),
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+
     private SpannableString styledNavText(String text) {
         SpannableString span = new SpannableString(text);
         int lineBreak = text.indexOf('\n');
         if (lineBreak > 0) {
-            span.setSpan(new AbsoluteSizeSpan(25, true), 0, lineBreak, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            span.setSpan(new AbsoluteSizeSpan(13, true), lineBreak + 1, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            // AbsoluteSizeSpan 只有 px/dip 两种模式,px 按 scaledDensity 换算等效 sp,可随系统字号缩放。
+            span.setSpan(new AbsoluteSizeSpan(spToPx(DesignTokens.TYPE_NAV_GLYPH), false),
+                    0, lineBreak, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new AbsoluteSizeSpan(spToPx(DesignTokens.TYPE_NAV_LABEL), false),
+                    lineBreak + 1, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         return span;
     }
@@ -5334,9 +5587,14 @@ public class MainActivity extends Activity {
         SpannableString span = new SpannableString(text);
         int iconEnd = text.indexOf("  ");
         if (iconEnd > 0) {
-            span.setSpan(new AbsoluteSizeSpan(22, true), 0, iconEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new AbsoluteSizeSpan(spToPx(DesignTokens.TYPE_TITLE_GLYPH), false),
+                    0, iconEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         return span;
+    }
+
+    private int spToPx(int sp) {
+        return Math.round(sp * getResources().getDisplayMetrics().scaledDensity);
     }
 
     private void attachPressFeedback(View view) {
@@ -5351,7 +5609,8 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void applyThemeElevation(View view, int elevationDp) {
+    @Override
+    public void applyThemeElevation(View view, int elevationDp) {
         view.setElevation(dp(elevationDp));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             int accent = PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
@@ -5362,7 +5621,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void attachCardPressFeedback(View view, int radius) {
+    @Override
+    public void attachCardPressFeedback(View view, int radius) {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 target.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
@@ -5380,7 +5640,7 @@ public class MainActivity extends Activity {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 target.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                target.setBackground(roundedBg(pressColorHex(), 14));
+                target.setBackground(roundedBg(pressColorHex(), DesignTokens.RADIUS_CARD));
                 target.postDelayed(() -> target.setBackgroundColor(Color.TRANSPARENT), 180);
             } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
                 target.setBackgroundColor(Color.TRANSPARENT);
@@ -5389,67 +5649,22 @@ public class MainActivity extends Activity {
         });
     }
 
-    private String pressColorHex() {
+    @Override
+    public String pressColorHex() {
         return PolarisVisualTheme.hex(
                 PolarisVisualTheme.pressColor(visualTheme, isDarkModeActive()));
     }
 
     private TextView sectionHeader(String text) {
-        TextView header = new TextView(this);
-        header.setTag(TAG_SECTION_HEADER);
-        header.setText(text);
-        header.setTextColor(mutedColor());
-        header.setTextSize(15);
-        header.setPadding(dp(10), dp(22), dp(10), dp(8));
-        return header;
+        return new SettingsPageBuilder(this).sectionHeader(this, text);
     }
 
     private LinearLayout settingsGroup() {
-        LinearLayout group = new LinearLayout(this);
-        group.setTag(TAG_SETTINGS_GROUP);
-        group.setOrientation(LinearLayout.VERTICAL);
-        group.setPadding(dp(10), dp(10), dp(10), dp(10));
-        group.setBackground(roundedBg(groupColorHex(), isMinimalVisualTheme() ? 18 : 22));
-        if (!isMinimalVisualTheme()) {
-            applyThemeElevation(group, 2);
-        }
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(8));
-        group.setLayoutParams(params);
-        return group;
+        return new SettingsPageBuilder(this).settingsGroup(this);
     }
 
     private View settingValueRow(String label, String value, View.OnClickListener listener) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        row.setOnClickListener(listener);
-        row.setBackgroundColor(Color.TRANSPARENT);
-        row.setMinimumHeight(dp(58));
-        attachRowPressFeedback(row);
-
-        TextView labelView = new TextView(this);
-        labelView.setTag(TAG_SETTING_LABEL);
-        labelView.setText(label);
-        labelView.setTextColor(inkColor());
-        labelView.setTextSize(16);
-        labelView.setTypeface(Typeface.DEFAULT_BOLD);
-        labelView.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(labelView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView valueView = new TextView(this);
-        valueView.setTag(TAG_SETTING_VALUE);
-        valueView.setText(value);
-        valueView.setTextColor(mutedColor());
-        valueView.setTextSize(15);
-        valueView.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        valueView.setSingleLine(false);
-        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(dp(150), LinearLayout.LayoutParams.WRAP_CONTENT);
-        valueParams.leftMargin = dp(10);
-        row.addView(valueView, valueParams);
-        return row;
+        return new SettingsPageBuilder(this).settingValueRow(this, label, value, listener);
     }
 
     private void updateSettingValueRow(View row, String value) {
@@ -5475,7 +5690,7 @@ public class MainActivity extends Activity {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(14), dp(18), dp(14));
-        panel.setBackground(roundedBg(cardColorHex(), 22));
+        panel.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_DIALOG_SHEET));
         panel.setOnClickListener(v -> {});
 
         TextView title = new TextView(this);
@@ -5543,7 +5758,7 @@ public class MainActivity extends Activity {
             top = Math.max(statusBarHeight() + dp(12), top);
         }
 
-        View choiceContent = glassDialogContent(panel, 22);
+        View choiceContent = glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET);
         FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
                 panelWidth, LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT);
         panelParams.leftMargin = left;
@@ -5601,33 +5816,8 @@ public class MainActivity extends Activity {
     }
 
     private View settingSwitchRow(String label, boolean checked, BooleanSetter setter) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        row.setMinimumHeight(dp(58));
-        attachRowPressFeedback(row);
-
-        TextView labelView = new TextView(this);
-        labelView.setTag(TAG_SETTING_LABEL);
-        labelView.setText(label);
-        labelView.setTextColor(inkColor());
-        labelView.setTextSize(16);
-        labelView.setTypeface(Typeface.DEFAULT_BOLD);
-        labelView.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(labelView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        SwitchThumbView toggle = switchView(checked);
-        row.addView(toggle);
-        final boolean[] state = {checked};
-        View.OnClickListener listener = v -> {
-            state[0] = !state[0];
-            setter.set(state[0]);
-            toggle.setChecked(state[0]);
-        };
-        row.setOnClickListener(listener);
-        toggle.setOnClickListener(listener);
-        return row;
+        // Switch row moved to SettingsPageBuilder; delegate with adapter
+        return new SettingsPageBuilder(this).settingSwitchRow(this, label, checked, value -> setter.set(value));
     }
 
     private SwitchThumbView switchView(boolean checked) {
@@ -5672,7 +5862,7 @@ public class MainActivity extends Activity {
             setter.set(parseBounded(valueInput.getText().toString(), min, max, value[0]));
             dialog.dismiss();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -5689,7 +5879,7 @@ public class MainActivity extends Activity {
             setter.set(value);
             dialog.dismiss();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -5703,10 +5893,10 @@ public class MainActivity extends Activity {
         renderSchedule();
 
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("设置第一周的第一天");
+        LinearLayout panel = dialogPanel(getString(R.string.first_week_day_title));
 
         TextView message = new TextView(this);
-        message.setText("请选择本学期第一周的第一天。若跳过，将使用默认日期 " + defaultDate + "。");
+        message.setText(getString(R.string.first_week_day_message, defaultDate));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -5720,7 +5910,7 @@ public class MainActivity extends Activity {
         picker.init(date.get(Calendar.YEAR), date.get(Calendar.MONTH), date.get(Calendar.DAY_OF_MONTH), null);
         panel.addView(picker);
 
-        panel.addView(dialogAction("使用此日期", v -> {
+        panel.addView(dialogAction(getString(R.string.first_week_day_use), v -> {
             firstWeekDay = picker.getYear() + "/" + (picker.getMonth() + 1) + "/" + picker.getDayOfMonth();
             currentWeek = currentWeekFromDate();
             saveConfig();
@@ -5728,10 +5918,10 @@ public class MainActivity extends Activity {
             renderSchedule();
             dialog.dismiss();
         }));
-        panel.addView(dialogAction("跳过，使用默认日期", v -> dialog.dismiss()));
+        panel.addView(dialogAction(getString(R.string.first_week_day_skip), v -> dialog.dismiss()));
         dialog.setCanceledOnTouchOutside(false);
         dialog.setOnDismissListener(ignored -> scheduleWeekSwipeHintIfNeeded());
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -5746,11 +5936,12 @@ public class MainActivity extends Activity {
         picker.setMinute(time[1]);
         panel.addView(picker);
         panel.addView(pageSaveButton(() -> {
-            String value = twoDigits(picker.getHour()) + ":" + twoDigits(picker.getMinute()) + "开始";
+            String value = getString(R.string.classtime_picker_value, twoDigits(picker.getHour())
+                + ":" + twoDigits(picker.getMinute()));
             setter.set(value);
             dialog.dismiss();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -5761,7 +5952,7 @@ public class MainActivity extends Activity {
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
         panel.setPadding(dp(18), dp(18), dp(18), dp(18));
         panel.setMinimumWidth(dp(292));
-        panel.setBackground(roundedBg(cardColorHex(), 22));
+        panel.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_DIALOG_SHEET));
         TextView titleView = new TextView(this);
         titleView.setText(titleText);
         titleView.setTextColor(inkColor());
@@ -5783,38 +5974,14 @@ public class MainActivity extends Activity {
         return glassDialogContent(panel, radius, -1);
     }
 
-    private View glassDialogContent(LinearLayout panel, int radius, int opacityPercent) {
-        if (!shellBarsBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            return panel;
-        }
-        panel.setBackgroundColor(Color.TRANSPARENT);
-        BackdropBlurView glass = new BackdropBlurView(this);
-        glass.setSourceView(dialogBlurSource());
-        glass.setGlassBackground(opacityPercent < 0
-                ? dialogGlassBg(radius)
-                : dialogGlassBg(radius, opacityPercent), dp(radius));
-        glass.setBlurEnabled(true, dp(22));
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.CENTER;
-        glass.addView(panel, params);
-        return glass;
+private View glassDialogContent(LinearLayout panel, int radius, int opacityPercent) {
+    return GlassDialogFactory.dialogContent(panel, glassConfig(),
+            dialogBlurSource(), radius, opacityPercent);
     }
 
-    private View glassDialogContent(ScrollView scrollView, LinearLayout panel, int radius) {
-        if (!shellBarsBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            return scrollView;
-        }
-        panel.setBackgroundColor(Color.TRANSPARENT);
-        BackdropBlurView glass = new BackdropBlurView(this);
-        glass.setSourceView(dialogBlurSource());
-        glass.setGlassBackground(dialogGlassBg(radius), dp(radius));
-        glass.setBlurEnabled(true, dp(22));
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.CENTER;
-        glass.addView(scrollView, params);
-        return glass;
+private View glassDialogContent(ScrollView scrollView, LinearLayout panel, int radius) {
+    return GlassDialogFactory.dialogContent(scrollView, glassConfig(),
+            dialogBlurSource(), radius);
     }
 
     private View dialogBlurSource() {
@@ -5824,134 +5991,38 @@ public class MainActivity extends Activity {
         return rootView != null ? rootView : getWindow().getDecorView();
     }
 
-    private GradientDrawable dialogGlassBg(int radius) {
-        GradientDrawable drawable = new GradientDrawable();
-        if (isDarkModeActive()) {
-            drawable.setColor(Color.argb(142, 24, 34, 53));
-            drawable.setStroke(dp(1), Color.argb(85, 255, 255, 255));
-        } else {
-            drawable.setColor(Color.argb(172, 248, 251, 255));
-            drawable.setStroke(dp(1), Color.argb(150, 255, 255, 255));
-        }
-        drawable.setCornerRadius(dp(radius));
-        return drawable;
+    private GlassDialogFactory.Config glassConfig() {
+        return new GlassDialogFactory.Config(this, shellBarsBlurEnabled, isDarkModeActive(),
+                isMinimalVisualTheme(), visualTheme);
     }
 
-    private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
-        GradientDrawable drawable = new GradientDrawable();
-        int boundedOpacity = Math.max(0, Math.min(100, opacityPercent));
-        int alpha = Math.round(255f * boundedOpacity / 100f);
-        if (isDarkModeActive()) {
-            drawable.setColor(Color.argb(alpha, 24, 34, 53));
-            drawable.setStroke(dp(1), Color.argb(85, 255, 255, 255));
-        } else {
-            drawable.setColor(Color.argb(alpha, 248, 251, 255));
-            drawable.setStroke(dp(1), Color.argb(150, 255, 255, 255));
-        }
-        drawable.setCornerRadius(dp(radius));
-        return drawable;
+private GradientDrawable dialogGlassBg(int radius) {
+    return GlassDialogFactory.dialogGlassBg(glassConfig(), radius);
+    }
+
+private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
+    return GlassDialogFactory.dialogGlassBg(glassConfig(), radius, opacityPercent);
     }
 
     private void transparentDialog(Dialog dialog) {
-        if (dialog.getWindow() != null) {
-            Window window = dialog.getWindow();
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            window.setDimAmount(isDarkModeActive() ? 0.68f : 0.42f);
-            // 平板自适应宽度：手机保持 320dp，宽屏平板放大到最多 400dp。
-            int dialogWidth = Math.max(dp(320), Math.min(dp(400),
-                    getResources().getDisplayMetrics().widthPixels - dp(64)));
-            window.setLayout(dialogWidth, LinearLayout.LayoutParams.WRAP_CONTENT);
-            makeDialogStill(window);
-        }
+        com.polaris.timetable.ui.dialog.DialogWindowHelper.transparentDialog(dialog, isDarkModeActive(), this);
     }
 
     private void makeDialogStill(Window window) {
-        if (window == null) {
-            return;
-        }
-        window.setWindowAnimations(0);
-        WindowManager.LayoutParams attributes = window.getAttributes();
-        attributes.windowAnimations = 0;
-        window.setAttributes(attributes);
+        com.polaris.timetable.ui.dialog.DialogWindowHelper.makeDialogStill(window);
     }
 
     private void showScheduleSettings() {
-        LinearLayout panel = settingsPagePanel("课表设置");
-        panel.addView(settingValueRow("课表名称", scheduleName, v -> {}));
-        panel.addView(settingValueRow("当前周", "第 " + currentWeekFromDate() + " 周", v -> {}));
-        panel.addView(sectionHeader("课表外观"));
-        LinearLayout displayCard = settingsGroup();
-        displayCard.addView(settingSwitchRow("显示周六", showSaturday, value -> {
-                    showSaturday = value;
-                    updateVisibleDayCount();
-                    saveConfig();
-                    renderSchedule();
-                }));
-        displayCard.addView(settingSwitchRow("显示周日", showSunday, value -> {
-                    showSunday = value;
-                    updateVisibleDayCount();
-                    saveConfig();
-                    renderSchedule();
-                }));
-        displayCard.addView(settingSwitchRow("显示非本周课程", showOutOfWeekCourses, value -> {
-                    showOutOfWeekCourses = value;
-                    saveConfig();
-                    renderSchedule();
-                }));
-        panel.addView(displayCard);
-        panel.addView(sectionHeader("课程提醒"));
-        LinearLayout reminderCard = settingsGroup();
-        reminderCard.addView(settingSwitchRow("课程提醒", remindersEnabled,
-                this::handleCourseReminderToggle));
-        reminderCard.addView(settingValueRow("提前时间", reminderMinutesBefore + " 分钟",
-                v -> showChoiceDialog(v, "提前时间",
-                        new String[]{"5 分钟", "10 分钟", "15 分钟", "30 分钟"},
-                        reminderMinutesBefore + " 分钟", value -> {
-                            reminderMinutesBefore = Integer.parseInt(value.split(" ")[0]);
-                            saveConfig();
-                            refreshActiveSettingsPage();
-                        })));
-        reminderCard.addView(settingValueRow("提醒状态", courseReminderStatusText(),
-                v -> handleCourseReminderStatusClick()));
-        panel.addView(reminderCard);
-        panel.addView(sectionHeader("上课时间"));
-        LinearLayout timeCard = settingsGroup();
-        timeCard.addView(settingValueRow("节次时间表", classTimeTableSummary(),
-                v -> showClassTimeTableEditor()));
-        panel.addView(timeCard);
-        panel.addView(sectionHeader("课表数据"));
-        LinearLayout dataCard = settingsGroup();
-        dataCard.addView(settingValueRow("第一周的第一天", firstWeekDay,
-                v -> showDateDialog("第一周的第一天", firstWeekDay, value -> {
-                    firstWeekDay = value;
-                    currentWeek = currentWeekFromDate();
-                    saveConfig();
-                    renderSchedule();
-                    refreshActiveSettingsPage();
-                })));
-        dataCard.addView(settingValueRow("学期周数", semesterWeeks + " 周",
-                v -> showNumberDialog("学期周数", 1, 20, semesterWeeks, 1, value -> {
-            semesterWeeks = value;
-            currentWeek = Math.max(1, Math.min(semesterWeeks, currentWeekFromDate()));
-            saveConfig();
-            renderSchedule();
-            updateHeader();
-            refreshActiveSettingsPage();
-        })));
-        dataCard.addView(settingValueRow("查看所有课程", courses.size() + " 门", v -> showCourseManagePage()));
-        dataCard.addView(settingValueRow("解析诊断", lastParseDiagnosticsSummary,
-                v -> showParseDiagnosticsDialog()));
-        panel.addView(dataCard);
-        showSettingsPage("课表设置", panel);
+        LinearLayout panel = new SettingsPageBuilder(this).createScheduleSettingsPanel(this);
+        showSettingsPage(getString(R.string.settings_title_schedule), panel);
     }
 
     private void showParseDiagnosticsDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("最近一次解析诊断");
+        LinearLayout panel = dialogPanel(getString(R.string.diagnostics_title));
         if (lastParseDiagnosticsText.length() == 0) {
             TextView empty = new TextView(this);
-            empty.setText("还没有解析记录。导入一次 PDF 课表后，可在这里查看识别提示和详细日志。");
+            empty.setText(getString(R.string.diagnostics_empty));
             empty.setTextColor(mutedColor());
             empty.setTextSize(15);
             empty.setLineSpacing(dp(4), 1f);
@@ -5966,7 +6037,7 @@ public class MainActivity extends Activity {
             report.setTextIsSelectable(true);
             report.setLineSpacing(dp(3), 1f);
             report.setPadding(dp(12), dp(10), dp(12), dp(10));
-            report.setBackground(roundedBg(cardColorHex(), 12));
+            report.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
 
             ScrollView reportScroll = new ScrollView(this);
             reportScroll.setFillViewport(false);
@@ -5978,30 +6049,30 @@ public class MainActivity extends Activity {
             int visibleLines = Math.min(16, lineCount);
             LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    Math.min(dp(360), Math.max(dp(150), visibleLines * dp(22))));
+                    Math.min(dp(360), Math.max(dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH), visibleLines * dp(22))));
             panel.addView(reportScroll, scrollParams);
-            panel.addView(dialogAction("复制诊断日志", v -> copyParseDiagnostics()));
+            panel.addView(dialogAction(getString(R.string.diagnostics_copy_action), v -> copyParseDiagnostics()));
         }
-        panel.addView(dialogAction("关闭", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.import_close), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private void copyParseDiagnostics() {
         if (lastParseDiagnosticsText.length() == 0) {
-            Toast.makeText(this, "暂无可复制的解析诊断", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.diagnostics_copy_none), Toast.LENGTH_SHORT).show();
             return;
         }
         ClipboardManager clipboard = (ClipboardManager) getSystemService(
                 Context.CLIPBOARD_SERVICE);
         if (clipboard == null) {
-            Toast.makeText(this, "无法访问系统剪贴板", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.import_clipboard_unavailable), Toast.LENGTH_LONG).show();
             return;
         }
         clipboard.setPrimaryClip(ClipData.newPlainText(
-                "Polaris解析诊断", lastParseDiagnosticsText));
-        Toast.makeText(this, "解析诊断已复制", Toast.LENGTH_SHORT).show();
+                getString(R.string.diagnostics_clip_label), lastParseDiagnosticsText));
+        Toast.makeText(this, getString(R.string.diagnostics_copied), Toast.LENGTH_SHORT).show();
     }
 
     private void showCourseManagePage() {
@@ -6033,7 +6104,7 @@ public class MainActivity extends Activity {
         courseManageListContainer.removeAllViews();
         if (courses.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("还没有课程");
+            empty.setText(getString(R.string.empty_courses_title));
             empty.setTextColor(mutedColor());
             empty.setTextSize(16);
             empty.setGravity(Gravity.CENTER);
@@ -6046,7 +6117,7 @@ public class MainActivity extends Activity {
         List<CourseGroup> groups = filteredCourseGroups();
         if (groups.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("没有找到匹配的课程");
+            empty.setText(getString(R.string.manage_no_match));
             empty.setTextColor(mutedColor());
             empty.setTextSize(16);
             empty.setGravity(Gravity.CENTER);
@@ -6057,7 +6128,7 @@ public class MainActivity extends Activity {
             return;
         }
         courseManageListContainer.addView(sectionHeader(courseManageSelectionMode
-                ? "选择课程" : "全部课程"));
+                ? getString(R.string.manage_title_select) : getString(R.string.manage_title_all)));
         LinearLayout list = settingsGroup();
         Collections.sort(groups, (first, second) -> Integer.compare(courseGroupTimeValue(first), courseGroupTimeValue(second)));
         for (CourseGroup group : groups) {
@@ -6075,30 +6146,30 @@ public class MainActivity extends Activity {
         ScheduleStatistics.Statistics stats =
                 ScheduleStatistics.compute(structuredCourses, semesterWeeks);
         StringBuilder text = new StringBuilder();
-        text.append("课程 ").append(stats.courseCount).append(" 门");
+        text.append(getString(R.string.manage_stats_course, stats.courseCount));
         if (stats.experimentCount > 0) {
-            text.append(" · 实验 ").append(stats.experimentCount);
+            text.append(getString(R.string.manage_stats_experiment, stats.experimentCount));
         }
         if (stats.practiceCount > 0) {
-            text.append(" · 实践 ").append(stats.practiceCount);
+            text.append(getString(R.string.manage_stats_practice, stats.practiceCount));
         }
         if (stats.onlineCount > 0) {
-            text.append(" · 网络 ").append(stats.onlineCount);
+            text.append(getString(R.string.manage_stats_online, stats.onlineCount));
         }
-        text.append('\n').append("每周课时 ").append(stats.weeklySections)
-                .append(" 节 · 学期共 ").append(stats.semesterSections).append(" 节");
+        text.append(getString(R.string.manage_stats_weekly, stats.weeklySections,
+                stats.semesterSections));
         if (stats.totalCredits > 0) {
-            text.append(" · 学分 ").append(formatCredit(stats.totalCredits));
+            text.append(getString(R.string.manage_stats_credit, formatCredit(stats.totalCredits)));
         }
         if (stats.teacherCount > 0) {
-            text.append('\n').append("教师 ").append(stats.teacherCount).append(" 位");
+            text.append(getString(R.string.manage_stats_teacher, stats.teacherCount));
             if (stats.topTeacherCount > 0) {
-                text.append(" · ").append(stats.topTeacher).append(" ")
-                        .append(stats.topTeacherCount).append(" 门");
+                text.append(getString(R.string.manage_stats_top_teacher,
+                        stats.topTeacher, stats.topTeacherCount));
             }
         }
         courseManageStatsText.setText(text.toString());
-        courseManageStatsText.setContentDescription("课程统计，" + text);
+        courseManageStatsText.setContentDescription(getString(R.string.manage_stats_cd, text));
     }
 
     private String formatCredit(double credit) {
@@ -6113,14 +6184,14 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         courseManageSearchInput = new EditText(this);
-        courseManageSearchInput.setHint("搜索课程 / 教师 / 地点");
+        courseManageSearchInput.setHint(getString(R.string.manage_search_hint));
         courseManageSearchInput.setTextColor(inkColor());
         courseManageSearchInput.setHintTextColor(mutedColor());
         courseManageSearchInput.setTextSize(15);
         courseManageSearchInput.setSingleLine(true);
-        courseManageSearchInput.setBackground(roundedBg(cardColorHex(), 12));
+        courseManageSearchInput.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
         courseManageSearchInput.setPadding(dp(12), 0, dp(12), 0);
-        courseManageSearchInput.setContentDescription("搜索课程");
+        courseManageSearchInput.setContentDescription(getString(R.string.manage_search_cd));
         courseManageSearchInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {
@@ -6141,13 +6212,13 @@ public class MainActivity extends Activity {
         row.addView(courseManageSearchInput, inputParams);
 
         TextView select = new TextView(this);
-        select.setText(courseManageSelectionMode ? "完成" : "多选");
+        select.setText(courseManageSelectionMode ? getString(R.string.manage_select_done) : getString(R.string.manage_select_multi));
         select.setTextColor(selectedTextColor());
         select.setTextSize(15);
         select.setTypeface(Typeface.DEFAULT_BOLD);
         select.setGravity(Gravity.CENTER);
-        select.setBackground(roundedBg(selectedFillHex(), 12));
-        select.setContentDescription(courseManageSelectionMode ? "完成多选" : "进入多选");
+        select.setBackground(roundedBg(selectedFillHex(), DesignTokens.RADIUS_CHIP));
+        select.setContentDescription(courseManageSelectionMode ? getString(R.string.manage_select_done_cd) : getString(R.string.manage_select_multi_cd));
         select.setOnClickListener(v -> toggleCourseManageSelectionMode());
         LinearLayout.LayoutParams selectParams = new LinearLayout.LayoutParams(dp(64), dp(46));
         selectParams.leftMargin = dp(8);
@@ -6167,9 +6238,9 @@ public class MainActivity extends Activity {
         courseManageSelectionCount.setTypeface(Typeface.DEFAULT_BOLD);
         bar.addView(courseManageSelectionCount, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        bar.addView(courseManageActionButton("改颜色", v -> showBatchColorDialog()));
-        bar.addView(courseManageActionButton("改教师", v -> showBatchTeacherDialog()));
-        bar.addView(courseManageActionButton("删除", v -> showBatchDeleteDialog()));
+        bar.addView(courseManageActionButton(getString(R.string.manage_action_color), v -> showBatchColorDialog()));
+        bar.addView(courseManageActionButton(getString(R.string.manage_action_teacher), v -> showBatchTeacherDialog()));
+        bar.addView(courseManageActionButton(getString(R.string.manage_action_delete), v -> showBatchDeleteDialog()));
         bar.setVisibility(View.GONE);
         return bar;
     }
@@ -6181,7 +6252,7 @@ public class MainActivity extends Activity {
         button.setTextSize(14);
         button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setGravity(Gravity.CENTER);
-        button.setBackground(roundedBg(cardColorHex(), 12));
+        button.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
         button.setPadding(dp(10), dp(8), dp(10), dp(8));
         button.setOnClickListener(listener);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -6200,7 +6271,7 @@ public class MainActivity extends Activity {
                 ? View.VISIBLE : View.GONE);
         if (courseManageSelectionCount != null) {
             courseManageSelectionCount.setText(
-                    "已选 " + courseManageSelectedIds.size() + " 门");
+                    getString(R.string.manage_selected_count, courseManageSelectedIds.size()));
         }
     }
 
@@ -6215,7 +6286,7 @@ public class MainActivity extends Activity {
     private void toggleCourseGroupSelection(CourseGroup group) {
         String id = group.firstCourse().structuredCourseId;
         if (id == null || id.trim().isEmpty()) {
-            Toast.makeText(this, "该课程数据较旧，暂不支持批量操作",
+            Toast.makeText(this, getString(R.string.manage_old_data_unsupported),
                     Toast.LENGTH_SHORT).show();
             return;
         }
@@ -6259,14 +6330,14 @@ public class MainActivity extends Activity {
 
     private void showBatchColorDialog() {
         if (courseManageSelectedIds.isEmpty()) {
-            Toast.makeText(this, "请先选择课程", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.manage_error_no_selection), Toast.LENGTH_SHORT).show();
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("批量修改颜色");
+        LinearLayout panel = dialogPanel(getString(R.string.manage_batch_color_title));
         TextView message = new TextView(this);
-        message.setText("为选中的 " + courseManageSelectedIds.size()
-                + " 门课程设置统一颜色。");
+        message.setText(getString(R.string.manage_batch_color_message, courseManageSelectedIds.size()));
+                
         message.setTextColor(mutedColor());
         message.setTextSize(14);
         message.setPadding(0, 0, 0, dp(8));
@@ -6277,8 +6348,8 @@ public class MainActivity extends Activity {
             for (int offset = 0; offset < 3 && index + offset < BATCH_COLOR_VALUES.length; offset++) {
                 final String color = BATCH_COLOR_VALUES[index + offset];
                 TextView swatch = new TextView(this);
-                swatch.setBackground(roundedBg(color, 14));
-                swatch.setContentDescription("选择颜色");
+                swatch.setBackground(roundedBg(color, DesignTokens.RADIUS_CARD));
+                swatch.setContentDescription(getString(R.string.manage_swatch_cd));
                 swatch.setOnClickListener(v -> {
                     dialog.dismiss();
                     applyBatchColor(color);
@@ -6290,8 +6361,8 @@ public class MainActivity extends Activity {
             }
             panel.addView(line);
         }
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -6300,7 +6371,7 @@ public class MainActivity extends Activity {
         int updated = CourseEditManager.batchUpdateColor(
                 structuredCourses, courseManageSelectedIds, color);
         if (updated <= 0) {
-            Toast.makeText(this, "没有可更新的课程", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.manage_error_nothing_updated), Toast.LENGTH_SHORT).show();
             return;
         }
         refreshCourseView();
@@ -6308,39 +6379,39 @@ public class MainActivity extends Activity {
         renderSchedule();
         updateEmptyScheduleView();
         refreshCourseManageList();
-        Toast.makeText(this, "已更新 " + updated + " 门课程的颜色",
+        Toast.makeText(this, getString(R.string.manage_updated_color, updated),
                 Toast.LENGTH_SHORT).show();
     }
 
     private void showBatchTeacherDialog() {
         if (courseManageSelectedIds.isEmpty()) {
-            Toast.makeText(this, "请先选择课程", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.manage_error_no_selection), Toast.LENGTH_SHORT).show();
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("批量修改教师");
+        LinearLayout panel = dialogPanel(getString(R.string.manage_batch_teacher_title));
         TextView message = new TextView(this);
-        message.setText("为选中的 " + courseManageSelectedIds.size()
-                + " 门课程设置统一教师（覆盖原有教师信息）。");
+        message.setText(getString(R.string.manage_batch_teacher_message, courseManageSelectedIds.size()));
+                
         message.setTextColor(mutedColor());
         message.setTextSize(14);
         message.setLineSpacing(dp(3), 1f);
         message.setPadding(0, 0, 0, dp(4));
         panel.addView(message);
-        EditText teacherInput = input("教师姓名", "");
+        EditText teacherInput = input(getString(R.string.manage_teacher_hint), "");
         panel.addView(teacherInput);
         panel.addView(pageSaveButton(() -> {
             String teacher = teacherInput.getText() == null
                     ? "" : teacherInput.getText().toString().trim();
             if (teacher.length() == 0) {
-                Toast.makeText(this, "请输入教师姓名", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.manage_error_teacher_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
             dialog.dismiss();
             applyBatchTeacher(teacher);
         }));
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -6349,7 +6420,7 @@ public class MainActivity extends Activity {
         int updated = CourseEditManager.batchUpdateTeacher(
                 structuredCourses, courseManageSelectedIds, teacher);
         if (updated <= 0) {
-            Toast.makeText(this, "没有可更新的课程", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.manage_error_nothing_updated), Toast.LENGTH_SHORT).show();
             return;
         }
         refreshCourseView();
@@ -6357,20 +6428,20 @@ public class MainActivity extends Activity {
         renderSchedule();
         updateEmptyScheduleView();
         refreshCourseManageList();
-        Toast.makeText(this, "已更新 " + updated + " 门课程的教师",
+        Toast.makeText(this, getString(R.string.manage_updated_teacher, updated),
                 Toast.LENGTH_SHORT).show();
     }
 
     private void showBatchDeleteDialog() {
         if (courseManageSelectedIds.isEmpty()) {
-            Toast.makeText(this, "请先选择课程", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.manage_error_no_selection), Toast.LENGTH_SHORT).show();
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("批量删除课程");
+        LinearLayout panel = dialogPanel(getString(R.string.manage_batch_delete_title));
         TextView message = new TextView(this);
-        message.setText("删除选中的 " + courseManageSelectedIds.size()
-                + " 门课程（包括全部上课安排）？该操作无法撤销。");
+        message.setText(getString(R.string.manage_batch_delete_message, courseManageSelectedIds.size()));
+                
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
@@ -6378,12 +6449,12 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         messageParams.setMargins(0, 0, 0, dp(8));
         panel.addView(message, messageParams);
-        panel.addView(dialogAction("删除选中课程", v -> {
+        panel.addView(dialogAction(getString(R.string.manage_batch_delete_action), v -> {
             dialog.dismiss();
             applyBatchDelete();
         }));
-        panel.addView(dialogAction("取消", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -6399,7 +6470,7 @@ public class MainActivity extends Activity {
             }
         }
         if (removed <= 0) {
-            Toast.makeText(this, "没有可删除的课程", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.manage_error_nothing_deleted), Toast.LENGTH_SHORT).show();
             return;
         }
         refreshCourseView();
@@ -6409,7 +6480,7 @@ public class MainActivity extends Activity {
         updateEmptyScheduleView();
         refreshCourseManageList();
         showCourseSavedUndo(previous);
-        Toast.makeText(this, "已删除 " + removed + " 门课程",
+        Toast.makeText(this, getString(R.string.manage_deleted, removed),
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -6417,7 +6488,7 @@ public class MainActivity extends Activity {
         Map<String, CourseGroup> groups = new LinkedHashMap<>();
         for (Course course : courses) {
             String name = course.name == null || course.name.trim().length() == 0
-                    ? "未命名课程" : course.name.trim();
+                    ? getString(R.string.course_unnamed) : course.name.trim();
             String groupKey = course.structuredCourseId == null
                     || course.structuredCourseId.trim().isEmpty()
                     ? "legacy|" + name + "|" + normalizeTeacherIdentity(course.teacher)
@@ -6478,8 +6549,8 @@ public class MainActivity extends Activity {
             check.setTypeface(Typeface.DEFAULT_BOLD);
             check.setGravity(Gravity.CENTER);
             check.setBackground(roundedBg(selected
-                    ? primaryActionFillHex() : groupColorHex(), 12));
-            check.setContentDescription(selected ? "已选中" : "未选中");
+                    ? primaryActionFillHex() : groupColorHex(), DesignTokens.RADIUS_CHIP));
+            check.setContentDescription(selected ? getString(R.string.row_selected_cd) : getString(R.string.row_unselected_cd));
             LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(
                     dp(30), dp(30));
             checkParams.rightMargin = dp(10);
@@ -6572,20 +6643,20 @@ public class MainActivity extends Activity {
 
     private String courseTimeInlineText(Course course) {
         if (course.isBannerOnlyCourse()) {
-            return "顶部横幅";
+            return getString(R.string.banner_no_fixed_time_short);
         }
         return dayName(course.day) + (course.hasExactTime()
                 ? CourseTimeResolver.format(course, courseTimeSettings())
-                : course.startSection + "-" + course.endSection + "节");
+                : course.startSection + "-" + course.endSection + getString(R.string.import_section_suffix));
     }
 
     private String courseTimeText(Course course) {
         if (course.isBannerOnlyCourse()) {
-            return "顶部横幅\n无固定节次";
+            return getString(R.string.banner_no_fixed_time_long);
         }
         return dayName(course.day) + "\n" + (course.hasExactTime()
                 ? CourseTimeResolver.format(course, courseTimeSettings())
-                : course.startSection + "-" + course.endSection + "节");
+                : course.startSection + "-" + course.endSection + getString(R.string.import_section_suffix));
     }
 
     private String groupTimeText(CourseGroup group) {
@@ -6597,12 +6668,12 @@ public class MainActivity extends Activity {
                 builder.append('\n');
             }
             if (course.isBannerOnlyCourse()) {
-                builder.append("顶部横幅 · 无固定节次");
+                builder.append(getString(R.string.banner_no_fixed_time_line));
             } else {
                 builder.append(dayName(course.day)).append(' ')
                         .append(course.hasExactTime()
                                 ? CourseTimeResolver.format(course, courseTimeSettings())
-                                : course.startSection + "-" + course.endSection + "节");
+                                : course.startSection + "-" + course.endSection + getString(R.string.import_section_suffix));
             }
         }
         return builder.toString();
@@ -6627,11 +6698,11 @@ public class MainActivity extends Activity {
     }
 
     private String dayName(int day) {
-        String[] days = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
-        if (day >= 0 && day < days.length) {
-            return days[day];
+
+        if (day >= 0 && day < WeekdayLabels.count()) {
+            return WeekdayLabels.label(this, day);
         }
-        return "未知";
+        return getString(R.string.weekday_unknown_short);
     }
 
     private static class CourseGroup {
@@ -6665,14 +6736,14 @@ public class MainActivity extends Activity {
         panel.addView(heading);
 
         Button close = new Button(this);
-        close.setText("取消");
+        close.setText(getString(R.string.editor_action_cancel));
         close.setTextColor(mutedColor());
         close.setBackgroundColor(Color.TRANSPARENT);
         close.setOnClickListener(v -> dialog.dismiss());
         panel.addView(close, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
-        dialog.setContentView(glassDialogContent(scrollView, panel, 22));
+        dialog.setContentView(glassDialogContent(scrollView, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         return dialog;
     }
 
@@ -6704,14 +6775,14 @@ public class MainActivity extends Activity {
             choice.setTypeface(Typeface.DEFAULT_BOLD);
             boolean selected = value.equals(current);
             choice.setTextColor(selected ? selectedTextColor() : inkColor());
-            choice.setBackground(roundedBg(selected ? selectedFillHex() : cardColorHex(), 14));
+            choice.setBackground(roundedBg(selected ? selectedFillHex() : cardColorHex(), DesignTokens.RADIUS_CARD));
             choice.setOnClickListener(v -> {
                 setter.set(value);
                 for (int i = 0; i < row.getChildCount(); i++) {
                     TextView item = (TextView) row.getChildAt(i);
                     boolean active = item.getText().toString().equals(value);
                     item.setTextColor(active ? selectedTextColor() : inkColor());
-                    item.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), 14));
+                    item.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), DesignTokens.RADIUS_CARD));
                 }
             });
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1f);
@@ -6723,11 +6794,11 @@ public class MainActivity extends Activity {
 
     private Button saveSettingsButton(Dialog dialog, Runnable onSave) {
         Button save = new Button(this);
-        save.setText("保存");
+        save.setText(getString(R.string.editor_action_save));
         save.setTextColor(Color.WHITE);
         save.setTypeface(Typeface.DEFAULT_BOLD);
         save.setTextSize(16);
-        save.setBackground(roundedBg(primaryActionFillHex(), 14));
+        save.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         save.setOnClickListener(v -> {
             onSave.run();
             dialog.dismiss();
@@ -6792,19 +6863,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout settingsPagePanel(String headingText) {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        int columnWidth = contentColumnWidth();
-        int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        if (columnWidth < screenWidth) {
-            // 横屏平板：内容列封顶居中，行内边距相应加大。
-            panel.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
-            panel.setPadding(dp(16), dp(8), dp(16), bottomContentInset() + dp(48));
-        } else {
-            panel.setPadding(dp(12), dp(8), dp(12), bottomContentInset() + dp(48));
-        }
-        return panel;
+        return new SettingsPageBuilder(this).settingsPagePanel(this, headingText);
     }
 
     /**
@@ -6907,10 +6966,14 @@ public class MainActivity extends Activity {
      * 居中模式内容列封顶 640dp 水平居中。
      */
     private void applyMyPageMode(boolean sideMode) {
-        if (myPage == null || myPage.getChildCount() == 0) {
+        if (myPage == null) {
             return;
         }
-        View page = myPage.getChildAt(0);
+        android.widget.ScrollView scroll = findMyPageScrollView(myPage);
+        if (scroll == null || scroll.getChildCount() == 0) {
+            return;
+        }
+        View page = scroll.getChildAt(0);
         if (sideMode) {
             page.setLayoutParams(new ScrollView.LayoutParams(
                     ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
@@ -6919,6 +6982,22 @@ public class MainActivity extends Activity {
             page.setLayoutParams(new ScrollView.LayoutParams(column,
                     ScrollView.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
         }
+    }
+
+    private android.widget.ScrollView findMyPageScrollView(View root) {
+        if (root instanceof android.widget.ScrollView) {
+            return (android.widget.ScrollView) root;
+        }
+        if (root instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) root;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                android.widget.ScrollView found = findMyPageScrollView(vg.getChildAt(i));
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private void showSettingsPage(String headingText, LinearLayout panel) {
@@ -6932,6 +7011,8 @@ public class MainActivity extends Activity {
         settingsPage.animate().cancel();
         settingsPage.clearAnimation();
         settingsPage.removeAllViews();
+        com.polaris.timetable.databinding.FragmentSettingsBinding settingsBinding = com.polaris.timetable.databinding.FragmentSettingsBinding.inflate(getLayoutInflater());
+        settingsBinding.settingsRoot.setBackgroundColor(pageSurfaceColor());
         settingsPage.setBackgroundColor(pageSurfaceColor());
         settingsPage.setAlpha(1f);
         if (suppressSettingsPageAnimation || settingsAlreadyVisible) {
@@ -6971,9 +7052,10 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
         int headerHeight = statusBarHeight() + dp(70);
         scrollParams.topMargin = headerHeight;
-        settingsPage.addView(contentScroll, scrollParams);
-        settingsPage.addView(fixedHeader, new FrameLayout.LayoutParams(
+        settingsBinding.settingsPageContainer.addView(contentScroll, scrollParams);
+        settingsBinding.settingsPageContainer.addView(fixedHeader, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, headerHeight));
+        settingsPage.addView(settingsBinding.getRoot(), new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         if (isLandscapeTablet()) {
             // 平板：首次打开设置时我的页收缩为左侧侧栏，右侧面板从右滑入；
             // 后续切换设置页仅替换面板内容。
@@ -7168,7 +7250,7 @@ public class MainActivity extends Activity {
                 previousSettingsTitle = "";
                 suppressSettingsPageAnimation = true;
                 try {
-                    if ("课表设置".equals(target)) {
+                    if ("课表设置".equals(target)) { // 页面标题同时是路由标识,不资源化
                         showScheduleSettings();
                     } else if ("全局设置".equals(target)) {
                         showGlobalSettings();
@@ -7336,7 +7418,7 @@ public class MainActivity extends Activity {
         button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setTextColor(inkColor());
         button.setGravity(Gravity.CENTER);
-        button.setBackground(roundedBg(cardColorHex(), 14));
+        button.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(54), dp(44));
         params.setMargins(dp(3), dp(8), dp(3), dp(8));
         button.setLayoutParams(params);
@@ -7352,7 +7434,7 @@ public class MainActivity extends Activity {
         value.setGravity(Gravity.CENTER);
         value.setSingleLine(true);
         value.setMinWidth(dp(80));
-        value.setBackground(roundedBg(cardColorHex(), 14));
+        value.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         return value;
     }
 
@@ -7366,18 +7448,18 @@ public class MainActivity extends Activity {
         value.setSingleLine(true);
         value.setSelectAllOnFocus(true);
         value.setInputType(InputType.TYPE_CLASS_NUMBER);
-        value.setBackground(roundedBg(cardColorHex(), 14));
+        value.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         value.setPadding(dp(8), 0, dp(8), 0);
         return value;
     }
 
     private Button pageSaveButton(Runnable onSave) {
         Button save = new Button(this);
-        save.setText("保存并应用");
+        save.setText(getString(R.string.profile_save_apply));
         save.setTextColor(Color.WHITE);
         save.setTypeface(Typeface.DEFAULT_BOLD);
         save.setTextSize(16);
-        save.setBackground(roundedBg(primaryActionFillHex(), 14));
+        save.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         save.setOnClickListener(v -> onSave.run());
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
@@ -7387,153 +7469,20 @@ public class MainActivity extends Activity {
     }
 
     private void showGlobalSettings() {
-        LinearLayout panel = settingsPagePanel("全局设置");
-
-        panel.addView(sectionHeader("显示"));
-        LinearLayout displayCard = settingsGroup();
-        displayCard.addView(settingValueRow("课程表", scheduleName, v -> showScheduleSwitchDialog()));
-        displayCard.addView(settingValueRow("视觉主题", visualTheme,
-                v -> showChoiceDialog(v, "视觉主题", PolarisVisualTheme.NAMES,
-                        visualTheme, this::applyVisualTheme)));
-        displayCard.addView(settingValueRow("深色模式", darkMode,
-                v -> showChoiceDialog(v, "深色模式", new String[]{"跟随系统", "浅色", "深色"}, darkMode,
-                        value -> {
-                            darkMode = value;
-                            scheduleRepository.saveGlobalDarkMode(darkMode);
-                            saveConfig();
-                            applyShellAppearance();
-                            refreshMyPageBehindSettings();
-                            refreshPlanTheme();
-                            renderSchedule();
-                            updateSettingValueRow(v, darkMode);
-                            refreshVisibleSettingsTheme();
-                        })));
-        backgroundSettingRow = settingValueRow("课程表背景", backgroundImageUri.length() == 0 ? "未设置" : "系统相册",
-                v -> showChoiceDialog(v, "课程表背景", new String[]{"从系统相册选择", "清除背景"}, backgroundImageUri.length() == 0 ? "清除背景" : "从系统相册选择",
-                        value -> {
-                            if (value.startsWith("从")) {
-                                openBackgroundPicker();
-                            } else {
-                                backgroundImageUri = "";
-                                backgroundImageCrop = BackgroundImageCrop.full();
-                                timetableBackground = "清爽蓝";
-                                saveGlobalAppearance();
-                                applyShellAppearance();
-                                refreshPlanTheme();
-                                renderSchedule();
-                                updateSettingValueRow(v, "未设置");
-                                refreshVisibleSettingsTheme();
-                            }
-                        }));
-        displayCard.addView(backgroundSettingRow);
-        displayCard.addView(settingSwitchRow("显示本周实践", showPracticeBanner, value -> {
-            showPracticeBanner = value;
-            saveGlobalAppearance();
-            renderSchedule();
-            updatePracticeSidePanel();
-        }));
-        displayCard.addView(settingSwitchRow("折叠午休时间", collapseLunchBreak, value -> {
-            collapseLunchBreak = value;
-            saveGlobalAppearance();
-            renderSchedule();
-        }));
-        panel.addView(displayCard);
-
-        panel.addView(sectionHeader("外观"));
-        LinearLayout presetCard = settingsGroup();
-        appearancePresetSettingRow = settingValueRow("外观预设", appearancePresetName(),
-                v -> showChoiceDialog(v, "外观预设", APPEARANCE_PRESETS,
-                        appearancePresetName(), this::applyAppearancePreset));
-        presetCard.addView(appearancePresetSettingRow);
-
-        LinearLayout advancedContainer = new LinearLayout(this);
-        advancedContainer.setOrientation(LinearLayout.VERTICAL);
-        advancedContainer.setVisibility(View.GONE);
-        final boolean[] advancedExpanded = {false};
-        final View[] advancedToggle = new View[1];
-        advancedToggle[0] = settingValueRow("高级设置", "已收起", v -> {
-            advancedExpanded[0] = !advancedExpanded[0];
-            advancedContainer.setVisibility(advancedExpanded[0] ? View.VISIBLE : View.GONE);
-            updateSettingValueRow(advancedToggle[0], advancedExpanded[0] ? "已展开" : "已收起");
-        });
-        presetCard.addView(advancedToggle[0]);
-        panel.addView(presetCard);
-
-        advancedContainer.addView(sectionHeader("界面细节"));
-        advancedContainer.addView(buildAdvancedShellSettings());
-        advancedContainer.addView(sectionHeader("课表框架"));
-        advancedContainer.addView(buildAdvancedScheduleFrameSettings());
-        panel.addView(advancedContainer);
-        showSettingsPage("全局设置", panel);
+        LinearLayout panel = new SettingsPageBuilder(this).createGlobalSettingsPanel(this);
+        showSettingsPage(getString(R.string.settings_title_global), panel);
     }
 
     private LinearLayout buildAdvancedShellSettings() {
-        LinearLayout shellCard = settingsGroup();
-        shellCard.addView(settingSwitchRow("全局毛玻璃效果", shellBarsBlurEnabled, value -> {
-            shellBarsBlurEnabled = value;
-            saveGlobalAppearance();
-            applyShellAppearance();
-        }));
-        shellCard.addView(settingValueRow("课表顶部透明度", timetableHeaderOpacity + "%",
-                v -> showNumberDialog("课表顶部透明度", 40, 100, timetableHeaderOpacity, value -> {
-                    timetableHeaderOpacity = Math.max(40, Math.min(100, value));
-                    saveGlobalAppearance();
-                    applyShellAppearance();
-                    updateSettingValueRow(v, timetableHeaderOpacity + "%");
-                })));
-        shellCard.addView(settingValueRow("课表底部透明度", bottomNavOpacity + "%",
-                v -> showNumberDialog("课表底部透明度", 40, 100, bottomNavOpacity, value -> {
-                    bottomNavOpacity = Math.max(40, Math.min(100, value));
-                    saveGlobalAppearance();
-                    applyShellAppearance();
-                    updateSettingValueRow(v, bottomNavOpacity + "%");
-                })));
-        shellCard.addView(settingValueRow("底部切换栏高度", bottomNavHeight + " dp",
-                v -> showNumberDialog("底部切换栏高度", 56, 120, bottomNavHeight, 1, value -> {
-                    bottomNavHeight = Math.max(56, Math.min(120, value));
-                    saveGlobalAppearance();
-                    applyShellAppearance();
-                    refreshMyPageBehindSettings();
-                    renderSchedule();
-                    updateSettingValueRow(v, bottomNavHeight + " dp");
-                })));
-        shellCard.addView(settingValueRow("底部圆角半径", bottomNavRadius() + " dp",
-                v -> showNumberDialog("底部圆角半径", 0, 72, bottomNavRadius(), value -> {
-                    bottomNavRectCornerRadius = Math.max(0, Math.min(72, value));
-                    saveGlobalAppearance();
-                    applyShellAppearance();
-                    updateSettingValueRow(v, bottomNavRadius() + " dp");
-                })));
-        return shellCard;
+        return new SettingsPageBuilder(this).buildAdvancedShellSettings(this);
     }
 
     private LinearLayout buildAdvancedScheduleFrameSettings() {
-        LinearLayout frameCard = settingsGroup();
-        frameCard.addView(settingValueRow("课程格子高度", courseCellHeight + " dp",
-                v -> showNumberDialog("课程格子高度", 56, 120, courseCellHeight, value -> {
-                    courseCellHeight = Math.max(56, Math.min(120, value));
-                    saveGlobalAppearance();
-                    renderSchedule();
-                    updateSettingValueRow(v, courseCellHeight + " dp");
-                })));
-        frameCard.addView(settingValueRow("格子圆角半径", courseCornerRadius + " dp",
-                v -> showNumberDialog("格子圆角半径", 0, 24, courseCornerRadius, value -> {
-                    courseCornerRadius = Math.max(0, Math.min(24, value));
-                    saveGlobalAppearance();
-                    renderSchedule();
-                    updateSettingValueRow(v, courseCornerRadius + " dp");
-                })));
-        frameCard.addView(settingValueRow("格子不透明度", courseBlockOpacity + "%",
-                v -> showNumberDialog("格子不透明度", 45, 100, courseBlockOpacity, value -> {
-                    courseBlockOpacity = Math.max(45, Math.min(100, value));
-                    saveGlobalAppearance();
-                    renderSchedule();
-                    updateSettingValueRow(v, courseBlockOpacity + "%");
-                })));
-        return frameCard;
+        return new SettingsPageBuilder(this).buildAdvancedScheduleFrameSettings(this);
     }
 
-    private String appearancePresetName() {
+    @Override
+    public String appearancePresetName() {
         if (matchesAppearancePreset(78, 86, 60, 58, 76, 9, 70)) {
             return "标准";
         }
@@ -7571,7 +7520,7 @@ public class MainActivity extends Activity {
         refreshMyPageBehindSettings();
         renderSchedule();
         refreshActiveSettingsPage();
-        Toast.makeText(this, "已应用“" + appearancePresetName() + "”外观", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.appearance_applied_toast, appearancePresetName()), Toast.LENGTH_SHORT).show();
     }
 
     private void applyVisualTheme(String value) {
@@ -7590,7 +7539,7 @@ public class MainActivity extends Activity {
         refreshPlanTheme();
         renderSchedule();
         refreshActiveSettingsPage();
-        Toast.makeText(this, "已切换为“" + visualTheme + "”", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.theme_switched_toast, visualTheme), Toast.LENGTH_SHORT).show();
     }
 
     private void setAppearanceValues(
@@ -7607,8 +7556,7 @@ public class MainActivity extends Activity {
 
     private void applyShellAppearance() {
         if (getWindow() != null) {
-            getWindow().setStatusBarColor(backgroundColor());
-            getWindow().setNavigationBarColor(backgroundColor());
+            applyEdgeToEdgeWindow(getWindow());
             updateSystemBarAppearance(getWindow());
         }
         if (rootView != null) {
@@ -7641,17 +7589,12 @@ public class MainActivity extends Activity {
         }
         if (returnCurrentWeekButton != null) {
             returnCurrentWeekButton.setTextColor(inkColor());
-            returnCurrentWeekButton.setBackground(roundedBg(cardColorHex(), 14));
+            returnCurrentWeekButton.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
         }
         updateTodayOverview();
         updateConflictSummary();
-        if (scheduleNav != null) {
-            boolean active = activeTab == 0;
-            scheduleNav.setTextColor(active ? inkColor() : mutedColor());
-        }
-        if (myNav != null) {
-            boolean active = activeTab == 1;
-            myNav.setTextColor(active ? inkColor() : mutedColor());
+        if (bottomNavView != null) {
+            bottomNavView.applyTabColors(activeTab == 0, activeTab == 1);
         }
         if (settingsPage != null) {
             settingsPage.setBackgroundColor(pageSurfaceColor());
@@ -7705,16 +7648,17 @@ public class MainActivity extends Activity {
     private void showScheduleSwitchDialog() {
         List<ScheduleRepository.ScheduleEntry> schedules = scheduleRepository.loadSchedules();
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("课程表");
+        LinearLayout panel = dialogPanel(getString(R.string.schedule_switch_title));
         for (ScheduleRepository.ScheduleEntry entry : schedules) {
             TextView item = new TextView(this);
-            item.setText(entry.id.equals(activeScheduleId) ? entry.name + "  当前" : entry.name);
+            item.setText(entry.id.equals(activeScheduleId) ? entry.name
+                + getString(R.string.schedule_switch_current_suffix) : entry.name);
             item.setGravity(Gravity.CENTER);
             item.setTextSize(17);
             boolean active = entry.id.equals(activeScheduleId);
             item.setTextColor(active ? selectedTextColor() : inkColor());
             item.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            item.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), 14));
+            item.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), DesignTokens.RADIUS_CARD));
             item.setOnClickListener(v -> {
                 dialog.dismiss();
                 if (active) {
@@ -7729,28 +7673,28 @@ public class MainActivity extends Activity {
             params.setMargins(0, dp(5), 0, dp(5));
             panel.addView(item, params);
         }
-        panel.addView(dialogAction("新增课表", v -> {
+        panel.addView(dialogAction(getString(R.string.schedule_action_add), v -> {
             dialog.dismiss();
             showCreateScheduleDialog();
         }));
-        panel.addView(dialogAction("删除此课表", v -> {
+        panel.addView(dialogAction(getString(R.string.schedule_action_delete), v -> {
             dialog.dismiss();
             showDeleteCurrentScheduleDialog();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private void showRenameScheduleDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("修改课表名称");
-        EditText nameInput = input("课表名称", scheduleName);
+        LinearLayout panel = dialogPanel(getString(R.string.schedule_rename_title));
+        EditText nameInput = input(getString(R.string.settings_row_schedule_name), scheduleName);
         panel.addView(nameInput);
         panel.addView(pageSaveButton(() -> {
             String nextName = nameInput.getText().toString().trim();
             if (nextName.length() == 0) {
-                Toast.makeText(this, "课表名称不能为空", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.import_error_name_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
             scheduleName = nextName;
@@ -7760,15 +7704,15 @@ public class MainActivity extends Activity {
             dialog.dismiss();
             showGlobalSettings();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private void showCreateScheduleDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("新增课表");
-        EditText nameInput = input("课表名称，例如 大二下", "");
+        LinearLayout panel = dialogPanel(getString(R.string.schedule_action_add));
+        EditText nameInput = input(getString(R.string.schedule_create_name_hint), "");
         panel.addView(nameInput);
         panel.addView(pageSaveButton(() -> {
             String name = nameInput.getText().toString().trim();
@@ -7779,7 +7723,7 @@ public class MainActivity extends Activity {
             dialog.dismiss();
             showGlobalSettings();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -7787,28 +7731,28 @@ public class MainActivity extends Activity {
     private void showDeleteCurrentScheduleDialog() {
         List<ScheduleRepository.ScheduleEntry> schedules = scheduleRepository.loadSchedules();
         if (schedules.size() <= 1) {
-            Toast.makeText(this, "至少保留一个课表", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.schedule_error_last_one), Toast.LENGTH_SHORT).show();
             showScheduleSwitchDialog();
             return;
         }
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("删除此课表？");
+        LinearLayout panel = dialogPanel(getString(R.string.schedule_delete_confirm_title));
         TextView message = new TextView(this);
-        message.setText("将删除“" + scheduleName + "”。删除后会自动切换到其他课表。");
+        message.setText(getString(R.string.schedule_delete_confirm_message, scheduleName));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(dp(4), 1f);
         panel.addView(message);
-        panel.addView(dialogAction("确认删除", v -> {
+        panel.addView(dialogAction(getString(R.string.schedule_confirm_delete), v -> {
             dialog.dismiss();
             deleteCurrentSchedule();
             showGlobalSettings();
         }));
-        panel.addView(dialogAction("取消", v -> {
+        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> {
             dialog.dismiss();
             showScheduleSwitchDialog();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -7816,7 +7760,7 @@ public class MainActivity extends Activity {
     private void deleteCurrentSchedule() {
         List<ScheduleRepository.ScheduleEntry> schedules = scheduleRepository.loadSchedules();
         if (schedules.size() <= 1) {
-            Toast.makeText(this, "至少保留一个课表", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.schedule_error_last_one), Toast.LENGTH_SHORT).show();
             return;
         }
         List<ScheduleRepository.ScheduleEntry> next = new ArrayList<>();
@@ -7831,7 +7775,7 @@ public class MainActivity extends Activity {
             next.add(entry);
         }
         if (next.isEmpty()) {
-            Toast.makeText(this, "至少保留一个课表", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.schedule_error_last_one), Toast.LENGTH_SHORT).show();
             return;
         }
         scheduleRepository.saveSchedules(next);
@@ -7845,7 +7789,7 @@ public class MainActivity extends Activity {
         renderSchedule();
         updateEmptyScheduleView();
         refreshMyPage();
-        Toast.makeText(this, "已删除课表", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.schedule_deleted_toast), Toast.LENGTH_SHORT).show();
     }
 
     private void switchSchedule(String scheduleId) {
@@ -7881,51 +7825,13 @@ public class MainActivity extends Activity {
     }
 
     private void showSecuritySettings() {
-        LinearLayout panel = settingsPagePanel("安全设置");
-        panel.addView(sectionHeader("课表信息"));
-        LinearLayout scheduleInfoCard = settingsGroup();
-        scheduleInfoCard.addView(settingValueRow("学期", displaySemesterName(),
-                v -> showSemesterNameDialog()));
-        scheduleInfoCard.addView(settingValueRow("学校", displaySchoolName(),
-                v -> showParserModelDialog()));
-        panel.addView(scheduleInfoCard);
-
-        panel.addView(sectionHeader("账号"));
-        LinearLayout accountCard = settingsGroup();
-        accountCard.addView(settingValueRow("登录方式", accountName + " · 无需账号登录", v -> {}));
-        accountCard.addView(settingValueRow("本机数据", "课程保存在本机", v -> {}));
-        panel.addView(accountCard);
-
-        panel.addView(sectionHeader("数据备份"));
-        LinearLayout backupCard = settingsGroup();
-        backupCard.addView(settingValueRow("导出备份", "保存全部课表和设置",
-                v -> exportScheduleBackup()));
-        backupCard.addView(settingValueRow("恢复备份", "从备份文件完整还原",
-                v -> openBackupFilePicker()));
-        panel.addView(backupCard);
-        showSettingsPage("安全设置", panel);
+        LinearLayout panel = new SettingsPageBuilder(this).createSecuritySettingsPanel(this);
+        showSettingsPage(getString(R.string.settings_title_security), panel);
     }
 
     private void showMoreSettings() {
-        LinearLayout panel = settingsPagePanel("更多");
-        panel.addView(sectionHeader("关于"));
-        LinearLayout aboutCard = settingsGroup();
-        aboutCard.addView(settingValueRow("版本信息", appVersionText(), v -> {
-            copyTextToClipboard(appVersionText());
-            Toast.makeText(this, "版本信息已复制", Toast.LENGTH_SHORT).show();
-        }));
-        aboutCard.addView(settingValueRow("联系我们", CONTACT_EMAIL, v -> {
-            copyTextToClipboard(CONTACT_EMAIL);
-            Toast.makeText(this, "邮箱已复制：" + CONTACT_EMAIL, Toast.LENGTH_SHORT).show();
-        }));
-        aboutCard.addView(settingValueRow("GitHub 项目地址",
-                PROJECT_HOME_URL.replace("https://", ""), v -> {
-                    copyTextToClipboard(PROJECT_HOME_URL);
-                    Toast.makeText(this, "GitHub 地址已复制：" + PROJECT_HOME_URL,
-                            Toast.LENGTH_SHORT).show();
-                }));
-        panel.addView(aboutCard);
-        showSettingsPage("更多", panel);
+        LinearLayout panel = new SettingsPageBuilder(this).createMoreSettingsPanel(this);
+        showSettingsPage(getString(R.string.settings_title_more), panel);
     }
 
     private void copyTextToClipboard(String text) {
@@ -7937,14 +7843,14 @@ public class MainActivity extends Activity {
 
     private void showSemesterNameDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("修改学期");
-        EditText semesterInput = input("例如 2025-2026学年第2学期", semesterName);
+        LinearLayout panel = dialogPanel(getString(R.string.semester_edit_title));
+        EditText semesterInput = input(getString(R.string.semester_edit_hint), semesterName);
         semesterInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(48)});
         panel.addView(semesterInput);
         panel.addView(pageSaveButton(() -> {
             String value = semesterInput.getText().toString().trim();
             if (value.length() == 0) {
-                Toast.makeText(this, "学期不能为空", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.semester_error_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
             semesterName = value;
@@ -7953,7 +7859,7 @@ public class MainActivity extends Activity {
             dialog.dismiss();
             refreshActiveSettingsPage();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -7979,7 +7885,7 @@ public class MainActivity extends Activity {
      */
     private TextView buildWeekSelectorButton() {
         TextView button = new TextView(this);
-        button.setText("第 " + currentWeek + " 周 ▾");
+        button.setText(getString(R.string.week_selector_value, currentWeek));
         button.setTextColor(inkColor());
         button.setTextSize(13);
         button.setTypeface(Typeface.DEFAULT_BOLD);
@@ -7991,7 +7897,7 @@ public class MainActivity extends Activity {
         background.setColor(color(cardColorHex()));
         background.setCornerRadius(dp(16));
         button.setBackground(background);
-        button.setContentDescription("选择周次");
+        button.setContentDescription(getString(R.string.editor_title_week));
         button.setOnClickListener(v -> showWeekPickerPopup(v));
         attachPressFeedback(button);
         return button;
@@ -8009,7 +7915,7 @@ public class MainActivity extends Activity {
         for (int week = 1; week <= semesterWeeks; week++) {
             final int target = week;
             TextView item = new TextView(this);
-            item.setText("第 " + week + " 周");
+            item.setText(getString(R.string.settings_current_week_value, week));
             item.setTextSize(15);
             item.setTypeface(week == currentWeek ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
             item.setTextColor(week == currentWeek ? accent : inkColor());
@@ -8039,7 +7945,7 @@ public class MainActivity extends Activity {
 
     private void updateWeekSelector() {
         if (weekSelectorButton != null) {
-            weekSelectorButton.setText("第 " + currentWeek + " 周 ▾");
+            weekSelectorButton.setText(getString(R.string.week_selector_value, currentWeek));
         }
     }
 
@@ -8100,7 +8006,7 @@ public class MainActivity extends Activity {
     }
 
     private String weekTitle() {
-        return "第 " + currentWeek + " 周";
+        return getString(R.string.settings_current_week_value, currentWeek);
     }
 
     private String weekSubtitle() {
@@ -8114,7 +8020,7 @@ public class MainActivity extends Activity {
         ScheduleRepository.AccountProfile safeProfile = profile == null
                 ? new ScheduleRepository.AccountProfile() : profile;
         String savedName = safeProfile.name == null ? "" : safeProfile.name.trim();
-        accountName = savedName.length() == 0 ? "管理员" : savedName;
+        accountName = savedName.length() == 0 ? "管理员" : savedName; // 默认账户名是持久化数据值,不资源化
         avatarImageUri = safeProfile.avatarUri == null ? "" : safeProfile.avatarUri;
         avatarImageCrop = BackgroundImageCrop.of(
                 safeProfile.cropLeft,
@@ -8224,7 +8130,7 @@ public class MainActivity extends Activity {
             remindersEnabled = false;
             saveConfig();
             refreshActiveSettingsPage();
-            Toast.makeText(this, "课程提醒已关闭", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.reminder_toggle_off_toast), Toast.LENGTH_SHORT).show();
             return;
         }
         if (!CourseReminderScheduler.hasOverlayPermission(this)) {
@@ -8236,24 +8142,24 @@ public class MainActivity extends Activity {
 
     private void showOverlayPermissionDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("开启弹窗提醒");
+        LinearLayout panel = dialogPanel(getString(R.string.reminder_overlay_title));
         TextView message = new TextView(this);
-        message.setText("课程提醒将以悬浮窗弹窗显示在任意应用上方。需要先授予“悬浮窗”权限；不授权也可以继续，提醒会改用系统通知。");
+        message.setText(getString(R.string.reminder_overlay_message));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(0f, 1.2f);
         message.setPadding(0, 0, 0, dp(8));
         panel.addView(message);
-        panel.addView(dialogAction("去授权悬浮窗", v -> {
+        panel.addView(dialogAction(getString(R.string.reminder_overlay_grant), v -> {
             dialog.dismiss();
             enableCourseReminders();
             openOverlaySettings();
         }));
-        panel.addView(dialogAction("继续（使用系统通知）", v -> {
+        panel.addView(dialogAction(getString(R.string.reminder_overlay_continue), v -> {
             dialog.dismiss();
             requestNotificationPermissionForReminders();
         }));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -8269,7 +8175,7 @@ public class MainActivity extends Activity {
         if (!CourseReminderScheduler.hasNotificationPermission(this)) {
             openNotificationSettings();
             refreshActiveSettingsPage();
-            Toast.makeText(this, "请先在系统设置中允许 Polaris 发送通知", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.reminder_notify_permission_toast), Toast.LENGTH_LONG).show();
             return;
         }
         enableCourseReminders();
@@ -8280,7 +8186,7 @@ public class MainActivity extends Activity {
         saveConfig();
         refreshActiveSettingsPage();
         if (CourseReminderScheduler.canScheduleExactAlarms(this)) {
-            Toast.makeText(this, "课程提醒已开启", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.reminder_enabled_toast), Toast.LENGTH_SHORT).show();
         } else {
             showExactReminderAccessDialog();
         }
@@ -8288,42 +8194,42 @@ public class MainActivity extends Activity {
 
     private void showExactReminderAccessDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("提高提醒准时性");
+        LinearLayout panel = dialogPanel(getString(R.string.reminder_exact_title));
         TextView message = new TextView(this);
-        message.setText("允许“闹钟和提醒”权限后，课程提醒可按设定时间准时触发。暂不允许也能使用普通提醒，但系统省电时可能延迟。");
+        message.setText(getString(R.string.reminder_exact_message));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(0f, 1.2f);
         message.setPadding(0, 0, 0, dp(8));
         panel.addView(message);
-        panel.addView(dialogAction("允许精确提醒", v -> {
+        panel.addView(dialogAction(getString(R.string.reminder_exact_allow), v -> {
             dialog.dismiss();
             openExactAlarmSettings();
         }));
-        panel.addView(dialogAction("使用普通提醒", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.reminder_exact_use_normal), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
 
     private String courseReminderStatusText() {
         if (!remindersEnabled) {
-            return "未开启";
+            return getString(R.string.reminder_status_off);
         }
         if (CourseReminderScheduler.hasOverlayPermission(this)) {
             return CourseReminderScheduler.canScheduleExactAlarms(this)
-                    ? "悬浮窗弹窗 · 精确" : "悬浮窗弹窗";
+                    ? getString(R.string.reminder_status_overlay_exact) : getString(R.string.reminder_status_overlay);
         }
         if (CourseReminderScheduler.hasNotificationPermission(this)) {
             return CourseReminderScheduler.canScheduleExactAlarms(this)
-                    ? "系统通知 · 精确" : "系统通知（可能延迟）";
+                    ? getString(R.string.reminder_status_notify_exact) : getString(R.string.reminder_status_notify_delayed);
         }
-        return "需要悬浮窗或通知权限";
+        return getString(R.string.reminder_status_need_permission);
     }
 
     private void handleCourseReminderStatusClick() {
         if (!remindersEnabled) {
-            Toast.makeText(this, "请先开启课程提醒", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.reminder_enable_first), Toast.LENGTH_SHORT).show();
             return;
         }
         if (!CourseReminderScheduler.hasOverlayPermission(this)) {
@@ -8338,7 +8244,7 @@ public class MainActivity extends Activity {
             openExactAlarmSettings();
             return;
         }
-        Toast.makeText(this, "当前使用悬浮窗弹窗 · 精确提醒", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.reminder_status_overlay_exact_toast), Toast.LENGTH_SHORT).show();
     }
 
     private void openOverlaySettings() {
@@ -8426,20 +8332,20 @@ public class MainActivity extends Activity {
 
     private void showReminderGuardDialog() {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel("提醒恢复");
+        LinearLayout panel = dialogPanel(getString(R.string.reminder_restore_title));
         TextView message = new TextView(this);
-        message.setText("检测到课程提醒曾因后台清理而失效，现已自动恢复。\n\n为避免再次失效，建议允许 Polaris 后台运行、自启动，并关闭锁屏清理/省电限制。");
+        message.setText(getString(R.string.reminder_restore_message));
         message.setTextColor(mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(0f, 1.2f);
         message.setPadding(0, 0, 0, dp(8));
         panel.addView(message);
-        panel.addView(dialogAction("去设置", v -> {
+        panel.addView(dialogAction(getString(R.string.reminder_restore_go_settings), v -> {
             dialog.dismiss();
             openAppDetailsSettings();
         }));
-        panel.addView(dialogAction("知道了", v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, 22));
+        panel.addView(dialogAction(getString(R.string.reminder_restore_ack), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);
     }
@@ -8587,7 +8493,8 @@ public class MainActivity extends Activity {
         return color("#EAF3FB");
     }
 
-    private boolean isDarkModeActive() {
+    @Override
+    public boolean isDarkModeActive() {
         if ("深色".equals(darkMode)) {
             return true;
         }
@@ -8598,20 +8505,24 @@ public class MainActivity extends Activity {
         return mode == Configuration.UI_MODE_NIGHT_YES;
     }
 
-    private int inkColor() {
+    @Override
+    public int inkColor() {
         return PolarisVisualTheme.inkColor(visualTheme, isDarkModeActive());
     }
 
-    private int mutedColor() {
+    @Override
+    public int mutedColor() {
         return PolarisVisualTheme.mutedColor(visualTheme, isDarkModeActive());
     }
 
-    private String cardColorHex() {
+    @Override
+    public String cardColorHex() {
         return PolarisVisualTheme.hex(
                 PolarisVisualTheme.cardColor(visualTheme, isDarkModeActive()));
     }
 
-    private String groupColorHex() {
+    @Override
+    public String groupColorHex() {
         return PolarisVisualTheme.hex(
                 PolarisVisualTheme.groupColor(visualTheme, isDarkModeActive()));
     }
@@ -8640,12 +8551,14 @@ public class MainActivity extends Activity {
         return isDarkModeActive() ? color("#172033") : Color.WHITE;
     }
 
-    private boolean isMinimalVisualTheme() {
+    @Override
+    public boolean isMinimalVisualTheme() {
         return PolarisVisualTheme.MINIMAL.equals(
                 PolarisVisualTheme.normalize(visualTheme));
     }
 
-    private int pageSurfaceColor() {
+    @Override
+    public int pageSurfaceColor() {
         return isMinimalVisualTheme() ? backgroundColor() : Color.TRANSPARENT;
     }
 
@@ -8659,7 +8572,8 @@ public class MainActivity extends Activity {
                 Color.red(surface), Color.green(surface), Color.blue(surface));
     }
 
-    private int color(String hex) {
+    @Override
+    public int color(String hex) {
         return Color.parseColor(hex);
     }
 
@@ -8671,16 +8585,15 @@ public class MainActivity extends Activity {
      * 内容列宽（px）：手机与竖屏平板沿用全屏宽；横屏平板封顶 640dp，
      * 保证设置页/我的页在宽屏上仍保持可读的行长。
      */
-    private int contentColumnWidth() {
+    @Override
+    public int contentColumnWidth() {
         return isLandscapeTablet() ? Math.min(dp(640), getResources().getDisplayMetrics().widthPixels)
                 : getResources().getDisplayMetrics().widthPixels;
     }
 
     /** 横屏平板：导航 rail、顶栏并排、设置双栏等平板专属布局的统一判定。 */
-    private boolean isLandscapeTablet() {
-        Configuration configuration = getResources().getConfiguration();
-        return configuration.smallestScreenWidthDp >= 600
-                && configuration.orientation == Configuration.ORIENTATION_LANDSCAPE;
+    public boolean isLandscapeTablet() {
+        return com.polaris.timetable.ui.WindowSizeClass.isLandscapeTablet(this);
     }
 
     /**
@@ -8714,31 +8627,20 @@ public class MainActivity extends Activity {
     }
 
     private String weekdayText(Calendar date) {
-        String[] names = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
-        return names[date.get(Calendar.DAY_OF_WEEK) - 1];
+
+        return WeekdayLabels.label(this, (date.get(Calendar.DAY_OF_WEEK) + 5) % 7);
     }
 
-    private GradientDrawable liquidGlassBg(int opacityPercent) {
-        return floatingPanelBg(opacityPercent, 24);
+private GradientDrawable liquidGlassBg(int opacityPercent) {
+    return GlassDialogFactory.liquidGlassBg(glassConfig(), opacityPercent);
     }
 
-    private View glassLayer(GradientDrawable background, int radius) {
-        BackdropBlurView layer = new BackdropBlurView(this);
-        layer.setSourceView(contentHost);
-        layer.setGlassBackground(background, dp(radius));
-        layer.setBlurEnabled(shellBarsBlurEnabled, dp(18));
-        return layer;
+private View glassLayer(GradientDrawable background, int radius) {
+    return GlassDialogFactory.glassLayer(glassConfig(), contentHost, background, radius);
     }
 
-    private void updateGlassLayer(View layer, GradientDrawable background, int radius) {
-        if (layer instanceof BackdropBlurView) {
-            BackdropBlurView blurView = (BackdropBlurView) layer;
-            blurView.setSourceView(contentHost);
-            blurView.setGlassBackground(background, dp(radius));
-            blurView.setBlurEnabled(shellBarsBlurEnabled, dp(18));
-        } else {
-            layer.setBackground(background);
-        }
+private void updateGlassLayer(View layer, GradientDrawable background, int radius) {
+    GlassDialogFactory.updateGlassLayer(layer, glassConfig(), contentHost, background, radius);
     }
 
     private void syncTopGlassHeight(int contentHeight) {
@@ -8766,46 +8668,12 @@ public class MainActivity extends Activity {
         updatePlanSidePanel();
     }
 
-    private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
-        GradientDrawable drawable = new GradientDrawable();
-        int boundedOpacity = Math.max(40, Math.min(100, opacityPercent));
-        boolean realBlurEnabled = shellBarsBlurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
-        int alphaPercent;
-        if (realBlurEnabled && isDarkModeActive()) {
-            alphaPercent = Math.round(20f + boundedOpacity * 0.36f);
-        } else if (realBlurEnabled) {
-            alphaPercent = Math.round(14f + boundedOpacity * 0.32f);
-        } else {
-            alphaPercent = boundedOpacity;
-        }
-        int alpha = Math.round(255f * alphaPercent / 100f);
-        boolean dark = isDarkModeActive();
-        int neutralSurface = dark ? Color.rgb(24, 34, 53) : Color.rgb(248, 251, 255);
-        int neutralStroke = dark
-                ? Color.argb(shellBarsBlurEnabled ? 90 : 130, 255, 255, 255)
-                : Color.argb(shellBarsBlurEnabled ? 150 : 190, 103, 116, 138);
-        if (isMinimalVisualTheme()) {
-            drawable.setColor(Color.argb(alpha,
-                    Color.red(neutralSurface), Color.green(neutralSurface), Color.blue(neutralSurface)));
-            drawable.setStroke(dp(1), neutralStroke);
-        } else {
-            int[] themeTints = PolarisVisualTheme.glassTintColors(
-                    visualTheme, dark, neutralSurface);
-            drawable.setColors(new int[]{
-                    Color.argb(alpha, Color.red(themeTints[0]),
-                            Color.green(themeTints[0]), Color.blue(themeTints[0])),
-                    Color.argb(alpha, Color.red(themeTints[1]),
-                            Color.green(themeTints[1]), Color.blue(themeTints[1]))
-            });
-            drawable.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
-            drawable.setStroke(dp(1),
-                    PolarisVisualTheme.glassStrokeColor(visualTheme, dark, neutralStroke));
-        }
-        drawable.setCornerRadius(dp(radius));
-        return drawable;
+private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
+    return GlassDialogFactory.floatingPanelBg(glassConfig(), opacityPercent, radius);
     }
 
-    private GradientDrawable roundedBg(String hex, int radius) {
+    @Override
+    public GradientDrawable roundedBg(String hex, int radius) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color(hex));
         if (isMinimalVisualTheme()) {
@@ -8828,9 +8696,80 @@ public class MainActivity extends Activity {
         return drawable;
     }
 
-    private int statusBarHeight() {
+    @Override
+    public int statusBarHeight() {
+        if (systemTopInset >= 0) {
+            return systemTopInset;
+        }
         int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
-        return id > 0 ? getResources().getDimensionPixelSize(id) : dp(24);
+        return id > 0 ? getResources().getDimensionPixelSize(id) : dp(DesignTokens.GAP_SHELL * 3);
+    }
+
+    /**
+     * API 30+ 启用 edge-to-edge：系统栏透明，内容延伸到栏后，
+     * 布局由真实 WindowInsets 驱动。API 23-29 维持不透明系统栏的历史行为。
+     */
+    private void applyEdgeToEdgeWindow(Window window) {
+        if (window == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            window.setStatusBarColor(backgroundColor());
+            window.setNavigationBarColor(backgroundColor());
+            return;
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(Color.TRANSPARENT);
+        window.setDecorFitsSystemWindows(false);
+    }
+
+    private void recordBuiltInsets() {
+        builtTopInset = statusBarHeight();
+        builtBottomInset = Math.max(systemBottomInset, 0);
+        builtLeftInset = systemLeftInset;
+        builtRightInset = systemRightInset;
+    }
+
+    private void attachWindowInsetsListener() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || rootView == null) {
+            return;
+        }
+        rootView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(
+                    WindowInsets.Type.statusBars() | WindowInsets.Type.displayCutout());
+            Insets nav = windowInsets.getInsets(
+                    WindowInsets.Type.navigationBars()
+                            | WindowInsets.Type.mandatorySystemGestures());
+            int imeBottom = windowInsets.getInsets(WindowInsets.Type.ime()).bottom;
+            systemTopInset = bars.top;
+            systemBottomInset = nav.bottom;
+            systemLeftInset = bars.left;
+            systemRightInset = bars.right;
+            // 键盘弹出/收起不重建布局，仅动态收缩内容区，保证输入框可见。
+            if (contentHost != null) {
+                contentHost.setPadding(0, 0, 0, imeBottom);
+            }
+            // 系统栏 inset 与最近一次构建取值不一致（旋转、折叠、挖孔变化）时重建。
+            if (bars.top != builtTopInset || nav.bottom != builtBottomInset
+                    || bars.left != builtLeftInset || bars.right != builtRightInset) {
+                if (!insetsRebuildPending) {
+                    insetsRebuildPending = true;
+                    view.post(() -> {
+                        insetsRebuildPending = false;
+                        rebuildLayoutForInsets();
+                    });
+                }
+            }
+            return WindowInsets.CONSUMED;
+        });
+    }
+
+    private void rebuildLayoutForInsets() {
+        if (rootView == null) {
+            return;
+        }
+        rebuildLayout();
     }
 
     private int currentWeekFromDate() {
@@ -8842,126 +8781,18 @@ public class MainActivity extends Activity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        rebuildLayout();
+    }
+
+    private void rebuildLayout() {
         buildLayout();
         renderSchedule();
     }
 
-    private class MySettingIconView extends View {
-        private final String type;
-        private final int primary;
-        private final int secondary;
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path path = new Path();
-
-        MySettingIconView(Context context, String type, int primary, int secondary) {
-            super(context);
-            this.type = type;
-            this.primary = primary;
-            this.secondary = secondary;
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            float width = getWidth();
-            float height = getHeight();
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(dp(2));
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeJoin(Paint.Join.ROUND);
-            paint.setColor(primary);
-            if ("schedule".equals(type)) {
-                drawScheduleIcon(canvas, width, height);
-            } else if ("settings".equals(type)) {
-                drawSettingsIcon(canvas, width, height);
-            } else if ("more".equals(type)) {
-                drawMoreIcon(canvas, width, height);
-            } else if ("plan".equals(type)) {
-                drawPlanIcon(canvas, width, height);
-            } else {
-                drawShieldIcon(canvas, width, height);
-            }
-        }
-
-        private void drawScheduleIcon(Canvas canvas, float width, float height) {
-            float left = width * 0.18f;
-            float top = height * 0.2f;
-            float right = width * 0.82f;
-            float bottom = height * 0.8f;
-            canvas.drawRoundRect(left, top, right, bottom, dp(4), dp(4), paint);
-            canvas.drawLine(left, height * 0.38f, right, height * 0.38f, paint);
-            canvas.drawLine(width * 0.39f, height * 0.38f, width * 0.39f, bottom, paint);
-            canvas.drawLine(width * 0.61f, height * 0.38f, width * 0.61f, bottom, paint);
-            canvas.drawLine(width * 0.3f, top - dp(3), width * 0.3f, top + dp(5), paint);
-            canvas.drawLine(width * 0.7f, top - dp(3), width * 0.7f, top + dp(5), paint);
-        }
-
-        private void drawSettingsIcon(Canvas canvas, float width, float height) {
-            float centerX = width / 2f;
-            float centerY = height / 2f;
-            float outer = Math.min(width, height) * 0.34f;
-            float inner = Math.min(width, height) * 0.13f;
-            for (int i = 0; i < 8; i++) {
-                double angle = Math.PI * 2d * i / 8d;
-                float startX = centerX + (float) Math.cos(angle) * outer * 0.78f;
-                float startY = centerY + (float) Math.sin(angle) * outer * 0.78f;
-                float endX = centerX + (float) Math.cos(angle) * outer;
-                float endY = centerY + (float) Math.sin(angle) * outer;
-                canvas.drawLine(startX, startY, endX, endY, paint);
-            }
-            canvas.drawCircle(centerX, centerY, outer * 0.66f, paint);
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(secondary);
-            canvas.drawCircle(centerX, centerY, inner, paint);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(primary);
-        }
-
-        private void drawMoreIcon(Canvas canvas, float width, float height) {
-            float centerY = height / 2f;
-            float radius = Math.min(width, height) * 0.08f;
-            float spacing = Math.min(width, height) * 0.2f;
-            float centerX = width / 2f;
-            paint.setStyle(Paint.Style.FILL);
-            canvas.drawCircle(centerX - spacing, centerY, radius, paint);
-            canvas.drawCircle(centerX, centerY, radius, paint);
-            canvas.drawCircle(centerX + spacing, centerY, radius, paint);
-            paint.setStyle(Paint.Style.STROKE);
-        }
-
-        private void drawShieldIcon(Canvas canvas, float width, float height) {
-            path.reset();
-            path.moveTo(width * 0.5f, height * 0.14f);
-            path.lineTo(width * 0.78f, height * 0.25f);
-            path.lineTo(width * 0.74f, height * 0.56f);
-            path.quadTo(width * 0.68f, height * 0.76f, width * 0.5f, height * 0.88f);
-            path.quadTo(width * 0.32f, height * 0.76f, width * 0.26f, height * 0.56f);
-            path.lineTo(width * 0.22f, height * 0.25f);
-            path.close();
-            canvas.drawPath(path, paint);
-            canvas.drawLine(width * 0.39f, height * 0.5f, width * 0.47f, height * 0.6f, paint);
-            canvas.drawLine(width * 0.47f, height * 0.6f, width * 0.63f, height * 0.42f, paint);
-        }
-
-        private void drawPlanIcon(Canvas canvas, float width, float height) {
-            // 清单：三条横线 + 首行行首对勾
-            float left = width * 0.3f;
-            float right = width * 0.82f;
-            for (int i = 0; i < 3; i++) {
-                float y = height * (0.28f + 0.22f * i);
-                canvas.drawLine(left, y, right, y, paint);
-            }
-            float checkX = width * 0.16f;
-            float checkY = height * 0.28f;
-            canvas.drawLine(checkX, checkY, checkX + dp(4), checkY + dp(4), paint);
-            canvas.drawLine(checkX + dp(4), checkY + dp(4), checkX + dp(10), checkY - dp(5), paint);
-        }
-    }
-
     private class SwitchThumbView extends View {
-        private boolean checked;
-        private boolean dark;
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private boolean checked;
+    private boolean dark;
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         SwitchThumbView(Context context, boolean checked, boolean dark) {
             super(context);
@@ -9009,3 +8840,6 @@ public class MainActivity extends Activity {
         }
     }
 }
+
+
+
