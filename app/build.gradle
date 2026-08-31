@@ -30,8 +30,8 @@ android {
         applicationId "com.polaris.timetable"
         minSdk 23
         targetSdk 35
-        versionCode 11501
-        versionName "1.15.1"
+        versionCode 11502
+        versionName "1.15.2"
     }
 
     buildFeatures {
