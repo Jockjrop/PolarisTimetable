@@ -95,4 +95,7 @@ dependencies {
     androidTestImplementation "androidx.test:runner:1.6.2"
     androidTestImplementation "androidx.test:rules:1.6.1"
     androidTestImplementation "androidx.test.espresso:espresso-core:3.6.1"
+    // Fix UTP launcher ClassNotFoundException: kotlin.enums.EnumEntriesKt (Kotlin 1.9+)
+    // UTP was compiled with Kotlin 1.9, needs 1.9 stdlib at runtime.
+    androidTestImplementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.20"
 }
