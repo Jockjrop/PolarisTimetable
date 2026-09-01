@@ -123,9 +123,9 @@ public final class GlassDialogFactory {
         boolean realBlur = realBlurEnabled(cfg);
         int alphaPercent;
         if (realBlur && cfg.darkMode) {
-            alphaPercent = Math.round(20f + boundedOpacity * 0.36f);
+            alphaPercent = Math.round(32f + boundedOpacity * 0.42f);
         } else if (realBlur) {
-            alphaPercent = Math.round(14f + boundedOpacity * 0.32f);
+            alphaPercent = Math.round(26f + boundedOpacity * 0.40f);
         } else {
             alphaPercent = boundedOpacity;
         }
@@ -178,6 +178,6 @@ public final class GlassDialogFactory {
                                    GradientDrawable background, int radius) {
         layer.setSourceView(source);
         layer.setGlassBackground(background, cfg.dp(radius));
-        layer.setBlurEnabled(cfg.blurEnabled, cfg.dp(18));
+        layer.setBlurEnabled(cfg.blurEnabled, cfg.dp(22));
     }
 }

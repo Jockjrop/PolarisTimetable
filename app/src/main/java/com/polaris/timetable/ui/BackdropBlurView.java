@@ -81,10 +81,13 @@ public class BackdropBlurView extends FrameLayout {
         blurRadius = radius;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurEnabled) {
             blurLayer.setVisibility(VISIBLE);
+            // RenderEffect 需要硬件加速，显式提升为硬件层以确保在部分机型/模拟器上生效
+            blurLayer.setLayerType(View.LAYER_TYPE_HARDWARE, null);
             blurLayer.setRenderEffect(RenderEffect.createBlurEffect(
                     blurRadius, blurRadius, Shader.TileMode.CLAMP));
         } else {
             blurLayer.setVisibility(GONE);
+            blurLayer.setLayerType(View.LAYER_TYPE_NONE, null);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 blurLayer.setRenderEffect(null);
             }
