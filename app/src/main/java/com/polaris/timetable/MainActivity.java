@@ -120,6 +120,7 @@ import com.polaris.timetable.ui.page.MyPageBuilder;
 import com.polaris.timetable.ui.page.SettingsPageBuilder;
 import com.polaris.timetable.ui.shell.BottomNavView;
 import com.polaris.timetable.ui.WeekdayLabels;
+import com.polaris.timetable.state.ScheduleViewState;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -247,6 +248,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private final CourseScheduleDialogs scheduleDialogs = new CourseScheduleDialogs(this);
     private final AppearanceDialogs appearanceDialogs = new AppearanceDialogs(this);
     private final ReminderDialogs reminderDialogs = new ReminderDialogs(this);
+    final ScheduleViewState scheduleViewState = new ScheduleViewState();
 
     boolean isImportLink(Uri uri) {
         return ScheduleShareCodec.isImportLink(uri);
@@ -7137,96 +7139,85 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private void applyConfig(ScheduleRepository.Config config) {
-        scheduleName = config.scheduleName;
-        classTimeConfig = config.classTimeConfig;
-        firstClassStartTime = normalizedTimeText(config.firstClassStartTime);
-        classDurationMinutes = Math.max(20, Math.min(120, config.classDurationMinutes));
-        classBreakMinutes = Math.max(0, Math.min(60, config.classBreakMinutes));
-        classBigBreakMinutes = Math.max(0, Math.min(120, config.classBigBreakMinutes));
-        afternoonStartTime = normalizedTimeText(config.afternoonStartTime);
-        lateAfternoonStartTime = normalizedTimeText(config.lateAfternoonStartTime);
-        firstWeekDay = config.firstWeekDay;
-        timetableBackground = config.timetableBackground;
-        visualTheme = PolarisVisualTheme.normalize(config.visualTheme);
-        backgroundImageUri = config.backgroundImageUri;
-        backgroundImageCrop = BackgroundImageCrop.of(
-                config.backgroundCropLeft,
-                config.backgroundCropTop,
-                config.backgroundCropRight,
-                config.backgroundCropBottom);
-        courseSectionCount = Math.max(1, Math.min(20, config.sectionCount));
-        semesterWeeks = Math.max(1, Math.min(20, config.semesterWeeks));
-        remindersEnabled = config.remindersEnabled;
-        reminderMinutesBefore = normalizedReminderMinutes(config.reminderMinutesBefore);
-        showSaturday = config.showSaturday;
-        showSunday = config.showSunday;
-        showOutOfWeekCourses = config.showOutOfWeekCourses;
-        showPracticeBanner = config.showPracticeBanner;
-        collapseLunchBreak = config.collapseLunchBreak;
-        courseCellHeight = Math.max(56, Math.min(120, config.courseCellHeight));
-        courseCornerRadius = Math.max(0, Math.min(24, config.courseCornerRadius));
-        courseBlockOpacity = Math.max(45, Math.min(100, config.courseBlockOpacity));
-        selectedParserModel = parserModelFromConfig(config.parserModel);
-        semesterName = config.semesterName.length() > 0
-                ? config.semesterName
-                : SemesterStartDateDefaults.resolveSemesterName(calendarFromText(firstWeekDay));
-        schoolName = selectedParserModel == null ? config.schoolName : selectedParserModel.label;
-        if (!hasClassTimeTable(config.classTimeConfig)) {
-            applySchoolTimeDefaults(selectedParserModel);
-        }
-        collapseXautMiddleSections = config.collapseXautMiddleSections;
-        timetableHeaderOpacity = Math.max(40, Math.min(100, config.timetableHeaderOpacity));
-        bottomNavOpacity = Math.max(40, Math.min(100, config.bottomNavOpacity));
-        // 72 dp was the old fixed visual height. Migrate that legacy default once to the
-        // compact 60 dp bar; all other user-selected heights remain unchanged.
-        bottomNavHeight = config.bottomNavHeight == 72
-                ? 60 : Math.max(56, Math.min(120, config.bottomNavHeight));
-        bottomNavRectCornerRadius = Math.max(0, Math.min(72, config.bottomNavRectCornerRadius));
-        shellBarsBlurEnabled = config.shellBarsBlurEnabled;
+        scheduleViewState.applyConfig(config);
+        // 过渡期：ViewState 为真相源，同步回 Activity 镜像字段（字段迁移后可移除）
+        scheduleName = scheduleViewState.scheduleName;
+        classTimeConfig = scheduleViewState.classTimeConfig;
+        firstClassStartTime = scheduleViewState.firstClassStartTime;
+        classDurationMinutes = scheduleViewState.classDurationMinutes;
+        classBreakMinutes = scheduleViewState.classBreakMinutes;
+        classBigBreakMinutes = scheduleViewState.classBigBreakMinutes;
+        afternoonStartTime = scheduleViewState.afternoonStartTime;
+        lateAfternoonStartTime = scheduleViewState.lateAfternoonStartTime;
+        firstWeekDay = scheduleViewState.firstWeekDay;
+        timetableBackground = scheduleViewState.timetableBackground;
+        visualTheme = scheduleViewState.visualTheme;
+        backgroundImageUri = scheduleViewState.backgroundImageUri;
+        backgroundImageCrop = scheduleViewState.backgroundImageCrop;
+        courseSectionCount = scheduleViewState.courseSectionCount;
+        semesterWeeks = scheduleViewState.semesterWeeks;
+        remindersEnabled = scheduleViewState.remindersEnabled;
+        reminderMinutesBefore = scheduleViewState.reminderMinutesBefore;
+        showSaturday = scheduleViewState.showSaturday;
+        showSunday = scheduleViewState.showSunday;
+        showOutOfWeekCourses = scheduleViewState.showOutOfWeekCourses;
+        showPracticeBanner = scheduleViewState.showPracticeBanner;
+        collapseLunchBreak = scheduleViewState.collapseLunchBreak;
+        courseCellHeight = scheduleViewState.courseCellHeight;
+        courseCornerRadius = scheduleViewState.courseCornerRadius;
+        courseBlockOpacity = scheduleViewState.courseBlockOpacity;
+        selectedParserModel = scheduleViewState.selectedParserModel;
+        semesterName = scheduleViewState.semesterName;
+        schoolName = scheduleViewState.schoolName;
+        collapseXautMiddleSections = scheduleViewState.collapseXautMiddleSections;
+        timetableHeaderOpacity = scheduleViewState.timetableHeaderOpacity;
+        bottomNavOpacity = scheduleViewState.bottomNavOpacity;
+        bottomNavHeight = scheduleViewState.bottomNavHeight;
+        bottomNavRectCornerRadius = scheduleViewState.bottomNavRectCornerRadius;
+        shellBarsBlurEnabled = scheduleViewState.shellBarsBlurEnabled;
+        darkMode = scheduleViewState.darkMode;
         updateVisibleDayCount();
     }
 
     void saveConfig() {
+        // 同步到 ViewState 再落盘（过渡期双写）
+        scheduleViewState.scheduleName = scheduleName;
+        scheduleViewState.firstClassStartTime = firstClassStartTime;
+        scheduleViewState.classDurationMinutes = classDurationMinutes;
+        scheduleViewState.classBreakMinutes = classBreakMinutes;
+        scheduleViewState.classBigBreakMinutes = classBigBreakMinutes;
+        scheduleViewState.afternoonStartTime = afternoonStartTime;
+        scheduleViewState.lateAfternoonStartTime = lateAfternoonStartTime;
+        scheduleViewState.classTimeConfig = classTimeConfig;
+        scheduleViewState.selectedParserModel = selectedParserModel;
+        scheduleViewState.firstWeekDay = firstWeekDay;
+        scheduleViewState.semesterName = semesterName;
+        scheduleViewState.schoolName = schoolName;
+        scheduleViewState.timetableBackground = timetableBackground;
+        scheduleViewState.visualTheme = visualTheme;
+        scheduleViewState.backgroundImageUri = backgroundImageUri;
+        scheduleViewState.backgroundImageCrop = backgroundImageCrop;
+        scheduleViewState.darkMode = darkMode;
+        scheduleViewState.courseSectionCount = courseSectionCount;
+        scheduleViewState.semesterWeeks = semesterWeeks;
+        scheduleViewState.remindersEnabled = remindersEnabled;
+        scheduleViewState.reminderMinutesBefore = reminderMinutesBefore;
+        scheduleViewState.showSaturday = showSaturday;
+        scheduleViewState.showSunday = showSunday;
+        scheduleViewState.showOutOfWeekCourses = showOutOfWeekCourses;
+        scheduleViewState.showPracticeBanner = showPracticeBanner;
+        scheduleViewState.collapseLunchBreak = collapseLunchBreak;
+        scheduleViewState.collapseXautMiddleSections = collapseXautMiddleSections;
+        scheduleViewState.courseCellHeight = courseCellHeight;
+        scheduleViewState.courseCornerRadius = courseCornerRadius;
+        scheduleViewState.courseBlockOpacity = courseBlockOpacity;
+        scheduleViewState.timetableHeaderOpacity = timetableHeaderOpacity;
+        scheduleViewState.bottomNavOpacity = bottomNavOpacity;
+        scheduleViewState.bottomNavHeight = bottomNavHeight;
+        scheduleViewState.bottomNavRectCornerRadius = bottomNavRectCornerRadius;
+        scheduleViewState.shellBarsBlurEnabled = shellBarsBlurEnabled;
         ScheduleRepository.Config config = new ScheduleRepository.Config();
-        config.scheduleName = scheduleName;
-        config.firstClassStartTime = firstClassStartTime;
-        config.classDurationMinutes = classDurationMinutes;
-        config.classBreakMinutes = classBreakMinutes;
-        config.classBigBreakMinutes = classBigBreakMinutes;
-        config.afternoonStartTime = afternoonStartTime;
-        config.lateAfternoonStartTime = lateAfternoonStartTime;
-        config.classTimeConfig = classTimeConfig;
-        config.parserModel = selectedParserModel == null ? "" : selectedParserModel.name();
-        config.firstWeekDay = firstWeekDay;
-        config.semesterName = semesterName;
-        config.schoolName = schoolName;
-        config.timetableBackground = timetableBackground;
-        config.visualTheme = visualTheme;
-        config.backgroundImageUri = backgroundImageUri;
-        config.backgroundCropLeft = backgroundImageCrop.left;
-        config.backgroundCropTop = backgroundImageCrop.top;
-        config.backgroundCropRight = backgroundImageCrop.right;
-        config.backgroundCropBottom = backgroundImageCrop.bottom;
-        config.darkMode = darkMode;
-        config.sectionCount = courseSectionCount;
-        config.semesterWeeks = semesterWeeks;
-        config.remindersEnabled = remindersEnabled;
-        config.reminderMinutesBefore = reminderMinutesBefore;
-        config.showSaturday = showSaturday;
-        config.showSunday = showSunday;
-        config.showOutOfWeekCourses = showOutOfWeekCourses;
-        config.showPracticeBanner = showPracticeBanner;
-        config.collapseLunchBreak = collapseLunchBreak;
-        config.collapseXautMiddleSections = collapseXautMiddleSections;
-        config.courseCellHeight = courseCellHeight;
-        config.courseCornerRadius = courseCornerRadius;
-        config.courseBlockOpacity = courseBlockOpacity;
-        config.timetableHeaderOpacity = timetableHeaderOpacity;
-        config.bottomNavOpacity = bottomNavOpacity;
-        config.bottomNavHeight = bottomNavHeight;
-        config.bottomNavCornerRadius = bottomNavRectCornerRadius;
-        config.bottomNavRectCornerRadius = bottomNavRectCornerRadius;
-        config.shellBarsBlurEnabled = shellBarsBlurEnabled;
+        scheduleViewState.fillConfig(config);
         scheduleRepository.saveConfig(activeScheduleId, config);
         syncActiveScheduleName();
         rescheduleCourseReminders();

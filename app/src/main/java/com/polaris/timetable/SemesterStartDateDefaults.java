@@ -2,11 +2,11 @@ package com.polaris.timetable;
 
 import java.util.Calendar;
 
-final class SemesterStartDateDefaults {
+public final class SemesterStartDateDefaults {
     private SemesterStartDateDefaults() {
     }
 
-    static String resolve(Calendar currentDate) {
+    public static String resolve(Calendar currentDate) {
         int year = currentDate.get(Calendar.YEAR);
         int month = currentDate.get(Calendar.MONTH);
         int day = currentDate.get(Calendar.DAY_OF_MONTH);
@@ -20,7 +20,7 @@ final class SemesterStartDateDefaults {
         return year + "/9/1";
     }
 
-    static String resolveSemesterName(Calendar currentDate) {
+    public static String resolveSemesterName(Calendar currentDate) {
         int year = currentDate.get(Calendar.YEAR);
         int month = currentDate.get(Calendar.MONTH);
         int day = currentDate.get(Calendar.DAY_OF_MONTH);
