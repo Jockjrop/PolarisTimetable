@@ -61,6 +61,17 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # ubuntu-24.04 runner 镜像的默认用户不在 kvm 组内，导致 /dev/kvm 不可用，
+      # 模拟器退化为纯软件模拟（API 35 x86_64 起不来，instrumentation 进程崩溃、
+      # "Starting 0 tests"）。这里把 kvm 设备放开给所有用户。
+      # 若 runner 镜像后续修复了组归属，可删除本步骤。
+      - name: Enable KVM for emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
