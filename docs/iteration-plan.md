@@ -151,7 +151,9 @@
 | 2-2 | `state/ScheduleViewState` ✅ 已完成（1.15.6） | 158 个字段中"配置镜像"部分（配合 `applyConfig`/`saveConfig`，46 个方法 281 行）抽成独立状态持有者，Activity 委托读写。第一交付（89d8a26）落状态类与双写委托；第二交付完成全量字段迁移：移除 Activity 侧 35 个镜像声明，274 处读写改为 `scheduleViewState.xxx`，`ImportDestination` 构造参数、Host 契约 getter、`visualTheme()` 方法名三类场景上下文感知保留，`DialogKit`/`CourseScheduleDialogs` 同步改经 `host.scheduleViewState` 访问 | -400 行 |
 | 2-3 | `ui/page/PlanPageBuilder` ✅ 已完成（1.15.7） | `buildPlanManageOverlay`（78 行）+ 计划页相关方法抽成独立 Builder：新建 `PlanPageBuilder`（Host 接口 + 自持浮层/面板/新建按钮/列表容器视图），MainActivity 删 5 个 View 字段与 7 个方法（`buildPlanManageOverlay`/`buildPlanPage`/`planRow`/`refreshPlanList`/`showPlanManagePanel`/`closePlanManagePanel`/`weekDayValue`），保留 `planPage` 可见性切换与侧板玻璃层逻辑；8 个私有样式/动作方法升 public 供 Host 复用 | -150 行 |
 | 2-4 | `importer/ai/AiImportFlow` ✅ 已完成（1.15.8） | AI 导入整条用户决策流抽成 `AiImportFlow`（继承 `DialogKit`）：引导对话框 + 剪贴板读写 + 跳转外部 AI + 回跳接管 + 结果预览 + 落库回调；MainActivity 删 15 个方法、3 个字段、1 个常量，保留 `commitImport` 落库实现（触碰 15 个状态成员）；6 个辅助方法升 public | -450 行 |
-| 2-5 | `importer/PdfImportReviewFlow` | PDF 导入的对话框决策链（`MainActivity` 1207–1620，约 410 行）：覆盖确认 → 命名 → 解析审阅 → 落库 | -400 行 |
+| 2-5 | `importer/PdfImportReviewFlow` ✅ 已完成（1.15.9） | PDF 导入对话框决策链（覆盖确认 → 命名 → 解析审阅）抽成 `PdfImportReviewFlow`（继承 `DialogKit`），`ImportDestination` 随迁为公共静态类；MainActivity 删 7 个方法（含 3 个死代码辅助）与内部类，保留 `loadPdf` 解析执行与 `applyReviewedImport` 落库（经 Host 回调）；`input`/`inferSemesterWeeks` 升 public | -400 行 |
+
+> **阶段 2 已全部收官（1.15.3 → 1.15.9）**：2-1 对话框三组、2-2 `ScheduleViewState` 字段存储迁移、2-3 `PlanPageBuilder`、2-4 `AiImportFlow`、2-5 `PdfImportReviewFlow` 五个子项全部闭环，每个子项 `testDebugUnitTest` 275 项全绿 + `assembleDebug` 通过。MainActivity 由 8846 行降至 **6309 行**（净 -2537 行），达成 6000 行量级目标；配置镜像、计划页、AI 导入、PDF 导入四类用例均已按"用例"维度抽出。
 
 > **已核实的既有基础**：`importer/PdfImportCoordinator.java` 已存在，但只有 72 行，仅负责"执行解析 + 持久化 URI 读权限"这一步；`importer/ai/` 包下 12 个类已覆盖 JSON 解析、校验、映射、提示词与外跳回收。也就是说**数据与算法层已抽好，留在 Activity 里的是用户决策流与对话框**——这正是 2-4 / 2-5 要搬的东西，不是重做解析。
 

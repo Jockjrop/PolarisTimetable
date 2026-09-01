@@ -66,6 +66,7 @@ import android.widget.Toast;
 
 import com.polaris.timetable.importer.PdfImportCoordinator;
 import com.polaris.timetable.importer.ImportReviewSummary;
+import com.polaris.timetable.importer.PdfImportReviewFlow;
 import com.polaris.timetable.importer.ai.AiImportFlow;
 import com.polaris.timetable.export.ExportFileProvider;
 import com.polaris.timetable.export.ScheduleCalendarExporter;
@@ -138,29 +139,8 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host {
+public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host, PdfImportReviewFlow.Host {
     private static final String TAG = "MainActivity";
-
-
-    private static final class ImportDestination {
-        final String scheduleId;
-        final String scheduleName;
-        final SchoolParserModel parserModel;
-        final boolean createNewSchedule;
-        final List<Course> existingCourses;
-
-        ImportDestination(String scheduleId, String scheduleName,
-                          SchoolParserModel parserModel, boolean createNewSchedule,
-                          List<Course> existingCourses) {
-            this.scheduleId = scheduleId == null ? "" : scheduleId;
-            this.scheduleName = scheduleName == null ? "" : scheduleName;
-            this.parserModel = parserModel;
-            this.createNewSchedule = createNewSchedule;
-            this.existingCourses = Collections.unmodifiableList(new ArrayList<>(
-                    existingCourses == null
-                            ? Collections.<Course>emptyList() : existingCourses));
-        }
-    }
 
     private static final int PICK_PDF = 1001;
     private static final int PICK_BACKGROUND_IMAGE = 1002;
@@ -190,6 +170,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private final List<Course> courses = new ArrayList<>();
     private final CourseStructureMapper courseStructureMapper = new CourseStructureMapper();
     private final AiImportFlow aiImportFlow = new AiImportFlow(this, this);
+    private final PdfImportReviewFlow pdfImportReviewFlow = new PdfImportReviewFlow(this, this);
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
     ScheduleRepository scheduleRepository;
     private PlanRepository planRepository;
@@ -711,70 +692,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             return;
         }
         if (courses.isEmpty()) {
-            loadPdf(uri, new ImportDestination(activeScheduleId, scheduleViewState.scheduleName,
-                    scheduleViewState.selectedParserModel, false, Collections.<Course>emptyList()));
+            loadPdf(uri, new PdfImportReviewFlow.ImportDestination(activeScheduleId,
+                    scheduleViewState.scheduleName, scheduleViewState.selectedParserModel,
+                    false, Collections.<Course>emptyList()));
             return;
         }
-        showImportOverwriteDialog(uri);
-    }
-
-    private void showImportOverwriteDialog(Uri uri) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.import_overwrite_title));
-        final SchoolParserModel[] importParserModel = {scheduleViewState.selectedParserModel};
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.import_overwrite_message));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        messageParams.setMargins(0, 0, 0, dp(8));
-        panel.addView(message, messageParams);
-        final TextView[] parserChoice = new TextView[1];
-        parserChoice[0] = dialogAction(importParserModel[0] == null
-                ? getString(R.string.import_pick_model)
-                : getString(R.string.import_school_value, importParserModel[0].label), v -> {
-            Dialog chooser = new Dialog(this);
-            LinearLayout chooserPanel = dialogPanel(getString(R.string.import_school_chooser_title));
-            for (SchoolParserModel model : SchoolParserModel.values()) {
-                chooserPanel.addView(dialogAction(model.label, item -> {
-                    importParserModel[0] = model;
-                    parserChoice[0].setText(getString(R.string.import_school_value, model.label));
-                    chooser.dismiss();
-                }));
-            }
-            chooser.setContentView(glassDialogContent(chooserPanel, DesignTokens.RADIUS_DIALOG_SHEET));
-            chooser.show();
-            transparentDialog(chooser);
-        });
-        panel.addView(parserChoice[0]);
-        TextView cover = dialogAction(getString(R.string.import_parse_and_check), v -> {
-            if (importParserModel[0] == null) {
-                Toast.makeText(this, getString(R.string.import_error_pick_model), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            dialog.dismiss();
-            loadPdf(uri, new ImportDestination(activeScheduleId, scheduleViewState.scheduleName,
-                    importParserModel[0], false, courses));
-        });
-        TextView create = dialogAction(getString(R.string.import_create_and_check), v -> {
-            if (importParserModel[0] == null) {
-                Toast.makeText(this, getString(R.string.import_error_create_pick_model), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            dialog.dismiss();
-            showImportNameDialog(uri, true, importParserModel[0]);
-        });
-        TextView cancel = dialogAction(getString(R.string.editor_action_cancel), v -> {
-            dialog.dismiss();
-        });
-        panel.addView(cover);
-        panel.addView(create);
-        panel.addView(cancel);
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
+        pdfImportReviewFlow.showImportOverwriteDialog(uri);
     }
 
     private TextView dialogAction(String text, View.OnClickListener listener) {
@@ -793,41 +716,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return item;
     }
 
-    private void showImportNameDialog(Uri uri, boolean createNewSchedule, SchoolParserModel parserModel) {
-        if (parserModel == null) {
-            Toast.makeText(this, getString(R.string.import_error_create_pick_model), Toast.LENGTH_SHORT).show();
-            return;
-        }
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.import_name_title));
-        EditText nameInput = input(getString(R.string.settings_row_schedule_name), createNewSchedule ? nextScheduleName()
-                : scheduleViewState.scheduleName.length() == 0 ? nextScheduleName() : scheduleViewState.scheduleName);
-        panel.addView(nameInput);
-        TextView startImport = dialogAction(getString(R.string.import_start_parse), v -> {
-            String name = nameInput.getText().toString().trim();
-            if (name.length() == 0) {
-                Toast.makeText(this, getString(R.string.import_error_name_empty), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            dialog.dismiss();
-            loadPdf(uri, new ImportDestination(activeScheduleId, name,
-                    parserModel, createNewSchedule,
-                    createNewSchedule ? Collections.<Course>emptyList() : courses));
-        });
-        startImport.setTextColor(Color.WHITE);
-        startImport.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
-        panel.addView(startImport);
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private String nextScheduleName() {
-        int index = scheduleRepository.loadSchedules().size() + 1;
-        return "新课表" + index;
-    }
-
-    private void loadPdf(Uri uri, ImportDestination destination) {
+    public void loadPdf(Uri uri, PdfImportReviewFlow.ImportDestination destination) {
         if (pdfImportInProgress) {
             Toast.makeText(this, getString(R.string.import_parsing_busy), Toast.LENGTH_SHORT).show();
             return;
@@ -849,7 +738,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 updateHeader();
                 renderSchedule();
                 updateEmptyScheduleView();
-                showImportReviewDialog(result, destination);
+                pdfImportReviewFlow.showImportReviewDialog(result, destination);
             }
 
             @Override
@@ -872,113 +761,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Toast.makeText(this, getString(R.string.import_launch_failed, reason),
                     Toast.LENGTH_LONG).show();
         }
-    }
-
-    private void showImportReviewDialog(ParseResult result,
-                                        ImportDestination destination) {
-        int importedSemesterWeeks = inferSemesterWeeks(result.courses);
-        List<Course> comparisonCourses = destination.existingCourses;
-        boolean replacingExisting = !destination.createNewSchedule
-                && !comparisonCourses.isEmpty();
-        ImportReviewSummary review = ImportReviewSummary.analyze(
-                result, comparisonCourses, importedSemesterWeeks);
-
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.import_review_title));
-        TextView summary = new TextView(this);
-        summary.setText(review.canImport()
-                ? getString(R.string.import_review_count, review.courseCount,
-                        review.meetingCount)
-                : getString(R.string.import_review_empty));
-        summary.setTextColor(inkColor());
-        summary.setTextSize(18);
-        summary.setTypeface(Typeface.DEFAULT_BOLD);
-        summary.setGravity(Gravity.CENTER);
-        summary.setPadding(0, 0, 0, dp(10));
-        panel.addView(summary);
-
-        String importedSemester = result.semesterName.length() > 0
-                ? result.semesterName
-                : SemesterStartDateDefaults.resolveSemesterName(Calendar.getInstance());
-        panel.addView(importReviewLine(getString(R.string.import_review_label_school), destination.parserModel.label, false));
-        panel.addView(importReviewLine(getString(R.string.import_review_label_semester), importedSemester, false));
-        panel.addView(importReviewLine(getString(R.string.import_review_pages), getString(R.string.import_pages_value, Math.max(0, result.pageCount)), false));
-        panel.addView(importReviewLine(getString(R.string.import_review_start_date), getString(R.string.import_review_date_pending), false));
-
-        panel.addView(importReviewHeading(destination.createNewSchedule
-                ? getString(R.string.import_review_destination_new)
-                : replacingExisting ? getString(R.string.import_review_destination_compare) : getString(R.string.import_review_destination_current)));
-        panel.addView(importReviewLine(getString(R.string.import_review_added), getString(R.string.import_count_value, review.addedCount), false));
-        panel.addView(importReviewLine(getString(R.string.import_review_modified), getString(R.string.import_count_value, review.modifiedCount),
-                review.modifiedCount > 0));
-        panel.addView(importReviewLine(getString(R.string.import_review_removed), getString(R.string.import_count_value, review.removedCount),
-                review.removedCount > 0));
-
-        panel.addView(importReviewHeading(getString(R.string.import_review_needs_check)));
-        if (!review.hasIssues()) {
-            panel.addView(importReviewLine(getString(R.string.import_review_check_result), getString(R.string.import_review_no_issues), false));
-        } else {
-            if (review.errorCount > 0) {
-                panel.addView(importReviewLine(getString(R.string.import_review_parse_errors), getString(R.string.import_count_value, review.errorCount), true));
-            }
-            if (review.warningCount > 0) {
-                panel.addView(importReviewLine(getString(R.string.import_review_warnings), getString(R.string.import_count_value, review.warningCount), true));
-            }
-            if (review.unknownWeekCount > 0) {
-                panel.addView(importReviewLine(getString(R.string.import_review_unknown_weeks),
-                        getString(R.string.import_arrangements_value, review.unknownWeekCount), true));
-            }
-            if (review.missingLocationCount > 0) {
-                panel.addView(importReviewLine(getString(R.string.import_review_missing_location),
-                        getString(R.string.import_arrangements_value, review.missingLocationCount), true));
-            }
-            if (review.missingTeacherCount > 0) {
-                panel.addView(importReviewLine(getString(R.string.import_review_missing_teacher),
-                        getString(R.string.import_arrangements_value, review.missingTeacherCount), true));
-            }
-            if (review.conflictCount > 0) {
-                panel.addView(importReviewLine(getString(R.string.import_review_conflicts),
-                        getString(R.string.import_conflict_value, review.conflictCount), true));
-            }
-        }
-
-        if (lastParseDiagnosticsText.length() > 0) {
-            panel.addView(dialogAction(getString(R.string.import_review_diagnostics), v -> scheduleDialogs.showParseDiagnosticsDialog()));
-        }
-        if (review.canImport()) {
-            String confirmText = destination.createNewSchedule
-                    ? getString(R.string.import_confirm_new)
-                    : replacingExisting ? getString(R.string.import_confirm_overwrite) : getString(R.string.import_confirm_import_pdf);
-            TextView confirm = dialogAction(confirmText, v -> {
-                dialog.dismiss();
-                applyReviewedImport(result, destination, importedSemesterWeeks);
-            });
-            confirm.setTextColor(Color.WHITE);
-            confirm.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
-            confirm.setContentDescription(confirmText + getString(R.string.import_confirm_cd_review));
-            panel.addView(confirm);
-        } else {
-            TextView blocked = new TextView(this);
-            blocked.setText(getString(R.string.import_blocked_message));
-            blocked.setTextColor(mutedColor());
-            blocked.setTextSize(14);
-            blocked.setLineSpacing(dp(3), 1f);
-            blocked.setPadding(0, dp(8), 0, dp(4));
-            panel.addView(blocked);
-        }
-        panel.addView(dialogAction(review.canImport() ? getString(R.string.import_cancel_import) : getString(R.string.import_close),
-                v -> dialog.dismiss()));
-
-        ScrollView reviewScroll = new ScrollView(this);
-        reviewScroll.setFillViewport(false);
-        reviewScroll.setVerticalScrollBarEnabled(true);
-        reviewScroll.addView(panel, new ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT,
-                ScrollView.LayoutParams.WRAP_CONTENT));
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setContentView(glassDialogContent(reviewScroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
     }
 
     public TextView importReviewHeading(String text) {
@@ -1006,8 +788,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return line;
     }
 
-    private void applyReviewedImport(ParseResult result,
-                                     ImportDestination destination,
+    public void applyReviewedImport(ParseResult result,
+                                     PdfImportReviewFlow.ImportDestination destination,
                                      int importedSemesterWeeks) {
         if (!result.courses.isEmpty() && result.structuredCourses.isEmpty()) {
             Toast.makeText(this,
@@ -1042,36 +824,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         renderSchedule();
         updateEmptyScheduleView();
         scheduleDialogs.showImportedFirstWeekDayDialog();
-    }
-
-    private String parseSubtitle(ParseResult result) {
-        if (result.courses.isEmpty()) {
-            String reason = firstParseMessage(result);
-            return reason.length() == 0 ? getString(R.string.parse_no_courses_hint) : reason;
-        }
-        if (result.errors.isEmpty()) {
-            return getString(R.string.parse_ok_summary, result.courses.size(), result.pageCount);
-        }
-        return getString(R.string.parse_ok_summary_warnings, result.courses.size(), result.errors.size());
-    }
-
-    private String parseToast(ParseResult result) {
-        String message = firstParseMessage(result);
-        if (message.length() > 0) {
-            return message;
-        }
-        if (!result.success) {
-            return getString(R.string.parse_failed_hint);
-        }
-        return getString(R.string.parse_partial_hint);
-    }
-
-    private String firstParseMessage(ParseResult result) {
-        if (result.errors.isEmpty()) {
-            return "";
-        }
-        ParseError error = result.errors.get(0);
-        return error.message.length() == 0 ? error.code.name() : error.message;
     }
 
     private void setHeader(String titleText, String subtitleText) {
@@ -3618,7 +3370,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    EditText input(String hint, String value) {
+    public EditText input(String hint, String value) {
         EditText editText = new EditText(this);
         editText.setHint(hint);
         editText.setText(value);
@@ -4111,6 +3863,49 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (rootView != null) {
             rootView.post(runnable);
         }
+    }
+
+    // ===== PdfImportReviewFlow.Host 实现:PDF 导入决策链的课表状态、解析入口与落库 =====
+
+    @Override
+    public boolean hasCourses() {
+        return !courses.isEmpty();
+    }
+
+    @Override
+    public String activeScheduleId() {
+        return activeScheduleId;
+    }
+
+    @Override
+    public String currentScheduleName() {
+        return scheduleViewState.scheduleName;
+    }
+
+    @Override
+    public SchoolParserModel selectedParserModel() {
+        return scheduleViewState.selectedParserModel;
+    }
+
+    @Override
+    public List<Course> existingCourses() {
+        return courses;
+    }
+
+    @Override
+    public String nextScheduleName() {
+        int index = scheduleRepository.loadSchedules().size() + 1;
+        return "新课表" + index;
+    }
+
+    @Override
+    public boolean hasDiagnosticsText() {
+        return lastParseDiagnosticsText.length() > 0;
+    }
+
+    @Override
+    public void showParseDiagnosticsDialog() {
+        scheduleDialogs.showParseDiagnosticsDialog();
     }
 
     // ===== SettingsPageBuilder.Host 实现:设置页数据与动作委托 =====
@@ -6671,7 +6466,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return Math.max(1, Math.min(20, max));
     }
 
-    private int inferSemesterWeeks(List<Course> source) {
+    public int inferSemesterWeeks(List<Course> source) {
         return CourseTimeResolver.inferSemesterWeeks(source, 20, 20);
     }
 
