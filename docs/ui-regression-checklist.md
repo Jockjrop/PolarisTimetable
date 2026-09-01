@@ -54,9 +54,9 @@
 
 ## 8. 矩阵（阶段 6 收口，1.15.0 基线）
 
-- [ ] 字号 1.3x/2.0x：`ScheduleBoardView` 长课程名换行/`ellipsize`，`CourseEditorDialog` 按钮两行，`verify_11500` 在 `fontScale 1.3` 下不截断
-- [ ] RTL `ar-XB`：`Gravity.RIGHT` 已收敛为 `START/END`，`ConstraintLayout` 自适应
-- [ ] 旋转/重建：`configChanges=orientation|screenSize|smallestScreenSize` 下 `buildLayout()` 全量重建，`ViewBinding onDestroyView` 置空
+- [x] 字号 1.3x/2.0x：`ScheduleBoardView` 长课程名换行/`ellipsize`，`CourseEditorDialog` 按钮两行，`verify_11500` 在 `fontScale 1.3` 下不截断（1.15.11 模拟器 API 35 实测：fontScale 1.3 下 10/10 插桩绿，含设置页渲染）
+- [x] RTL `ar-XB`：`Gravity.RIGHT` 已收敛为 `START/END`（1.15.10），`supportsRtl` 已补声明（1.15.11），`debug.force_rtl 1` + fontScale 1.3 实测 10/10 插桩绿
+- [x] 旋转/重建：`configChanges=orientation|screenSize|smallestScreenSize` 下 `buildLayout()` 全量重建，`ViewBinding onDestroyView` 置空（`RotationTest` 横→竖往返 2 用例实测绿）
 - [ ] 长课程名/多节叠加：`Board` 的 `conflict` 角标 + `+N` 折叠
 - [ ] 平板/折叠/分屏：`TABLET_SETTINGS_SPLIT=425` `PRACTICE_PANEL_WIDTH=190` `PLAN_PANEL_WIDTH=360` 在 `1080×2400` 与 `1280×800` 平板验证
 - [ ] 触控：`BottomNavView` `48dp` 高度，`settingsGroup` 行 `58dp`
