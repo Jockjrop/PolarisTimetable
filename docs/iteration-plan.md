@@ -178,6 +178,9 @@
 
 顺序：先升与解析无关的 AndroidX 组件（`constraintlayout` → 2.2.x、`fragment` / `core` / `appcompat` 到当前稳定版），单独一个 patch 交付；确认无回归后，再单独评估 `pdfbox-android` 升级，必须回归三校模板（西安邮电 / 杭电 / 西安理工）各一份真实 PDF。
 
+- ✅ **4-1 AndroidX 升级（1.16.0，`9a6d275`）**：appcompat 1.7.0→1.7.1、constraintlayout 2.1.4→2.2.1、fragment 1.8.2→1.8.9、core 1.13.1→1.15.0（compileSdk 35 兼容上限；1.16+/1.17+ 需 compileSdk 36）。单测 275 全绿，模拟器 instrumented 10/10（首轮 1 例 `ScheduleBoardRenderTest` 偶发 AmbiguousViewMatcherException——ViewPager 相邻周页预加载时序 flake，复跑绿，持续观察 CI）。
+- ⏸ **4-2 pdfbox-android**：待单独一轮，须三校模板真实 PDF 回归。
+
 风险：`pdfbox-android` 是解析核心，跨版本升级可能改变文本坐标提取行为 —— 必须一校一测，不与其他改动混在同一轮。
 
 ### 阶段 5：资产与工具链入库（P5，不升版本）
