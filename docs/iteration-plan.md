@@ -101,6 +101,46 @@
 验收：连续 3 次 push 到 `main`，instrumented job 稳定通过且不依赖 `continue-on-error`。
 风险：若根因未定位就摘掉兜底，会让 CI 长期飘红 —— 因此第 1 步是前置，未定位前保持现状。
 
+#### 阶段 1 执行记录（2026-09-01）
+
+三步全部完成，`continue-on-error` 已摘除（`5aaa253`），instrumented 恢复为真实门禁。
+
+| 步 | 结果 | 说明 |
+|---|---|---|
+| 1 定位根因 | ✅ | 实际是**三个**独立根因，前两个只让测试"能被发现"，第三个才是卡死主因 |
+| 2 收敛 gradle.properties | ✅ | 三行 UTP 开关已全部删除，注释写明 AGP 8.7 起 UTP 不可关闭、kotlin-stdlib 统一由 `app/build.gradle` 注入 |
+| 3 摘除 continue-on-error | ✅ | 保留 `timeout-minutes: 20` 作为防挂死兜底 |
+
+**三个根因**：
+
+1. **`EnumEntriesKt` 缺失** —— AGP 8.7 强制 UTP，其 launcher（Kotlin 1.9 编译）运行期需要
+   `kotlin.enums.EnumEntriesKt`，但 POM 未带 kotlin-stdlib。修复：向 `_internal-unified-test-platform-*`
+   配置注入 kotlin-stdlib 1.9.20（排除 `-core`，其单 jar 路径检查会失败）。
+2. **`/dev/kvm` 无权限** —— GitHub `ubuntu-24.04` runner 默认用户不在 kvm 组
+   （`kvm:x:993:` 无成员），模拟器无硬件加速 → `ProbeKVM` 报错 → `Starting 0 tests` + 进程崩溃。
+   修复：udev 规则放开 `/dev/kvm` 为 `0666`。
+3. **主线程永不 idle（真正的卡死原因）** —— 表现为 `Starting 10 tests` 后
+   `Tests 0/10 completed`、无失败无跳过、占用 runner 近 3 小时。本机用 `simpleperf` 定位：
+   96% 样本在内核 `read_hpet`，调用图指向 `ScheduleBoardView.renderSchedule` 在尺寸 ≤ 0 时用
+   **零延迟 `post()` 轮询等待布局**；空课表下尺寸恒为 0，构成消息风暴。
+   修复：改为 `pendingRenderWhenSized` 标记 + `onSizeChanged` 事件驱动补渲染（`3a0b581`）。
+   同期发现并修复 `BackdropBlurView.onPreDraw` 无条件 `invalidateBackdrop` 造成的
+   **静止态 60fps 自激重绘**（真实电量缺陷，非测试问题）。
+
+**顺带暴露的测试缺陷**（此前被挂死完全掩盖，这些用例从未真正执行过）：
+
+- 底部导航标签文本实为 `"▦\n课表"` 形式且是 `SpannableString`，而 Espresso
+  `withText(String)` 内部要求 `item instanceof String`，对 Spannable 永不匹配。
+  新增 `testing.TextMatchers.withNavLabel` 按最后一行比较。
+- `ScheduleBoardRenderTest` 的 `containsString("高等数学A")` 同时命中 ViewPager
+  相邻周页的两份课程块 → `AmbiguousViewMatcherException`，补 `isDisplayed()` 消歧。
+
+本机实测：静止时帧增量由 60fps 降为 0；`connectedDebugAndroidTest` **10/10 通过**；
+单元测试 275 项 0 失败。
+
+> **验收尚未闭环**：需连续 3 次 push 到 `main` 且 instrumented 稳定绿。当前为摘除兜底后的
+> 第 1 次（run `33475195730`）。在其连续通过前，本阶段按"已落地、验收观察中"对待。
+
 ### 阶段 2：MainActivity 第二轮瘦身（P1，每个小交付升 patch）
 
 **换拆分维度**：不再按"页面"，改按"用例"和"状态"。五个独立小交付，每次只做一个，视觉零变化。
