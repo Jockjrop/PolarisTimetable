@@ -1152,8 +1152,18 @@ public final class CourseEditorDialog {
     }
 
     private int statusBarHeight() {
-        int id = activity.getResources().getIdentifier("status_bar_height", "dimen", "android");
-        return id > 0 ? activity.getResources().getDimensionPixelSize(id) : dp(24);
+        // 经 ViewCompat 跨版本读取真实状态栏 inset，避免反射 status_bar_height。
+        androidx.core.view.WindowInsetsCompat insets =
+                androidx.core.view.ViewCompat.getRootWindowInsets(activity.getWindow().getDecorView());
+        if (insets != null) {
+            int top = insets.getInsets(
+                    androidx.core.view.WindowInsetsCompat.Type.statusBars()
+                            | androidx.core.view.WindowInsetsCompat.Type.displayCutout()).top;
+            if (top > 0) {
+                return top;
+            }
+        }
+        return dp(24);
     }
 
     private int dp(int value) {

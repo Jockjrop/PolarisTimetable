@@ -174,7 +174,7 @@ public class CourseDetailDialog {
         labelView.setText(label);
         labelView.setTextColor(mutedColor());
         labelView.setTextSize(14);
-        labelView.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        labelView.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         row.addView(labelView, new LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView valueView = new TextView(context);
@@ -182,7 +182,7 @@ public class CourseDetailDialog {
         valueView.setTextColor(inkColor());
         valueView.setTextSize(15);
         valueView.setTypeface(Typeface.DEFAULT_BOLD);
-        valueView.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        valueView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         valueView.setSingleLine(false);
         LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);

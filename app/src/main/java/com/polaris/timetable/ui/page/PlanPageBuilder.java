@@ -145,7 +145,7 @@ public class PlanPageBuilder {
         });
         FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
                 panelWidth, FrameLayout.LayoutParams.MATCH_PARENT,
-                Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                Gravity.END | Gravity.CENTER_VERTICAL);
         planManageOverlay.addView(planManagePanel, panelParams);
 
         LinearLayout header = new LinearLayout(context);

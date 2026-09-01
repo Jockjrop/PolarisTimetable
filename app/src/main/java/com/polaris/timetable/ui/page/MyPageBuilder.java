@@ -361,7 +361,7 @@ public class MyPageBuilder {
         label.setTextColor(host.inkColor());
         label.setTextSize(16);
         label.setTypeface(Typeface.DEFAULT_BOLD);
-        label.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        label.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         card.addView(label, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(

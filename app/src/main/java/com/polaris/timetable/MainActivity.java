@@ -5,6 +5,8 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.Manifest;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
@@ -548,7 +550,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             paneDivider.setBackgroundColor(PolarisVisualTheme.outlineColor(
                     scheduleViewState.visualTheme, isDarkModeActive()));
             FrameLayout.LayoutParams dividerParams = new FrameLayout.LayoutParams(
-                    dp(1), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
+                    dp(1), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START);
             dividerParams.leftMargin = dp(DesignTokens.TABLET_SETTINGS_SPLIT - 1);
             paneDivider.setVisibility(View.GONE);
             contentHost.addView(paneDivider, dividerParams);
@@ -566,7 +568,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             practiceSidePanel.setVisibility(View.GONE);
             contentHost.addView(practiceSidePanel, new FrameLayout.LayoutParams(
                     dp(DesignTokens.TABLET_PRACTICE_PANEL_WIDTH), FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.RIGHT | Gravity.TOP));
+                    Gravity.END | Gravity.TOP));
             if (separateTodayPanel) {
                 // 今日概览独立面板：右侧顶部，实践面板上方。
                 buildTodayOverviewPanel();
@@ -588,7 +590,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             planSidePanel.setVisibility(View.GONE);
             contentHost.addView(planSidePanel, new FrameLayout.LayoutParams(
                     dp(DesignTokens.TABLET_PLAN_PANEL_WIDTH), LinearLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.RIGHT | Gravity.TOP));
+                    Gravity.END | Gravity.TOP));
         } else {
             contentHost.addView(myPage, new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1163,7 +1165,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         todayOverviewPanel = host;
         contentHost.addView(host, new FrameLayout.LayoutParams(
                 dp(360), LinearLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.RIGHT | Gravity.TOP));
+                Gravity.END | Gravity.TOP));
         host.setVisibility(View.GONE);
         return host;
     }
@@ -2429,7 +2431,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         popup.setElevation(dp(8));
         popup.setAnimationStyle(android.R.style.Animation_Dialog);
         popup.showAtLocation(rootView == null ? anchor : rootView,
-                Gravity.TOP | Gravity.RIGHT, dp(14), statusBarHeight() + dp(48));
+                Gravity.TOP | Gravity.END, dp(14), statusBarHeight() + dp(48));
     }
 
     private TextView popupMenuAction(String text, View.OnClickListener listener) {
@@ -4944,7 +4946,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         for (int i = 0; i < sorted.size(); i += 2) {
             LinearLayout line = new LinearLayout(this);
             line.setOrientation(LinearLayout.HORIZONTAL);
-            line.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            line.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
             line.addView(courseManageTimeCell(sorted.get(i)), courseManageTimeCellParams(0));
             if (i + 1 < sorted.size()) {
                 line.addView(courseManageTimeCell(sorted.get(i + 1)), courseManageTimeCellParams(dp(8)));
@@ -4965,13 +4967,13 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     private LinearLayout courseManageTimeCell(Course course) {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setGravity(Gravity.RIGHT);
+        cell.setGravity(Gravity.END);
 
         TextView weeks = new TextView(this);
         weeks.setText(normalizeWeeks(course.weeks));
         weeks.setTextColor(mutedColor());
         weeks.setTextSize(12);
-        weeks.setGravity(Gravity.RIGHT);
+        weeks.setGravity(Gravity.END);
         weeks.setSingleLine(false);
         cell.addView(weeks, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -4980,7 +4982,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         time.setText(courseTimeInlineText(course));
         time.setTextColor(mutedColor());
         time.setTextSize(13);
-        time.setGravity(Gravity.RIGHT);
+        time.setGravity(Gravity.END);
         time.setTypeface(Typeface.DEFAULT_BOLD);
         time.setSingleLine(true);
         LinearLayout.LayoutParams timeParams = new LinearLayout.LayoutParams(
@@ -5159,7 +5161,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         if (isLandscapeTablet() && tabletSettingsOpen) {
             // 平板侧栏模式：重建后仍保持左侧侧栏的宽度与位置。
             params = new FrameLayout.LayoutParams(
-                    dp(320), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
+                    dp(320), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START);
             params.leftMargin = dp(104);
         } else {
             params = new FrameLayout.LayoutParams(
@@ -5238,7 +5240,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         contentHost.removeView(myPage);
         myPage = buildMyPage();
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                dp(320), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
+                dp(320), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START);
         params.leftMargin = dp(104);
         if (settingsIndex >= 0) {
             contentHost.addView(myPage, settingsIndex, params);
@@ -6742,8 +6744,16 @@ private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
         if (systemTopInset >= 0) {
             return systemTopInset;
         }
-        int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
-        return id > 0 ? getResources().getDimensionPixelSize(id) : dp(DesignTokens.GAP_SHELL * 3);
+        // 未捕获真实 inset 时经 ViewCompat 跨版本读取系统栏高度，避免反射 status_bar_height。
+        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(getWindow().getDecorView());
+        if (insets != null) {
+            androidx.core.graphics.Insets bars = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
+            if (bars.top > 0) {
+                return bars.top;
+            }
+        }
+        return dp(DesignTokens.GAP_SHELL * 3);
     }
 
     /**

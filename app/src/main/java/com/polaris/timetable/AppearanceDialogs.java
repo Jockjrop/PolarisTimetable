@@ -149,7 +149,7 @@ public class AppearanceDialogs extends DialogKit {
 
         View choiceContent = glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET);
         FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
-                panelWidth, LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT);
+                panelWidth, LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START);
         panelParams.leftMargin = left;
         panelParams.topMargin = top;
         root.addView(choiceContent, panelParams);
