@@ -30,13 +30,19 @@ public class BackdropBlurView extends FrameLayout {
     // 源视图子树上一次采样时的内容签名（自身几何 + 各层滚动位置 + 子节点数）
     private long lastSourceSignature;
     private boolean hasLastSourceState;
+    // 玻璃自身上一次检查时的屏幕位置；采样偏移以它为基准，位移后必须重采样
+    private int lastSelfScreenX;
+    private int lastSelfScreenY;
+    private boolean hasLastSelfState;
     private final ViewTreeObserver.OnPreDrawListener sourcePreDrawListener =
             () -> {
-                // 仅在源视图子树的内容签名真的变化时刷新背景采样。
+                // 仅在源视图子树的内容签名或玻璃自身屏幕位置真的变化时刷新背景采样。
                 // 无条件 invalidate 会与本视图自己的绘制请求构成 preDraw→invalidate→
                 // preDraw 自激环，使画面完全静止时仍以 60fps 持续重绘：既白烧 GPU/电量，
                 // 又让主线程永不 idle（Espresso.onIdle() 因此无限阻塞，见 CI 记录）。
-                if (sourceStateChanged()) {
+                boolean sourceChanged = sourceStateChanged();
+                boolean selfMoved = selfPositionChanged();
+                if (sourceChanged || selfMoved) {
                     invalidateBackdrop();
                 }
                 return true;
@@ -157,6 +163,7 @@ public class BackdropBlurView extends FrameLayout {
         removeSourcePreDrawListener();
         releaseBuffer();
         hasLastSourceState = false; // buffer 已释放，重新挂载后需重新采样
+        hasLastSelfState = false; // 重新挂载后屏幕位置可能已变，同样需重新采样
     }
 
     private void drawBackdrop(Canvas canvas) {
@@ -260,6 +267,29 @@ public class BackdropBlurView extends FrameLayout {
                     + 3L * child.getLeft() + 5L * child.getTop();
         }
         return hash;
+    }
+
+    /**
+     * 玻璃自身的屏幕位置是否需要重新采样。
+     *
+     * drawBackdrop 以「玻璃自身屏幕坐标」反推背景采样区域，但上面的源子树签名
+     * 覆盖不到玻璃自身的位移：底栏 hide/show 的 translationY 动画期间内容源静止，
+     * 源签名不变，玻璃会一直复用隐藏期间采到的缓存（透明或错位），表现为模糊消失。
+     * 玻璃位移必然伴随 layout/translation 失效引起的窗口 traversal，此处的 preDraw
+     * 检查点每帧都会执行：位移期间逐帧重采样，动画结束位置稳定后仅剩一次整数比较，
+     * 也不会构成自激环（失效后下一帧位置已相同，不再继续 invalidate）。
+     */
+    private boolean selfPositionChanged() {
+        getLocationOnScreen(selfLocation);
+        int x = selfLocation[0];
+        int y = selfLocation[1];
+        if (!hasLastSelfState || x != lastSelfScreenX || y != lastSelfScreenY) {
+            hasLastSelfState = true;
+            lastSelfScreenX = x;
+            lastSelfScreenY = y;
+            return true;
+        }
+        return false;
     }
 
     private void addSourcePreDrawListener() {
