@@ -22,7 +22,16 @@ public final class WindowSizeClass {
         if (configuration == null) {
             return false;
         }
-        return configuration.smallestScreenWidthDp >= 600
+        return isTablet(configuration)
                 && configuration.orientation == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
+    /** 平板判定（纯尺寸语义，不含方向）：smallestScreenWidthDp >= 600。 */
+    public static boolean isTablet(Context context) {
+        return context != null && isTablet(context.getResources().getConfiguration());
+    }
+
+    public static boolean isTablet(Configuration configuration) {
+        return configuration != null && configuration.smallestScreenWidthDp >= 600;
     }
 }

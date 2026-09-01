@@ -169,7 +169,7 @@
 
 1. **移除状态栏高度反射** ✅ 已完成（1.15.10）：`MainActivity.statusBarHeight()` 与 `CourseEditorDialog.statusBarHeight()` 的 `getIdentifier("status_bar_height")` 反射改为 `ViewCompat.getRootWindowInsets`（androidx.core 1.13.1）跨版本读取真实 inset，失败回退原固定值（`GAP_SHELL*3` / `dp(24)`）。
 2. **RTL 加固** ✅ 已完成（1.15.10）：17 处 `Gravity.LEFT/RIGHT` → `START/END`（6 文件：MainActivity 11 处、CourseDetailDialog 2 处、MyPageBuilder 1 处、PlanPageBuilder 1 处、AiImportFlow 1 处、AppearanceDialogs 1 处）。
-3. **平板分支收敛** ⏸ 未开始：36 处 `isLandscapeTablet` 调用点评估是否可下沉到 `WindowSizeClass` 或各 Builder 内部，减少 Activity 内的条件散布。
+3. **平板分支收敛** ✅ 已完成（1.15.11）：评估 33 处 `isLandscapeTablet()` 调用点——均与 Activity 状态（`tabletSettingsOpen`）或布局度量（`rightPanelSpace`）耦合，且 Builder 已经 Host 契约解耦，无需下沉；收敛 5 处散落的裸 `smallestScreenWidthDp >= 600` 魔法数为 `WindowSizeClass.isTablet()`（纯尺寸语义），`isLandscapeTablet()` 复用该判定。
 
 验收：`docs/ui-regression-checklist.md` 第 8 节矩阵（fontScale 1.3/2.0、RTL、分屏、旋转、暗色四主题）全过。
 风险：inset 改动可能引起各页 padding 双重叠加 —— 需逐页对比 `build/verify_*.png` 基线截图。

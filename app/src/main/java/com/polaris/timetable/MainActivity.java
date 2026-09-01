@@ -113,6 +113,7 @@ import com.polaris.timetable.ui.DesignTokens;
 import com.polaris.timetable.ui.PolarisThemeBackgroundView;
 import com.polaris.timetable.ui.PolarisVisualTheme;
 import com.polaris.timetable.ui.ScheduleBoardView;
+import com.polaris.timetable.ui.WindowSizeClass;
 import com.polaris.timetable.ui.TodayOverviewView;
 import com.polaris.timetable.ui.page.MyPageBuilder;
 import com.polaris.timetable.ui.page.PlanPageBuilder;
@@ -378,7 +379,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private void buildLayout() {
-        boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+        boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
         // 横屏平板：顶栏采用横向并排布局，压缩垂直占用。
         boolean wideTopPanel = isLandscapeTablet();
         // 布局重建（旋转等）后回到「我的页居中」初始模式，侧栏状态不跨重建保留。
@@ -842,7 +843,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     void renderSchedule() {
         if (scheduleBoard != null) {
-            boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+            boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
             scheduleBoard.setWeekBounds(1, scheduleViewState.semesterWeeks);
             scheduleBoard.setCurrentWeek(currentWeek);
             scheduleBoard.setVisibleDays(scheduleViewState.showSaturday, scheduleViewState.showSunday);
@@ -1105,7 +1106,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 (FrameLayout.LayoutParams) practiceSidePanel.getLayoutParams();
         params.width = practicePanelWidth();
         int topInset = scheduleOverlayTopInset(
-                getResources().getConfiguration().smallestScreenWidthDp >= 600);
+                WindowSizeClass.isTablet(getResources().getConfiguration()));
         if (todayOverviewPanel != null && todayOverviewPanel.getVisibility() == View.VISIBLE) {
             // 实践面板排在今日概览面板下方；未布局时用估算高度兜底。
             int todayBottom;
@@ -1233,7 +1234,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 (FrameLayout.LayoutParams) planSidePanel.getLayoutParams();
         params.width = practicePanelWidth();
         int topInset = scheduleOverlayTopInset(
-                getResources().getConfiguration().smallestScreenWidthDp >= 600);
+                WindowSizeClass.isTablet(getResources().getConfiguration()));
         View anchor = null;
         if (practiceSidePanel != null
                 && practiceSidePanel.getVisibility() == View.VISIBLE
@@ -3423,7 +3424,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             params.setMargins(0, 0, 0, dp(DesignTokens.NAV_FLOATING_MARGIN) + Math.max(systemBottomInset, 0));
             return params;
         }
-        boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+        boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
         int bottomMargin = dp(DesignTokens.NAV_FLOATING_MARGIN) + Math.max(systemBottomInset, 0);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()), Gravity.BOTTOM);
@@ -6636,7 +6637,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     /** 横屏平板：导航 rail、顶栏并排、设置双栏等平板专属布局的统一判定。 */
     public boolean isLandscapeTablet() {
-        return com.polaris.timetable.ui.WindowSizeClass.isLandscapeTablet(this);
+        return WindowSizeClass.isLandscapeTablet(this);
     }
 
     /**
