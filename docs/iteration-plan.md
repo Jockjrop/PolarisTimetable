@@ -148,7 +148,7 @@
 | 序 | 抽取目标 | 内容 | 预估 |
 |---|---|---|---|
 | 2-1 | `ui/dialog/*Dialogs` 三组 | 53 个 `show*Dialog`（777 行）按主题分组：课程与导入 / 外观与背景 / 提醒与权限。复用已有 `GlassDialogFactory` 与 `DialogWindowHelper` | -700 行 |
-| 2-2 | `state/ScheduleViewState` | 158 个字段中"配置镜像"部分（配合 `applyConfig`/`saveConfig`，46 个方法 281 行）抽成独立状态持有者，Activity 委托读写 | -400 行 |
+| 2-2 | `state/ScheduleViewState` ✅ 已完成（1.15.6） | 158 个字段中"配置镜像"部分（配合 `applyConfig`/`saveConfig`，46 个方法 281 行）抽成独立状态持有者，Activity 委托读写。第一交付（89d8a26）落状态类与双写委托；第二交付完成全量字段迁移：移除 Activity 侧 35 个镜像声明，274 处读写改为 `scheduleViewState.xxx`，`ImportDestination` 构造参数、Host 契约 getter、`visualTheme()` 方法名三类场景上下文感知保留，`DialogKit`/`CourseScheduleDialogs` 同步改经 `host.scheduleViewState` 访问 | -400 行 |
 | 2-3 | `ui/page/PlanPageBuilder` | `buildPlanManageOverlay`（78 行）+ 计划页相关方法，对齐 `MyPageBuilder` / `SettingsPageBuilder` 的既有模式 | -150 行 |
 | 2-4 | `importer/ai/AiImportFlow` | AI 导入整条链路（`MainActivity` 728–1190，约 460 行）：引导对话框 + 剪贴板读写 + 跳转外部 AI + 回跳接管 + 结果预览 + 落库 | -450 行 |
 | 2-5 | `importer/PdfImportReviewFlow` | PDF 导入的对话框决策链（`MainActivity` 1207–1620，约 410 行）：覆盖确认 → 命名 → 解析审阅 → 落库 | -400 行 |

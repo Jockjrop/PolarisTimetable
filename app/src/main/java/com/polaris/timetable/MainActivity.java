@@ -255,33 +255,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private int activeTab = 0;
-    String semesterName = "";
-    String schoolName = "";
-    String scheduleName = "默认课表";
-    private String classTimeConfig = "08:00 开始";
-    private String firstClassStartTime = "08:00";
-    private int classDurationMinutes = 50;
-    private int classBreakMinutes = 10;
-    private int classBigBreakMinutes = 30;
-    private String afternoonStartTime = "14:30";
-    private String lateAfternoonStartTime = "16:35";
-    String firstWeekDay = "2026/3/3";
-    private int courseSectionCount = 11;
-    int semesterWeeks = 20;
-    private boolean remindersEnabled = false;
-    private int reminderMinutesBefore = 15;
-    private boolean showSaturday = false;
-    private boolean showSunday = false;
-    private boolean showOutOfWeekCourses = true;
-    private boolean showPracticeBanner = true;
-    private boolean collapseLunchBreak = false;
-    private int courseCellHeight = 76;
-    private int courseCornerRadius = 9;
-    private int courseBlockOpacity = 100;
-    private int timetableHeaderOpacity = DesignTokens.GLASS_OPACITY_HEADER_DEFAULT;
-    private int bottomNavOpacity = DesignTokens.GLASS_OPACITY_NAV_DEFAULT;
-    private int bottomNavHeight = DesignTokens.NAV_HEIGHT_DEFAULT;
-    private int bottomNavRectCornerRadius = 58;
     // 真实系统栏 inset（API 30+ 由 WindowInsets 驱动；-1 表示尚未捕获，回退反射值）。
     private int systemTopInset = -1;
     private int systemBottomInset = -1;
@@ -293,11 +266,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private int builtLeftInset = 0;
     private int builtRightInset = 0;
     private boolean insetsRebuildPending = false;
-    boolean shellBarsBlurEnabled = true;
-    private String timetableBackground = "清爽蓝";
-    String visualTheme = PolarisVisualTheme.MINIMAL;
-    private String backgroundImageUri = "";
-    private BackgroundImageCrop backgroundImageCrop = BackgroundImageCrop.full();
     private String accountName = "管理员";
     private String avatarImageUri = "";
     private BackgroundImageCrop avatarImageCrop = BackgroundImageCrop.full();
@@ -306,15 +274,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private Dialog accountProfileDialog;
     private EditText accountNameInput;
     private CircleAvatarView accountAvatarPreview;
-    private String darkMode = "跟随系统";
     private String currentTitle = "Polaris课程表";
     private String currentSubtitle = "2026/7/1";
     private String activeSettingsTitle = "";
     private String previousSettingsTitle = "";
     String activeScheduleId = "default";
     private boolean suppressSettingsPageAnimation = false;
-    SchoolParserModel selectedParserModel;
-    private boolean collapseXautMiddleSections = false;
     private static final Pattern CLASS_TIME_LINE_PATTERN = Pattern.compile(
             "^(?:第?(\\d{1,2})\\s*节?\\s*[.、．:：]?\\s*)?"
                     + "(\\d{1,2})[:：](\\d{1,2})\\s*[-~～至]\\s*(\\d{1,2})[:：](\\d{1,2})\\s*$");
@@ -362,7 +327,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         planRepository = new PlanRepository(this);
         importCoordinator = new PdfImportCoordinator(this);
         activeScheduleId = scheduleRepository.activeScheduleId();
-        darkMode = scheduleRepository.loadGlobalDarkMode();
+        scheduleViewState.darkMode = scheduleRepository.loadGlobalDarkMode();
         applyAccountProfile(scheduleRepository.loadAccountProfile());
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
         currentWeek = currentWeekFromDate();
@@ -412,7 +377,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             enableCourseReminders();
             PlanReminderScheduler.reschedule(this);
         } else {
-            remindersEnabled = false;
+            scheduleViewState.remindersEnabled = false;
             CourseReminderScheduler.cancelAll(this);
             refreshActiveSettingsPage();
             Toast.makeText(this, getString(R.string.reminder_perm_denied), Toast.LENGTH_LONG).show();
@@ -460,7 +425,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         rootView = new FrameLayout(this);
         rootView.setBackgroundColor(backgroundColor());
         themeBackgroundView = new PolarisThemeBackgroundView(this);
-        themeBackgroundView.setVisualTheme(visualTheme, isDarkModeActive());
+        themeBackgroundView.setVisualTheme(scheduleViewState.visualTheme, isDarkModeActive());
 
         topPanel = new LinearLayout(this);
         topPanel.setOrientation(LinearLayout.VERTICAL);
@@ -528,7 +493,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 headingParams.rightMargin = dp(14);
                 headline.addView(heading, headingParams);
                 todayOverviewView = new TodayOverviewView(this);
-                todayOverviewView.setVisualTheme(visualTheme);
+                todayOverviewView.setVisualTheme(scheduleViewState.visualTheme);
                 todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
                 headline.addView(todayOverviewView, new LinearLayout.LayoutParams(
                         0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -550,29 +515,29 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleBoard.setOnSlotLongClickListener((day, section) ->
                 showCourseEditor(new Course(day, section, section, "", defaultWeeks(), "", "", "")));
         scheduleBoard.setOnWeekSwipeListener(this::onBoardWeekChanged);
-        scheduleBoard.setWeekBounds(1, semesterWeeks);
+        scheduleBoard.setWeekBounds(1, scheduleViewState.semesterWeeks);
         scheduleBoard.setCurrentWeek(currentWeek);
-        scheduleBoard.setVisibleDays(showSaturday, showSunday);
-        scheduleBoard.setSectionCount(courseSectionCount);
+        scheduleBoard.setVisibleDays(scheduleViewState.showSaturday, scheduleViewState.showSunday);
+        scheduleBoard.setSectionCount(scheduleViewState.courseSectionCount);
         scheduleBoard.setFirstWeekStartMillis(firstWeekStartMillis());
-        scheduleBoard.setClassTimeSettings(firstClassStartTime, classDurationMinutes, classBreakMinutes,
-                classBigBreakMinutes, afternoonStartTime, lateAfternoonStartTime, classTimeConfig);
-        scheduleBoard.setCollapseLunchBreak(collapseLunchBreak);
-        scheduleBoard.setVisualTheme(visualTheme);
+        scheduleBoard.setClassTimeSettings(scheduleViewState.firstClassStartTime, scheduleViewState.classDurationMinutes, scheduleViewState.classBreakMinutes,
+                scheduleViewState.classBigBreakMinutes, scheduleViewState.afternoonStartTime, scheduleViewState.lateAfternoonStartTime, scheduleViewState.classTimeConfig);
+        scheduleBoard.setCollapseLunchBreak(scheduleViewState.collapseLunchBreak);
+        scheduleBoard.setVisualTheme(scheduleViewState.visualTheme);
         scheduleBoard.setDarkMode(isDarkModeActive());
-        scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
+        scheduleBoard.setShowOutOfWeekCourses(scheduleViewState.showOutOfWeekCourses);
         // 横屏平板右侧空间充足时，本周实践改由右侧面板展示，板内横幅关闭。
         scheduleBoard.setShowPracticeBanner(
-                isLandscapeTablet() && hasPracticePanelSpace() ? false : showPracticeBanner);
-        scheduleBoard.setCourseMetrics(courseCellHeight, courseCornerRadius);
-        scheduleBoard.setCourseBlockOpacity(courseBlockOpacity);
+                isLandscapeTablet() && hasPracticePanelSpace() ? false : scheduleViewState.showPracticeBanner);
+        scheduleBoard.setCourseMetrics(scheduleViewState.courseCellHeight, scheduleViewState.courseCornerRadius);
+        scheduleBoard.setCourseBlockOpacity(scheduleViewState.courseBlockOpacity);
         scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
-        scheduleBoard.setBackgroundImage(backgroundImageUri, backgroundImageCrop);
+        scheduleBoard.setBackgroundImage(scheduleViewState.backgroundImageUri, scheduleViewState.backgroundImageCrop);
         scheduleBoard.setCourses(courses);
 
         if (!wideTopPanel) {
             todayOverviewView = new TodayOverviewView(this);
-            todayOverviewView.setVisualTheme(visualTheme);
+            todayOverviewView.setVisualTheme(scheduleViewState.visualTheme);
             todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
             LinearLayout.LayoutParams overviewParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -581,7 +546,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         } else if (separateTodayPanel) {
             // 横屏平板：今日概览独立到右侧顶部面板（面板容器在 contentHost 构建时挂载）。
             todayOverviewView = new TodayOverviewView(this);
-            todayOverviewView.setVisualTheme(visualTheme);
+            todayOverviewView.setVisualTheme(scheduleViewState.visualTheme);
             todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
         }
         updateTodayOverview();
@@ -616,7 +581,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
             paneDivider = new View(this);
             paneDivider.setBackgroundColor(PolarisVisualTheme.outlineColor(
-                    visualTheme, isDarkModeActive()));
+                    scheduleViewState.visualTheme, isDarkModeActive()));
             FrameLayout.LayoutParams dividerParams = new FrameLayout.LayoutParams(
                     dp(1), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.LEFT);
             dividerParams.leftMargin = dp(DesignTokens.TABLET_SETTINGS_SPLIT - 1);
@@ -627,7 +592,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             settingsParams.leftMargin = dp(DesignTokens.TABLET_SETTINGS_SPLIT);
             contentHost.addView(settingsPage, settingsParams);
             // 课表右侧本周实践面板：毛玻璃容器（内容决定尺寸）+ 内容层，初始隐藏。
-            practiceSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
+            practiceSidePanel = (FrameLayout) glassLayer(floatingPanelBg(scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
             practiceSidePanelContent = new LinearLayout(this);
             practiceSidePanelContent.setOrientation(LinearLayout.VERTICAL);
             practiceSidePanel.addView(practiceSidePanelContent,
@@ -642,7 +607,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 buildTodayOverviewPanel();
             }
             // 本周计划面板：毛玻璃容器（内容可滚动，占满右侧剩余空间）。
-            planSidePanel = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
+            planSidePanel = (FrameLayout) glassLayer(floatingPanelBg(scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
             ScrollView planScroll = new ScrollView(this);
             planScroll.setFillViewport(true);
             planScroll.setVerticalScrollBarEnabled(false);
@@ -685,7 +650,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                             + systemRightInset, 0);
         }
         topPanelContainer = new FrameLayout(this);
-        topPanelGlassLayer = glassLayer(liquidGlassBg(timetableHeaderOpacity), DesignTokens.RADIUS_TOP_PANEL);
+        topPanelGlassLayer = glassLayer(liquidGlassBg(scheduleViewState.timetableHeaderOpacity), DesignTokens.RADIUS_TOP_PANEL);
         topPanelContainer.addView(topPanelGlassLayer, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, 0));
         topPanelContainer.addView(topPanel, new FrameLayout.LayoutParams(
@@ -718,7 +683,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private void openPdfPicker() {
-        if (selectedParserModel == null) {
+        if (scheduleViewState.selectedParserModel == null) {
             scheduleDialogs.showParserModelDialog(this::launchPdfPicker);
             return;
         }
@@ -1180,9 +1145,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             return;
         }
         replaceCanonicalCourses(importedCourses);
-        semesterWeeks = inferSemesterWeeks(courses);
-        courseSectionCount = inferSectionCount(courses);
-        currentWeek = Math.max(1, Math.min(semesterWeeks, currentWeekFromDate()));
+        scheduleViewState.semesterWeeks = inferSemesterWeeks(courses);
+        scheduleViewState.courseSectionCount = inferSectionCount(courses);
+        currentWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeekFromDate()));
         lastParseDiagnosticsSummary = diagnosticsSummary == null ? "" : diagnosticsSummary;
         lastParseDiagnosticsText = diagnosticsText == null ? "" : diagnosticsText;
         scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
@@ -1198,13 +1163,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private void startPdfImportFlow(Uri uri) {
-        if (selectedParserModel == null) {
+        if (scheduleViewState.selectedParserModel == null) {
             scheduleDialogs.showParserModelDialog(() -> startPdfImportFlow(uri));
             return;
         }
         if (courses.isEmpty()) {
-            loadPdf(uri, new ImportDestination(activeScheduleId, scheduleName,
-                    selectedParserModel, false, Collections.<Course>emptyList()));
+            loadPdf(uri, new ImportDestination(activeScheduleId, scheduleViewState.scheduleName,
+                    scheduleViewState.selectedParserModel, false, Collections.<Course>emptyList()));
             return;
         }
         showImportOverwriteDialog(uri);
@@ -1213,7 +1178,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private void showImportOverwriteDialog(Uri uri) {
         Dialog dialog = new Dialog(this);
         LinearLayout panel = dialogPanel(getString(R.string.import_overwrite_title));
-        final SchoolParserModel[] importParserModel = {selectedParserModel};
+        final SchoolParserModel[] importParserModel = {scheduleViewState.selectedParserModel};
         TextView message = new TextView(this);
         message.setText(getString(R.string.import_overwrite_message));
         message.setTextColor(mutedColor());
@@ -1247,7 +1212,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 return;
             }
             dialog.dismiss();
-            loadPdf(uri, new ImportDestination(activeScheduleId, scheduleName,
+            loadPdf(uri, new ImportDestination(activeScheduleId, scheduleViewState.scheduleName,
                     importParserModel[0], false, courses));
         });
         TextView create = dialogAction(getString(R.string.import_create_and_check), v -> {
@@ -1293,7 +1258,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         Dialog dialog = new Dialog(this);
         LinearLayout panel = dialogPanel(getString(R.string.import_name_title));
         EditText nameInput = input(getString(R.string.settings_row_schedule_name), createNewSchedule ? nextScheduleName()
-                : scheduleName.length() == 0 ? nextScheduleName() : scheduleName);
+                : scheduleViewState.scheduleName.length() == 0 ? nextScheduleName() : scheduleViewState.scheduleName);
         panel.addView(nameInput);
         TextView startImport = dialogAction(getString(R.string.import_start_parse), v -> {
             String name = nameInput.getText().toString().trim();
@@ -1515,15 +1480,15 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             switchSchedule(destination.scheduleId);
         }
         replaceCanonicalCourses(result.structuredCourses);
-        scheduleName = destination.scheduleName;
-        selectedParserModel = destination.parserModel;
-        schoolName = destination.parserModel.label;
-        semesterName = result.semesterName.length() > 0
+        scheduleViewState.scheduleName = destination.scheduleName;
+        scheduleViewState.selectedParserModel = destination.parserModel;
+        scheduleViewState.schoolName = destination.parserModel.label;
+        scheduleViewState.semesterName = result.semesterName.length() > 0
                 ? result.semesterName
                 : SemesterStartDateDefaults.resolveSemesterName(Calendar.getInstance());
         applySchoolTimeDefaults(destination.parserModel);
-        semesterWeeks = importedSemesterWeeks;
-        firstWeekDay = SemesterStartDateDefaults.resolve(Calendar.getInstance());
+        scheduleViewState.semesterWeeks = importedSemesterWeeks;
+        scheduleViewState.firstWeekDay = SemesterStartDateDefaults.resolve(Calendar.getInstance());
         currentWeek = currentWeekFromDate();
         updateVisibleDayCount();
         scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
@@ -1581,28 +1546,28 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     void renderSchedule() {
         if (scheduleBoard != null) {
             boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
-            scheduleBoard.setWeekBounds(1, semesterWeeks);
+            scheduleBoard.setWeekBounds(1, scheduleViewState.semesterWeeks);
             scheduleBoard.setCurrentWeek(currentWeek);
-            scheduleBoard.setVisibleDays(showSaturday, showSunday);
-            scheduleBoard.setSectionCount(courseSectionCount);
+            scheduleBoard.setVisibleDays(scheduleViewState.showSaturday, scheduleViewState.showSunday);
+            scheduleBoard.setSectionCount(scheduleViewState.courseSectionCount);
             scheduleBoard.setFirstWeekStartMillis(firstWeekStartMillis());
-            scheduleBoard.setClassTimeSettings(firstClassStartTime, classDurationMinutes, classBreakMinutes,
-                    classBigBreakMinutes, afternoonStartTime, lateAfternoonStartTime, classTimeConfig);
-            scheduleBoard.setCollapseLunchBreak(collapseLunchBreak);
-            scheduleBoard.setVisualTheme(visualTheme);
+            scheduleBoard.setClassTimeSettings(scheduleViewState.firstClassStartTime, scheduleViewState.classDurationMinutes, scheduleViewState.classBreakMinutes,
+                    scheduleViewState.classBigBreakMinutes, scheduleViewState.afternoonStartTime, scheduleViewState.lateAfternoonStartTime, scheduleViewState.classTimeConfig);
+            scheduleBoard.setCollapseLunchBreak(scheduleViewState.collapseLunchBreak);
+            scheduleBoard.setVisualTheme(scheduleViewState.visualTheme);
             scheduleBoard.setDarkMode(isDarkModeActive());
-            scheduleBoard.setShowOutOfWeekCourses(showOutOfWeekCourses);
+            scheduleBoard.setShowOutOfWeekCourses(scheduleViewState.showOutOfWeekCourses);
             // 横屏平板右侧空间充足时，本周实践改由右侧面板展示，板内横幅关闭。
             scheduleBoard.setShowPracticeBanner(
-                    isLandscapeTablet() && hasPracticePanelSpace() ? false : showPracticeBanner);
-            scheduleBoard.setCourseMetrics(courseCellHeight, courseCornerRadius);
-            scheduleBoard.setCourseBlockOpacity(courseBlockOpacity);
+                    isLandscapeTablet() && hasPracticePanelSpace() ? false : scheduleViewState.showPracticeBanner);
+            scheduleBoard.setCourseMetrics(scheduleViewState.courseCellHeight, scheduleViewState.courseCornerRadius);
+            scheduleBoard.setCourseBlockOpacity(scheduleViewState.courseBlockOpacity);
             scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
-            scheduleBoard.setBackgroundImage(backgroundImageUri, backgroundImageCrop);
+            scheduleBoard.setBackgroundImage(scheduleViewState.backgroundImageUri, scheduleViewState.backgroundImageCrop);
             scheduleBoard.setCourses(courses);
         }
         if (todayOverviewView != null) {
-            todayOverviewView.setVisualTheme(visualTheme);
+            todayOverviewView.setVisualTheme(scheduleViewState.visualTheme);
         }
         updateTodayOverview();
         updateConflictSummary();
@@ -1667,8 +1632,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         int newEnd = original.endSection;
         if (original.timeMode == CourseTimeMode.SECTION) {
             int span = Math.max(1, original.endSection - original.startSection + 1);
-            newStart = Math.max(1, Math.min(section, courseSectionCount));
-            newEnd = Math.min(courseSectionCount, newStart + span - 1);
+            newStart = Math.max(1, Math.min(section, scheduleViewState.courseSectionCount));
+            newEnd = Math.min(scheduleViewState.courseSectionCount, newStart + span - 1);
         }
         if (original.day == day && original.startSection == newStart
                 && original.endSection == newEnd) {
@@ -1728,13 +1693,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private CourseTimeResolver.Settings courseTimeSettings() {
         return new CourseTimeResolver.Settings(
-                firstClassStartTime,
-                classDurationMinutes,
-                classBreakMinutes,
-                classBigBreakMinutes,
-                afternoonStartTime,
-                lateAfternoonStartTime,
-                classTimeConfig);
+                scheduleViewState.firstClassStartTime,
+                scheduleViewState.classDurationMinutes,
+                scheduleViewState.classBreakMinutes,
+                scheduleViewState.classBigBreakMinutes,
+                scheduleViewState.afternoonStartTime,
+                scheduleViewState.lateAfternoonStartTime,
+                scheduleViewState.classTimeConfig);
     }
 
     private void updateTodayOverview() {
@@ -1745,7 +1710,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 courses,
                 courseTimeSettings(),
                 firstWeekStartMillis(),
-                semesterWeeks,
+                scheduleViewState.semesterWeeks,
                 Calendar.getInstance());
         todayOverviewView.setOverview(overview, isDarkModeActive());
     }
@@ -1760,7 +1725,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             return;
         }
         int count = CourseConflictDetector.forWeek(
-                courses, semesterWeeks, currentWeek, courseTimeSettings()).size();
+                courses, scheduleViewState.semesterWeeks, currentWeek, courseTimeSettings()).size();
         conflictSummaryView.setConflictCount(count, currentWeek, isDarkModeActive());
     }
 
@@ -1814,7 +1779,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (practiceSidePanel == null) {
             return;
         }
-        boolean panelEnabled = isLandscapeTablet() && showPracticeBanner
+        boolean panelEnabled = isLandscapeTablet() && scheduleViewState.showPracticeBanner
                 && hasPracticePanelSpace();
         boolean visible = panelEnabled && activeTab == 0
                 && (settingsPage == null
@@ -1891,7 +1856,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private View buildTodayOverviewPanel() {
         todayOverviewView.setLarge(true);
         // 毛玻璃容器（BackdropBlurView 按内容定尺寸）+ 大号今日概览内容。
-        FrameLayout host = (FrameLayout) glassLayer(floatingPanelBg(bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
+        FrameLayout host = (FrameLayout) glassLayer(floatingPanelBg(scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -1942,7 +1907,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         manage.setText(getString(R.string.common_manage));
         manage.setTextSize(13);
         manage.setTypeface(Typeface.DEFAULT_BOLD);
-        manage.setTextColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+        manage.setTextColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
         manage.setGravity(Gravity.CENTER_VERTICAL);
         manage.setPadding(dp(8), 0, dp(8), 0);
         manage.setMinHeight(dp(32));
@@ -2067,7 +2032,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private void showCurrentWeekConflicts() {
         List<CourseConflictDetector.Conflict> conflicts = CourseConflictDetector.forWeek(
-                courses, semesterWeeks, currentWeek, courseTimeSettings());
+                courses, scheduleViewState.semesterWeeks, currentWeek, courseTimeSettings());
         if (conflicts.isEmpty()) {
             updateConflictSummary();
             return;
@@ -2457,9 +2422,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private List<int[]> loadClassTimeRows() {
         List<int[]> rows = new ArrayList<>();
-        Map<Integer, int[]> anchors = CourseTimeResolver.parseSectionAnchors(classTimeConfig);
+        Map<Integer, int[]> anchors = CourseTimeResolver.parseSectionAnchors(scheduleViewState.classTimeConfig);
         CourseTimeResolver.Settings settings = courseTimeSettings();
-        int count = Math.max(1, Math.min(20, courseSectionCount));
+        int count = Math.max(1, Math.min(20, scheduleViewState.courseSectionCount));
         for (int section = 1; section <= count; section++) {
             int[] anchored = anchors.get(section);
             if (anchored != null) {
@@ -2539,10 +2504,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     .append(timeTextMinute(rows.get(i)[0])).append("-")
                     .append(timeTextMinute(rows.get(i)[1]));
         }
-        classTimeConfig = text.toString();
-        firstClassStartTime = timeTextMinute(rows.get(0)[0]);
-        classDurationMinutes = Math.max(20, Math.min(120, rows.get(0)[1] - rows.get(0)[0]));
-        courseSectionCount = rows.size();
+        scheduleViewState.classTimeConfig = text.toString();
+        scheduleViewState.firstClassStartTime = timeTextMinute(rows.get(0)[0]);
+        scheduleViewState.classDurationMinutes = Math.max(20, Math.min(120, rows.get(0)[1] - rows.get(0)[0]));
+        scheduleViewState.courseSectionCount = rows.size();
     }
 
     private String classTimeTableSummary() {
@@ -2572,24 +2537,24 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (model == null) {
             return;
         }
-        firstClassStartTime = normalizedTimeText(model.defaultFirstClassStartTime);
-        classDurationMinutes = Math.max(20, Math.min(120, model.defaultClassDurationMinutes));
-        classBreakMinutes = Math.max(0, Math.min(60, model.defaultClassBreakMinutes));
-        classBigBreakMinutes = Math.max(0, Math.min(120, model.defaultClassBigBreakMinutes));
-        afternoonStartTime = normalizedTimeText(model.defaultAfternoonStartTime);
-        lateAfternoonStartTime = normalizedTimeText(model.defaultLateAfternoonStartTime);
-        classTimeConfig = model.defaultClassTimeConfig;
+        scheduleViewState.firstClassStartTime = normalizedTimeText(model.defaultFirstClassStartTime);
+        scheduleViewState.classDurationMinutes = Math.max(20, Math.min(120, model.defaultClassDurationMinutes));
+        scheduleViewState.classBreakMinutes = Math.max(0, Math.min(60, model.defaultClassBreakMinutes));
+        scheduleViewState.classBigBreakMinutes = Math.max(0, Math.min(120, model.defaultClassBigBreakMinutes));
+        scheduleViewState.afternoonStartTime = normalizedTimeText(model.defaultAfternoonStartTime);
+        scheduleViewState.lateAfternoonStartTime = normalizedTimeText(model.defaultLateAfternoonStartTime);
+        scheduleViewState.classTimeConfig = model.defaultClassTimeConfig;
         int fixedSectionCount = model.defaultSectionCount();
         if (fixedSectionCount > 0) {
-            courseSectionCount = fixedSectionCount;
+            scheduleViewState.courseSectionCount = fixedSectionCount;
         }
         if (model == SchoolParserModel.XAUT) {
-            collapseXautMiddleSections = true;
+            scheduleViewState.collapseXautMiddleSections = true;
         }
     }
 
     private boolean isXautCollapseEnabled() {
-        return selectedParserModel == SchoolParserModel.XAUT;
+        return scheduleViewState.selectedParserModel == SchoolParserModel.XAUT;
     }
 
     private void updateEmptyScheduleView() {
@@ -2618,13 +2583,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         String nextBackgroundUri = uri.toString();
         BackgroundImageCrop nextCrop = crop == null ? BackgroundImageCrop.full() : crop;
         if (scheduleBoard != null && !scheduleBoard.setBackgroundImage(nextBackgroundUri, nextCrop)) {
-            scheduleBoard.setBackgroundImage(backgroundImageUri, backgroundImageCrop);
+            scheduleBoard.setBackgroundImage(scheduleViewState.backgroundImageUri, scheduleViewState.backgroundImageCrop);
             Toast.makeText(this, getString(R.string.image_read_failed), Toast.LENGTH_LONG).show();
             return;
         }
-        backgroundImageUri = nextBackgroundUri;
-        backgroundImageCrop = nextCrop;
-        timetableBackground = "系统相册";
+        scheduleViewState.backgroundImageUri = nextBackgroundUri;
+        scheduleViewState.backgroundImageCrop = nextCrop;
+        scheduleViewState.timetableBackground = "系统相册";
         saveGlobalAppearance();
         applyShellAppearance();
         renderSchedule();
@@ -3241,7 +3206,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Uri uri = ExportFileProvider.uriForFile(this, file);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType(ScheduleShareFile.MIME_TYPE);
-            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.share_file_subject, scheduleName));
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.share_file_subject, scheduleViewState.scheduleName));
             share.putExtra(Intent.EXTRA_TEXT, getString(R.string.share_file_text));
             share.putExtra(Intent.EXTRA_STREAM, uri);
             share.setClipData(ClipData.newRawUri(getString(R.string.share_clip_label), uri));
@@ -3273,7 +3238,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType(ScheduleBackupManager.MIME_TYPE);
             share.putExtra(Intent.EXTRA_SUBJECT,
-                    getString(R.string.backup_share_subject, scheduleName));
+                    getString(R.string.backup_share_subject, scheduleViewState.scheduleName));
             share.putExtra(Intent.EXTRA_TEXT,
                     getString(R.string.backup_share_text));
             share.putExtra(Intent.EXTRA_STREAM, uri);
@@ -3326,7 +3291,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         activeScheduleId = scheduleRepository.activeScheduleId();
         applyAccountProfile(scheduleRepository.loadAccountProfile());
-        darkMode = scheduleRepository.loadGlobalDarkMode();
+        scheduleViewState.darkMode = scheduleRepository.loadGlobalDarkMode();
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
         currentWeek = currentWeekFromDate();
         loadActiveCourses();
@@ -3392,14 +3357,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return new ScheduleImageExporter.Request(
                 courses,
                 courseTimeSettings(),
-                scheduleName,
-                semesterName,
-                schoolName,
+                scheduleViewState.scheduleName,
+                scheduleViewState.semesterName,
+                scheduleViewState.schoolName,
                 week,
-                courseSectionCount,
-                showSaturday,
-                showSunday,
-                showPracticeBanner,
+                scheduleViewState.courseSectionCount,
+                scheduleViewState.showSaturday,
+                scheduleViewState.showSunday,
+                scheduleViewState.showPracticeBanner,
                 firstWeekStartMillis());
     }
 
@@ -3455,7 +3420,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             scheduleExportExecutor.execute(() -> {
                 try {
                     File pdf = SemesterPdfExporter.exportToCache(
-                            getApplicationContext(), request, semesterWeeks);
+                            getApplicationContext(), request, scheduleViewState.semesterWeeks);
                     runOnUiThread(() -> {
                         scheduleExportInProgress = false;
                         if (!isFinishing() && !isDestroyed()) {
@@ -3488,7 +3453,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Uri uri = ExportFileProvider.uriForFile(this, image);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType("image/png");
-            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_week_subject, scheduleName, week));
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_week_subject, scheduleViewState.scheduleName, week));
             share.putExtra(Intent.EXTRA_TEXT, getString(R.string.export_share_week_text, week));
             share.putExtra(Intent.EXTRA_STREAM, uri);
             share.setClipData(ClipData.newRawUri(getString(R.string.export_clip_week_image), uri));
@@ -3505,7 +3470,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Uri uri = ExportFileProvider.uriForFile(this, pdf);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType("application/pdf");
-            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_week_subject, scheduleName, week));
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_week_subject, scheduleViewState.scheduleName, week));
             share.putExtra(Intent.EXTRA_TEXT, getString(R.string.export_share_week_text, week));
             share.putExtra(Intent.EXTRA_STREAM, uri);
             share.setClipData(ClipData.newRawUri(getString(R.string.export_clip_week_pdf), uri));
@@ -3522,7 +3487,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Uri uri = ExportFileProvider.uriForFile(this, pdf);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType("application/pdf");
-            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_subject_semester, scheduleName));
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.export_share_subject_semester, scheduleViewState.scheduleName));
             share.putExtra(Intent.EXTRA_TEXT, getString(R.string.export_share_text_semester));
             share.putExtra(Intent.EXTRA_STREAM, uri);
             share.setClipData(ClipData.newRawUri(getString(R.string.export_clip_semester_pdf), uri));
@@ -3545,7 +3510,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             String content = ScheduleCalendarExporter.buildICal(context, structuredCourses);
             shareExportedCalendarFile(
                     writeCalendarExport(content.getBytes("UTF-8"),
-                            ScheduleCalendarExporter.safeFileName(scheduleName) + getString(R.string.export_ics_suffix)),
+                            ScheduleCalendarExporter.safeFileName(scheduleViewState.scheduleName) + getString(R.string.export_ics_suffix)),
                     "text/calendar", getString(R.string.export_ics_label));
         } catch (Exception exception) {
             Toast.makeText(this, getString(R.string.export_ics_failed, exception.getMessage()),
@@ -3564,7 +3529,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             String content = ScheduleCalendarExporter.buildCsv(context, structuredCourses);
             shareExportedCalendarFile(
                     writeCalendarExport(content.getBytes("UTF-8"),
-                            ScheduleCalendarExporter.safeFileName(scheduleName) + ".csv"),
+                            ScheduleCalendarExporter.safeFileName(scheduleViewState.scheduleName) + ".csv"),
                     "text/csv", "CSV");
         } catch (Exception exception) {
             Toast.makeText(this, getString(R.string.export_csv_failed, exception.getMessage()),
@@ -3574,10 +3539,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private ScheduleCalendarExporter.ExportContext calendarExportContext() {
         return new ScheduleCalendarExporter.ExportContext(
-                scheduleName,
-                semesterName,
-                firstWeekDay,
-                semesterWeeks,
+                scheduleViewState.scheduleName,
+                scheduleViewState.semesterName,
+                scheduleViewState.firstWeekDay,
+                scheduleViewState.semesterWeeks,
                 courseTimeSettings());
     }
 
@@ -3598,7 +3563,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Uri uri = ExportFileProvider.uriForFile(this, file);
             Intent share = new Intent(Intent.ACTION_SEND);
             share.setType(mimeType);
-            share.putExtra(Intent.EXTRA_SUBJECT, scheduleName + " · " + label);
+            share.putExtra(Intent.EXTRA_SUBJECT, scheduleViewState.scheduleName + " · " + label);
             share.putExtra(Intent.EXTRA_TEXT,
                     getString(R.string.calendar_share_subject, label, file.getName()));
             share.putExtra(Intent.EXTRA_STREAM, uri);
@@ -3683,14 +3648,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     void applySharedCourses(List<Course> sharedCourses, String targetScheduleName) {
         replaceCanonicalCourses(scheduleRepository.replaceFromLegacyCourses(
                 activeScheduleId, sharedCourses));
-        scheduleName = targetScheduleName;
-        semesterName = SemesterStartDateDefaults.resolveSemesterName(Calendar.getInstance());
-        if (selectedParserModel != null) {
-            schoolName = selectedParserModel.label;
+        scheduleViewState.scheduleName = targetScheduleName;
+        scheduleViewState.semesterName = SemesterStartDateDefaults.resolveSemesterName(Calendar.getInstance());
+        if (scheduleViewState.selectedParserModel != null) {
+            scheduleViewState.schoolName = scheduleViewState.selectedParserModel.label;
         }
-        semesterWeeks = inferSemesterWeeks(courses);
-        courseSectionCount = inferSectionCount(courses);
-        firstWeekDay = SemesterStartDateDefaults.resolve(Calendar.getInstance());
+        scheduleViewState.semesterWeeks = inferSemesterWeeks(courses);
+        scheduleViewState.courseSectionCount = inferSectionCount(courses);
+        scheduleViewState.firstWeekDay = SemesterStartDateDefaults.resolve(Calendar.getInstance());
         currentWeek = currentWeekFromDate();
         updateVisibleDayCount();
         saveConfig();
@@ -3723,7 +3688,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 this,
                 course,
                 courses,
-                courseSectionCount,
+                scheduleViewState.courseSectionCount,
                 courseTimeSettings(),
                 backgroundColor(),
                 inkColor(),
@@ -3752,7 +3717,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     @Override
                     public void onCourseDeleteRequested(Course original, CourseDeletionScope scope) {
                         int deleted = CourseDeletionManager.deleteStructured(
-                                structuredCourses, original, scope, currentWeek, semesterWeeks);
+                                structuredCourses, original, scope, currentWeek, scheduleViewState.semesterWeeks);
                         if (deleted <= 0) {
                             Toast.makeText(MainActivity.this,
                                     getString(R.string.delete_no_this_week), Toast.LENGTH_SHORT).show();
@@ -3934,7 +3899,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         addButton.setPadding(dp(14), 0, dp(14), 0);
         addButton.setMinHeight(dp(44));
         GradientDrawable addBg = new GradientDrawable();
-        addBg.setColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+        addBg.setColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
         addBg.setCornerRadius(dp(18));
         addButton.setBackground(addBg);
         addButton.setOnClickListener(v -> showPlanEditor(null));
@@ -3995,7 +3960,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         addButton.setPadding(dp(14), 0, dp(14), 0);
         addButton.setMinHeight(dp(44));
         GradientDrawable addBg = new GradientDrawable();
-        addBg.setColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+        addBg.setColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
         addBg.setCornerRadius(dp(18));
         addButton.setBackground(addBg);
         addButton.setOnClickListener(v -> showPlanEditor(null));
@@ -4070,18 +4035,18 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         if (planAddButton != null) {
             GradientDrawable addBg = new GradientDrawable();
-            addBg.setColor(PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+            addBg.setColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
             addBg.setCornerRadius(dp(18));
             planAddButton.setBackground(addBg);
         }
         if (planSidePanel != null) {
-            updateGlassLayer(planSidePanel, floatingPanelBg(bottomNavOpacity, 20), 20);
+            updateGlassLayer(planSidePanel, floatingPanelBg(scheduleViewState.bottomNavOpacity, 20), 20);
         }
         if (practiceSidePanel != null) {
-            updateGlassLayer(practiceSidePanel, floatingPanelBg(bottomNavOpacity, 20), 20);
+            updateGlassLayer(practiceSidePanel, floatingPanelBg(scheduleViewState.bottomNavOpacity, 20), 20);
         }
         if (todayOverviewPanel != null) {
-            updateGlassLayer(todayOverviewPanel, floatingPanelBg(bottomNavOpacity, 20), 20);
+            updateGlassLayer(todayOverviewPanel, floatingPanelBg(scheduleViewState.bottomNavOpacity, 20), 20);
         }
         refreshPlanList();
     }
@@ -4104,7 +4069,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         check.setTextSize(24);
         check.setGravity(Gravity.CENTER);
         check.setTextColor(plan.done
-                ? PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()) : mutedColor());
+                ? PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()) : mutedColor());
         check.setContentDescription(plan.done ? getString(R.string.plan_cd_mark_undone) : getString(R.string.plan_cd_mark_done));
         check.setOnClickListener(v -> togglePlanDone(plan));
         attachPressFeedback(check);
@@ -4245,13 +4210,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         TextView plus = stepButton("+");
         minus.setOnClickListener(v -> {
             weekValue[0] = Math.max(1, parseBounded(
-                    weekInput.getText().toString(), 1, semesterWeeks, weekValue[0]) - 1);
+                    weekInput.getText().toString(), 1, scheduleViewState.semesterWeeks, weekValue[0]) - 1);
             weekInput.setText(String.valueOf(weekValue[0]));
             weekInput.setSelection(weekInput.getText().length());
         });
         plus.setOnClickListener(v -> {
-            weekValue[0] = Math.min(semesterWeeks, parseBounded(
-                    weekInput.getText().toString(), 1, semesterWeeks, weekValue[0]) + 1);
+            weekValue[0] = Math.min(scheduleViewState.semesterWeeks, parseBounded(
+                    weekInput.getText().toString(), 1, scheduleViewState.semesterWeeks, weekValue[0]) + 1);
             weekInput.setText(String.valueOf(weekValue[0]));
             weekInput.setSelection(weekInput.getText().length());
         });
@@ -4271,7 +4236,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         dayRow.setOrientation(LinearLayout.HORIZONTAL);
         dayRow.setGravity(Gravity.CENTER);
         final TextView[] dayChips = new TextView[7];
-        final int accent = PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
+        final int accent = PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive());
         for (int i = 0; i < 7; i++) {
             final int day = i;
             TextView chip = new TextView(this);
@@ -4457,7 +4422,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private int navVisualHeight() {
         return Math.max(DesignTokens.NAV_HEIGHT_MIN,
-                Math.min(DesignTokens.NAV_HEIGHT_MAX, bottomNavHeight));
+                Math.min(DesignTokens.NAV_HEIGHT_MAX, scheduleViewState.bottomNavHeight));
     }
 
     @Override
@@ -4609,11 +4574,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private String displaySemesterName() {
-        return semesterName.length() == 0 ? getString(R.string.settings_semester_not_set) : semesterName;
+        return scheduleViewState.semesterName.length() == 0 ? getString(R.string.settings_semester_not_set) : scheduleViewState.semesterName;
     }
 
     private String displaySchoolName() {
-        return schoolName.length() == 0 ? getString(R.string.settings_school_not_set) : schoolName;
+        return scheduleViewState.schoolName.length() == 0 ? getString(R.string.settings_school_not_set) : scheduleViewState.schoolName;
     }
 
     private TextView settingCard(String titleText, String bodyText, View.OnClickListener listener) {
@@ -4675,17 +4640,17 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public String navVisualTheme() {
-        return visualTheme;
+        return scheduleViewState.visualTheme;
     }
 
     @Override
     public boolean navBlurEnabled() {
-        return shellBarsBlurEnabled;
+        return scheduleViewState.shellBarsBlurEnabled;
     }
 
     @Override
     public int navOpacity() {
-        return bottomNavOpacity;
+        return scheduleViewState.bottomNavOpacity;
     }
 
     @Override
@@ -4743,7 +4708,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public String visualTheme() {
-        return visualTheme;
+        return scheduleViewState.visualTheme;
     }
 
     @Override
@@ -4836,7 +4801,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public String scheduleName() {
-        return scheduleName;
+        return scheduleViewState.scheduleName;
     }
 
     @Override
@@ -4846,27 +4811,27 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public boolean showSaturday() {
-        return showSaturday;
+        return scheduleViewState.showSaturday;
     }
 
     @Override
     public boolean showSunday() {
-        return showSunday;
+        return scheduleViewState.showSunday;
     }
 
     @Override
     public boolean showOutOfWeek() {
-        return showOutOfWeekCourses;
+        return scheduleViewState.showOutOfWeekCourses;
     }
 
     @Override
     public boolean remindersEnabled() {
-        return remindersEnabled;
+        return scheduleViewState.remindersEnabled;
     }
 
     @Override
     public int reminderMinutesBefore() {
-        return reminderMinutesBefore;
+        return scheduleViewState.reminderMinutesBefore;
     }
 
     @Override
@@ -4881,12 +4846,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public String firstWeekDay() {
-        return firstWeekDay;
+        return scheduleViewState.firstWeekDay;
     }
 
     @Override
     public int semesterWeeks() {
-        return semesterWeeks;
+        return scheduleViewState.semesterWeeks;
     }
 
     @Override
@@ -4901,7 +4866,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onShowSaturdayChanged(boolean value) {
-        showSaturday = value;
+        scheduleViewState.showSaturday = value;
         updateVisibleDayCount();
         saveConfig();
         renderSchedule();
@@ -4909,7 +4874,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onShowSundayChanged(boolean value) {
-        showSunday = value;
+        scheduleViewState.showSunday = value;
         updateVisibleDayCount();
         saveConfig();
         renderSchedule();
@@ -4917,7 +4882,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onShowOutOfWeekChanged(boolean value) {
-        showOutOfWeekCourses = value;
+        scheduleViewState.showOutOfWeekCourses = value;
         saveConfig();
         renderSchedule();
     }
@@ -4931,8 +4896,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     public void onReminderLeadClicked(View anchor) {
         appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_reminder_lead),
                 new String[]{getString(R.string.settings_minutes_5), getString(R.string.settings_minutes_10), getString(R.string.settings_minutes_15), getString(R.string.settings_minutes_30)},
-                getString(R.string.settings_minutes_value, reminderMinutesBefore), value -> {
-                    reminderMinutesBefore = Integer.parseInt(value.split(" ")[0]);
+                getString(R.string.settings_minutes_value, scheduleViewState.reminderMinutesBefore), value -> {
+                    scheduleViewState.reminderMinutesBefore = Integer.parseInt(value.split(" ")[0]);
                     saveConfig();
                     refreshActiveSettingsPage();
                 });
@@ -4950,8 +4915,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onFirstWeekDayClicked(View anchor) {
-        appearanceDialogs.showDateDialog(getString(R.string.settings_row_first_week_day), firstWeekDay, value -> {
-            firstWeekDay = value;
+        appearanceDialogs.showDateDialog(getString(R.string.settings_row_first_week_day), scheduleViewState.firstWeekDay, value -> {
+            scheduleViewState.firstWeekDay = value;
             currentWeek = currentWeekFromDate();
             saveConfig();
             renderSchedule();
@@ -4961,9 +4926,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onSemesterWeeksClicked(View anchor) {
-        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_semester_weeks), 1, 20, semesterWeeks, 1, value -> {
-            semesterWeeks = value;
-            currentWeek = Math.max(1, Math.min(semesterWeeks, currentWeekFromDate()));
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_semester_weeks), 1, 20, scheduleViewState.semesterWeeks, 1, value -> {
+            scheduleViewState.semesterWeeks = value;
+            currentWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeekFromDate()));
             saveConfig();
             renderSchedule();
             updateHeader();
@@ -4983,47 +4948,47 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public String darkMode() {
-        return darkMode;
+        return scheduleViewState.darkMode;
     }
 
     @Override
     public String backgroundDisplayValue() {
-        return backgroundImageUri.length() == 0 ? getString(R.string.settings_common_not_set) : getString(R.string.settings_album_value);
+        return scheduleViewState.backgroundImageUri.length() == 0 ? getString(R.string.settings_common_not_set) : getString(R.string.settings_album_value);
     }
 
     @Override
     public boolean showPracticeBanner() {
-        return showPracticeBanner;
+        return scheduleViewState.showPracticeBanner;
     }
 
     @Override
     public boolean collapseLunchBreak() {
-        return collapseLunchBreak;
+        return scheduleViewState.collapseLunchBreak;
     }
 
     @Override
     public boolean shellBlurEnabled() {
-        return shellBarsBlurEnabled;
+        return scheduleViewState.shellBarsBlurEnabled;
     }
 
     @Override
     public int headerOpacity() {
-        return timetableHeaderOpacity;
+        return scheduleViewState.timetableHeaderOpacity;
     }
 
     @Override
     public int cellHeight() {
-        return courseCellHeight;
+        return scheduleViewState.courseCellHeight;
     }
 
     @Override
     public int cellRadius() {
-        return courseCornerRadius;
+        return scheduleViewState.courseCornerRadius;
     }
 
     @Override
     public int cellOpacity() {
-        return courseBlockOpacity;
+        return scheduleViewState.courseBlockOpacity;
     }
 
     @Override
@@ -5034,35 +4999,35 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public void onVisualThemeClicked(View anchor) {
         appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_visual_theme), PolarisVisualTheme.NAMES,
-                visualTheme, this::applyVisualTheme);
+                scheduleViewState.visualTheme, this::applyVisualTheme);
     }
 
     @Override
     public void onDarkModeClicked(View anchor) {
-        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_dark_mode), new String[]{getString(R.string.settings_dark_follow_system), getString(R.string.settings_dark_light), getString(R.string.settings_dark_dark)}, darkMode,
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_dark_mode), new String[]{getString(R.string.settings_dark_follow_system), getString(R.string.settings_dark_light), getString(R.string.settings_dark_dark)}, scheduleViewState.darkMode,
                 value -> {
-                    darkMode = value;
-                    scheduleRepository.saveGlobalDarkMode(darkMode);
+                    scheduleViewState.darkMode = value;
+                    scheduleRepository.saveGlobalDarkMode(scheduleViewState.darkMode);
                     saveConfig();
                     applyShellAppearance();
                     refreshMyPageBehindSettings();
                     refreshPlanTheme();
                     renderSchedule();
-                    SettingsPageBuilder.updateSettingValueRow(anchor, darkMode);
+                    SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.darkMode);
                     refreshVisibleSettingsTheme();
                 });
     }
 
     @Override
     public void onBoardBackgroundClicked(View anchor) {
-        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_board_background), new String[]{"从系统相册选择", "清除背景"}, backgroundImageUri.length() == 0 ? "清除背景" : "从系统相册选择",
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_board_background), new String[]{"从系统相册选择", "清除背景"}, scheduleViewState.backgroundImageUri.length() == 0 ? "清除背景" : "从系统相册选择",
                 value -> {
                     if (value.startsWith("从")) {
                         openBackgroundPicker();
                     } else {
-                        backgroundImageUri = "";
-                        backgroundImageCrop = BackgroundImageCrop.full();
-                        timetableBackground = "清爽蓝";
+                        scheduleViewState.backgroundImageUri = "";
+                        scheduleViewState.backgroundImageCrop = BackgroundImageCrop.full();
+                        scheduleViewState.timetableBackground = "清爽蓝";
                         saveGlobalAppearance();
                         applyShellAppearance();
                         refreshPlanTheme();
@@ -5075,7 +5040,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onShowPracticeChanged(boolean value) {
-        showPracticeBanner = value;
+        scheduleViewState.showPracticeBanner = value;
         saveGlobalAppearance();
         renderSchedule();
         updatePracticeSidePanel();
@@ -5083,7 +5048,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onCollapseLunchChanged(boolean value) {
-        collapseLunchBreak = value;
+        scheduleViewState.collapseLunchBreak = value;
         saveGlobalAppearance();
         renderSchedule();
     }
@@ -5096,47 +5061,47 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onShellBlurChanged(boolean value) {
-        shellBarsBlurEnabled = value;
+        scheduleViewState.shellBarsBlurEnabled = value;
         saveGlobalAppearance();
         applyShellAppearance();
     }
 
     @Override
     public void onHeaderOpacityClicked(View anchor) {
-        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_header_opacity), 40, 100, timetableHeaderOpacity, value -> {
-            timetableHeaderOpacity = Math.max(40, Math.min(100, value));
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_header_opacity), 40, 100, scheduleViewState.timetableHeaderOpacity, value -> {
+            scheduleViewState.timetableHeaderOpacity = Math.max(40, Math.min(100, value));
             saveGlobalAppearance();
             applyShellAppearance();
-            SettingsPageBuilder.updateSettingValueRow(anchor, timetableHeaderOpacity + "%");
+            SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.timetableHeaderOpacity + "%");
         });
     }
 
     @Override
     public void onNavOpacityClicked(View anchor) {
-        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_opacity), 40, 100, bottomNavOpacity, value -> {
-            bottomNavOpacity = Math.max(40, Math.min(100, value));
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_opacity), 40, 100, scheduleViewState.bottomNavOpacity, value -> {
+            scheduleViewState.bottomNavOpacity = Math.max(40, Math.min(100, value));
             saveGlobalAppearance();
             applyShellAppearance();
-            SettingsPageBuilder.updateSettingValueRow(anchor, bottomNavOpacity + "%");
+            SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.bottomNavOpacity + "%");
         });
     }
 
     @Override
     public void onNavHeightClicked(View anchor) {
-        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_height), 56, 120, bottomNavHeight, 1, value -> {
-            bottomNavHeight = Math.max(56, Math.min(120, value));
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_height), 56, 120, scheduleViewState.bottomNavHeight, 1, value -> {
+            scheduleViewState.bottomNavHeight = Math.max(56, Math.min(120, value));
             saveGlobalAppearance();
             applyShellAppearance();
             refreshMyPageBehindSettings();
             renderSchedule();
-            SettingsPageBuilder.updateSettingValueRow(anchor, bottomNavHeight + " dp");
+            SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.bottomNavHeight + " dp");
         });
     }
 
     @Override
     public void onNavRadiusClicked(View anchor) {
         appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_radius), 0, 72, bottomNavRadius(), value -> {
-            bottomNavRectCornerRadius = Math.max(0, Math.min(72, value));
+            scheduleViewState.bottomNavRectCornerRadius = Math.max(0, Math.min(72, value));
             saveGlobalAppearance();
             applyShellAppearance();
             SettingsPageBuilder.updateSettingValueRow(anchor, bottomNavRadius() + " dp");
@@ -5145,31 +5110,31 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onCellHeightClicked(View anchor) {
-        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_height), 56, 120, courseCellHeight, value -> {
-            courseCellHeight = Math.max(56, Math.min(120, value));
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_height), 56, 120, scheduleViewState.courseCellHeight, value -> {
+            scheduleViewState.courseCellHeight = Math.max(56, Math.min(120, value));
             saveGlobalAppearance();
             renderSchedule();
-            SettingsPageBuilder.updateSettingValueRow(anchor, courseCellHeight + " dp");
+            SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.courseCellHeight + " dp");
         });
     }
 
     @Override
     public void onCellRadiusClicked(View anchor) {
-        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_radius), 0, 24, courseCornerRadius, value -> {
-            courseCornerRadius = Math.max(0, Math.min(24, value));
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_radius), 0, 24, scheduleViewState.courseCornerRadius, value -> {
+            scheduleViewState.courseCornerRadius = Math.max(0, Math.min(24, value));
             saveGlobalAppearance();
             renderSchedule();
-            SettingsPageBuilder.updateSettingValueRow(anchor, courseCornerRadius + " dp");
+            SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.courseCornerRadius + " dp");
         });
     }
 
     @Override
     public void onCellOpacityClicked(View anchor) {
-        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_opacity), 45, 100, courseBlockOpacity, value -> {
-            courseBlockOpacity = Math.max(45, Math.min(100, value));
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_opacity), 45, 100, scheduleViewState.courseBlockOpacity, value -> {
+            scheduleViewState.courseBlockOpacity = Math.max(45, Math.min(100, value));
             saveGlobalAppearance();
             renderSchedule();
-            SettingsPageBuilder.updateSettingValueRow(anchor, courseBlockOpacity + "%");
+            SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.courseBlockOpacity + "%");
         });
     }
 
@@ -5276,7 +5241,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     public void applyThemeElevation(View view, int elevationDp) {
         view.setElevation(dp(elevationDp));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            int accent = PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
+            int accent = PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive());
             view.setOutlineAmbientShadowColor(Color.argb(isDarkModeActive() ? 62 : 42,
                     Color.red(accent), Color.green(accent), Color.blue(accent)));
             view.setOutlineSpotShadowColor(Color.argb(isDarkModeActive() ? 88 : 58,
@@ -5315,7 +5280,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public String pressColorHex() {
         return PolarisVisualTheme.hex(
-                PolarisVisualTheme.pressColor(visualTheme, isDarkModeActive()));
+                PolarisVisualTheme.pressColor(scheduleViewState.visualTheme, isDarkModeActive()));
     }
 
     private TextView sectionHeader(String text) {
@@ -5395,15 +5360,15 @@ private View glassDialogContent(ScrollView scrollView, LinearLayout panel, int r
     }
 
     private View dialogBlurSource() {
-        if (!shellBarsBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if (!scheduleViewState.shellBarsBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return null;
         }
         return rootView != null ? rootView : getWindow().getDecorView();
     }
 
     private GlassDialogFactory.Config glassConfig() {
-        return new GlassDialogFactory.Config(this, shellBarsBlurEnabled, isDarkModeActive(),
-                isMinimalVisualTheme(), visualTheme);
+        return new GlassDialogFactory.Config(this, scheduleViewState.shellBarsBlurEnabled, isDarkModeActive(),
+                isMinimalVisualTheme(), scheduleViewState.visualTheme);
     }
 
 private GradientDrawable dialogGlassBg(int radius) {
@@ -5513,7 +5478,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             return;
         }
         ScheduleStatistics.Statistics stats =
-                ScheduleStatistics.compute(structuredCourses, semesterWeeks);
+                ScheduleStatistics.compute(structuredCourses, scheduleViewState.semesterWeeks);
         StringBuilder text = new StringBuilder();
         text.append(getString(R.string.manage_stats_course, stats.courseCount));
         if (stats.experimentCount > 0) {
@@ -6740,13 +6705,13 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     private boolean matchesAppearancePreset(
             int headerOpacity, int navOpacity, int navHeight, int navRadius,
             int cellHeight, int cellRadius, int cellOpacity) {
-        return timetableHeaderOpacity == headerOpacity
-                && bottomNavOpacity == navOpacity
-                && bottomNavHeight == navHeight
+        return scheduleViewState.timetableHeaderOpacity == headerOpacity
+                && scheduleViewState.bottomNavOpacity == navOpacity
+                && scheduleViewState.bottomNavHeight == navHeight
                 && bottomNavRadius() == navRadius
-                && courseCellHeight == cellHeight
-                && courseCornerRadius == cellRadius
-                && courseBlockOpacity == cellOpacity;
+                && scheduleViewState.courseCellHeight == cellHeight
+                && scheduleViewState.courseCornerRadius == cellRadius
+                && scheduleViewState.courseBlockOpacity == cellOpacity;
     }
 
     private void applyAppearancePreset(String preset) {
@@ -6767,13 +6732,13 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     private void applyVisualTheme(String value) {
         String nextTheme = PolarisVisualTheme.normalize(value);
-        if (nextTheme.equals(visualTheme)) {
+        if (nextTheme.equals(scheduleViewState.visualTheme)) {
             return;
         }
-        visualTheme = nextTheme;
-        if (!PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
-            darkMode = PolarisVisualTheme.defaultDark(visualTheme) ? "深色" : "浅色";
-            scheduleRepository.saveGlobalDarkMode(darkMode);
+        scheduleViewState.visualTheme = nextTheme;
+        if (!PolarisVisualTheme.MINIMAL.equals(scheduleViewState.visualTheme)) {
+            scheduleViewState.darkMode = PolarisVisualTheme.defaultDark(scheduleViewState.visualTheme) ? "深色" : "浅色";
+            scheduleRepository.saveGlobalDarkMode(scheduleViewState.darkMode);
         }
         saveGlobalAppearance();
         applyShellAppearance();
@@ -6781,19 +6746,19 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         refreshPlanTheme();
         renderSchedule();
         refreshActiveSettingsPage();
-        Toast.makeText(this, getString(R.string.theme_switched_toast, visualTheme), Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.theme_switched_toast, scheduleViewState.visualTheme), Toast.LENGTH_SHORT).show();
     }
 
     private void setAppearanceValues(
             int headerOpacity, int navOpacity, int navHeight, int navRadius,
             int cellHeight, int cellRadius, int cellOpacity) {
-        timetableHeaderOpacity = headerOpacity;
-        bottomNavOpacity = navOpacity;
-        bottomNavHeight = navHeight;
-        bottomNavRectCornerRadius = navRadius;
-        courseCellHeight = cellHeight;
-        courseCornerRadius = cellRadius;
-        courseBlockOpacity = cellOpacity;
+        scheduleViewState.timetableHeaderOpacity = headerOpacity;
+        scheduleViewState.bottomNavOpacity = navOpacity;
+        scheduleViewState.bottomNavHeight = navHeight;
+        scheduleViewState.bottomNavRectCornerRadius = navRadius;
+        scheduleViewState.courseCellHeight = cellHeight;
+        scheduleViewState.courseCornerRadius = cellRadius;
+        scheduleViewState.courseBlockOpacity = cellOpacity;
     }
 
     private void applyShellAppearance() {
@@ -6805,14 +6770,14 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             rootView.setBackgroundColor(backgroundColor());
         }
         if (themeBackgroundView != null) {
-            themeBackgroundView.setVisualTheme(visualTheme, isDarkModeActive());
+            themeBackgroundView.setVisualTheme(scheduleViewState.visualTheme, isDarkModeActive());
         }
         if (scheduleBoard != null) {
-            scheduleBoard.setVisualTheme(visualTheme);
+            scheduleBoard.setVisualTheme(scheduleViewState.visualTheme);
             scheduleBoard.setDarkMode(isDarkModeActive());
         }
         if (topPanelGlassLayer != null) {
-            updateGlassLayer(topPanelGlassLayer, liquidGlassBg(timetableHeaderOpacity), 24);
+            updateGlassLayer(topPanelGlassLayer, liquidGlassBg(scheduleViewState.timetableHeaderOpacity), 24);
         }
         if (topPanelContainer != null) {
             topPanelContainer.setElevation(0f);
@@ -6974,7 +6939,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
 
     private void changeWeek(int delta) {
-        int nextWeek = Math.max(1, Math.min(semesterWeeks, currentWeek + delta));
+        int nextWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeek + delta));
         if (nextWeek == currentWeek) {
             return;
         }
@@ -7020,8 +6985,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         list.setOrientation(LinearLayout.VERTICAL);
         list.setPadding(dp(6), dp(6), dp(6), dp(6));
         list.setBackground(dialogGlassBg(18, ACTION_PANEL_OPACITY_PERCENT));
-        int accent = PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive());
-        for (int week = 1; week <= semesterWeeks; week++) {
+        int accent = PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive());
+        for (int week = 1; week <= scheduleViewState.semesterWeeks; week++) {
             final int target = week;
             TextView item = new TextView(this);
             item.setText(getString(R.string.settings_current_week_value, week));
@@ -7043,7 +7008,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         PopupWindow popup = new PopupWindow();
         popup.setContentView(scroll);
         popup.setWidth(dp(168));
-        popup.setHeight(dp(Math.min(44 * semesterWeeks + 12, 460)));
+        popup.setHeight(dp(Math.min(44 * scheduleViewState.semesterWeeks + 12, 460)));
         popup.setFocusable(true);
         popup.setOutsideTouchable(true);
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -7059,7 +7024,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private void switchToWeek(int week) {
-        int nextWeek = Math.max(1, Math.min(semesterWeeks, week));
+        int nextWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, week));
         if (nextWeek == currentWeek) {
             return;
         }
@@ -7088,7 +7053,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         if (delta == 0) {
             return;
         }
-        int nextWeek = Math.max(1, Math.min(semesterWeeks, currentWeek + delta));
+        int nextWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeek + delta));
         if (nextWeek == currentWeek) {
             return;
         }
@@ -7140,82 +7105,10 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     private void applyConfig(ScheduleRepository.Config config) {
         scheduleViewState.applyConfig(config);
-        // 过渡期：ViewState 为真相源，同步回 Activity 镜像字段（字段迁移后可移除）
-        scheduleName = scheduleViewState.scheduleName;
-        classTimeConfig = scheduleViewState.classTimeConfig;
-        firstClassStartTime = scheduleViewState.firstClassStartTime;
-        classDurationMinutes = scheduleViewState.classDurationMinutes;
-        classBreakMinutes = scheduleViewState.classBreakMinutes;
-        classBigBreakMinutes = scheduleViewState.classBigBreakMinutes;
-        afternoonStartTime = scheduleViewState.afternoonStartTime;
-        lateAfternoonStartTime = scheduleViewState.lateAfternoonStartTime;
-        firstWeekDay = scheduleViewState.firstWeekDay;
-        timetableBackground = scheduleViewState.timetableBackground;
-        visualTheme = scheduleViewState.visualTheme;
-        backgroundImageUri = scheduleViewState.backgroundImageUri;
-        backgroundImageCrop = scheduleViewState.backgroundImageCrop;
-        courseSectionCount = scheduleViewState.courseSectionCount;
-        semesterWeeks = scheduleViewState.semesterWeeks;
-        remindersEnabled = scheduleViewState.remindersEnabled;
-        reminderMinutesBefore = scheduleViewState.reminderMinutesBefore;
-        showSaturday = scheduleViewState.showSaturday;
-        showSunday = scheduleViewState.showSunday;
-        showOutOfWeekCourses = scheduleViewState.showOutOfWeekCourses;
-        showPracticeBanner = scheduleViewState.showPracticeBanner;
-        collapseLunchBreak = scheduleViewState.collapseLunchBreak;
-        courseCellHeight = scheduleViewState.courseCellHeight;
-        courseCornerRadius = scheduleViewState.courseCornerRadius;
-        courseBlockOpacity = scheduleViewState.courseBlockOpacity;
-        selectedParserModel = scheduleViewState.selectedParserModel;
-        semesterName = scheduleViewState.semesterName;
-        schoolName = scheduleViewState.schoolName;
-        collapseXautMiddleSections = scheduleViewState.collapseXautMiddleSections;
-        timetableHeaderOpacity = scheduleViewState.timetableHeaderOpacity;
-        bottomNavOpacity = scheduleViewState.bottomNavOpacity;
-        bottomNavHeight = scheduleViewState.bottomNavHeight;
-        bottomNavRectCornerRadius = scheduleViewState.bottomNavRectCornerRadius;
-        shellBarsBlurEnabled = scheduleViewState.shellBarsBlurEnabled;
-        darkMode = scheduleViewState.darkMode;
         updateVisibleDayCount();
     }
 
     void saveConfig() {
-        // 同步到 ViewState 再落盘（过渡期双写）
-        scheduleViewState.scheduleName = scheduleName;
-        scheduleViewState.firstClassStartTime = firstClassStartTime;
-        scheduleViewState.classDurationMinutes = classDurationMinutes;
-        scheduleViewState.classBreakMinutes = classBreakMinutes;
-        scheduleViewState.classBigBreakMinutes = classBigBreakMinutes;
-        scheduleViewState.afternoonStartTime = afternoonStartTime;
-        scheduleViewState.lateAfternoonStartTime = lateAfternoonStartTime;
-        scheduleViewState.classTimeConfig = classTimeConfig;
-        scheduleViewState.selectedParserModel = selectedParserModel;
-        scheduleViewState.firstWeekDay = firstWeekDay;
-        scheduleViewState.semesterName = semesterName;
-        scheduleViewState.schoolName = schoolName;
-        scheduleViewState.timetableBackground = timetableBackground;
-        scheduleViewState.visualTheme = visualTheme;
-        scheduleViewState.backgroundImageUri = backgroundImageUri;
-        scheduleViewState.backgroundImageCrop = backgroundImageCrop;
-        scheduleViewState.darkMode = darkMode;
-        scheduleViewState.courseSectionCount = courseSectionCount;
-        scheduleViewState.semesterWeeks = semesterWeeks;
-        scheduleViewState.remindersEnabled = remindersEnabled;
-        scheduleViewState.reminderMinutesBefore = reminderMinutesBefore;
-        scheduleViewState.showSaturday = showSaturday;
-        scheduleViewState.showSunday = showSunday;
-        scheduleViewState.showOutOfWeekCourses = showOutOfWeekCourses;
-        scheduleViewState.showPracticeBanner = showPracticeBanner;
-        scheduleViewState.collapseLunchBreak = collapseLunchBreak;
-        scheduleViewState.collapseXautMiddleSections = collapseXautMiddleSections;
-        scheduleViewState.courseCellHeight = courseCellHeight;
-        scheduleViewState.courseCornerRadius = courseCornerRadius;
-        scheduleViewState.courseBlockOpacity = courseBlockOpacity;
-        scheduleViewState.timetableHeaderOpacity = timetableHeaderOpacity;
-        scheduleViewState.bottomNavOpacity = bottomNavOpacity;
-        scheduleViewState.bottomNavHeight = bottomNavHeight;
-        scheduleViewState.bottomNavRectCornerRadius = bottomNavRectCornerRadius;
-        scheduleViewState.shellBarsBlurEnabled = shellBarsBlurEnabled;
         ScheduleRepository.Config config = new ScheduleRepository.Config();
         scheduleViewState.fillConfig(config);
         scheduleRepository.saveConfig(activeScheduleId, config);
@@ -7225,7 +7118,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     private void handleCourseReminderToggle(boolean enabled) {
         if (!enabled) {
-            remindersEnabled = false;
+            scheduleViewState.remindersEnabled = false;
             saveConfig();
             refreshActiveSettingsPage();
             Toast.makeText(this, getString(R.string.reminder_toggle_off_toast), Toast.LENGTH_SHORT).show();
@@ -7257,7 +7150,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     void enableCourseReminders() {
-        remindersEnabled = true;
+        scheduleViewState.remindersEnabled = true;
         saveConfig();
         refreshActiveSettingsPage();
         if (CourseReminderScheduler.canScheduleExactAlarms(this)) {
@@ -7269,7 +7162,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
 
     private String courseReminderStatusText() {
-        if (!remindersEnabled) {
+        if (!scheduleViewState.remindersEnabled) {
             return getString(R.string.reminder_status_off);
         }
         if (CourseReminderScheduler.hasOverlayPermission(this)) {
@@ -7284,7 +7177,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private void handleCourseReminderStatusClick() {
-        if (!remindersEnabled) {
+        if (!scheduleViewState.remindersEnabled) {
             Toast.makeText(this, getString(R.string.reminder_enable_first), Toast.LENGTH_SHORT).show();
             return;
         }
@@ -7374,7 +7267,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
      * the "next reminder" timestamp.
      */
     private void maybeWarnAboutMissedReminders() {
-        if (!remindersEnabled || !CourseReminderScheduler.hasDeliveryChannel(this)) {
+        if (!scheduleViewState.remindersEnabled || !CourseReminderScheduler.hasDeliveryChannel(this)) {
             return;
         }
         long nextAt = CourseReminderScheduler.nextReminderAtMillis(this);
@@ -7411,24 +7304,24 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     void copyGlobalAppearanceToSchedule(String scheduleId) {
         ScheduleRepository.Config config = scheduleRepository.loadConfig(scheduleId);
-        config.timetableBackground = timetableBackground;
-        config.visualTheme = visualTheme;
-        config.backgroundImageUri = backgroundImageUri;
-        config.backgroundCropLeft = backgroundImageCrop.left;
-        config.backgroundCropTop = backgroundImageCrop.top;
-        config.backgroundCropRight = backgroundImageCrop.right;
-        config.backgroundCropBottom = backgroundImageCrop.bottom;
-        config.courseCellHeight = courseCellHeight;
-        config.courseCornerRadius = courseCornerRadius;
-        config.courseBlockOpacity = courseBlockOpacity;
-        config.showPracticeBanner = showPracticeBanner;
-        config.collapseLunchBreak = collapseLunchBreak;
-        config.timetableHeaderOpacity = timetableHeaderOpacity;
-        config.bottomNavOpacity = bottomNavOpacity;
-        config.bottomNavHeight = bottomNavHeight;
-        config.bottomNavCornerRadius = bottomNavRectCornerRadius;
-        config.bottomNavRectCornerRadius = bottomNavRectCornerRadius;
-        config.shellBarsBlurEnabled = shellBarsBlurEnabled;
+        config.timetableBackground = scheduleViewState.timetableBackground;
+        config.visualTheme = scheduleViewState.visualTheme;
+        config.backgroundImageUri = scheduleViewState.backgroundImageUri;
+        config.backgroundCropLeft = scheduleViewState.backgroundImageCrop.left;
+        config.backgroundCropTop = scheduleViewState.backgroundImageCrop.top;
+        config.backgroundCropRight = scheduleViewState.backgroundImageCrop.right;
+        config.backgroundCropBottom = scheduleViewState.backgroundImageCrop.bottom;
+        config.courseCellHeight = scheduleViewState.courseCellHeight;
+        config.courseCornerRadius = scheduleViewState.courseCornerRadius;
+        config.courseBlockOpacity = scheduleViewState.courseBlockOpacity;
+        config.showPracticeBanner = scheduleViewState.showPracticeBanner;
+        config.collapseLunchBreak = scheduleViewState.collapseLunchBreak;
+        config.timetableHeaderOpacity = scheduleViewState.timetableHeaderOpacity;
+        config.bottomNavOpacity = scheduleViewState.bottomNavOpacity;
+        config.bottomNavHeight = scheduleViewState.bottomNavHeight;
+        config.bottomNavCornerRadius = scheduleViewState.bottomNavRectCornerRadius;
+        config.bottomNavRectCornerRadius = scheduleViewState.bottomNavRectCornerRadius;
+        config.shellBarsBlurEnabled = scheduleViewState.shellBarsBlurEnabled;
         scheduleRepository.saveConfig(scheduleId, config);
     }
 
@@ -7438,20 +7331,20 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         boolean changed = false;
         for (ScheduleRepository.ScheduleEntry entry : schedules) {
             if (entry.id.equals(activeScheduleId)) {
-                next.add(new ScheduleRepository.ScheduleEntry(entry.id, scheduleName));
+                next.add(new ScheduleRepository.ScheduleEntry(entry.id, scheduleViewState.scheduleName));
                 changed = true;
             } else {
                 next.add(entry);
             }
         }
         if (!changed) {
-            next.add(new ScheduleRepository.ScheduleEntry(activeScheduleId, scheduleName));
+            next.add(new ScheduleRepository.ScheduleEntry(activeScheduleId, scheduleViewState.scheduleName));
         }
         scheduleRepository.saveSchedules(next);
     }
 
     private void updateVisibleDayCount() {
-        visibleDayCount = 5 + (showSaturday ? 1 : 0) + (showSunday ? 1 : 0);
+        visibleDayCount = 5 + (scheduleViewState.showSaturday ? 1 : 0) + (scheduleViewState.showSunday ? 1 : 0);
     }
 
     private int inferSectionCount(List<Course> source) {
@@ -7467,7 +7360,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private long firstWeekStartMillis() {
-        return CourseTimeResolver.firstWeekStartMillis(firstWeekDay);
+        return CourseTimeResolver.firstWeekStartMillis(scheduleViewState.firstWeekDay);
     }
 
     private String todayText() {
@@ -7507,7 +7400,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private String firstTimeFromClassTimeConfig(String value) {
-        return normalizedTimeText(value == null || value.length() == 0 ? firstClassStartTime : value);
+        return normalizedTimeText(value == null || value.length() == 0 ? scheduleViewState.firstClassStartTime : value);
     }
 
     String twoDigits(int value) {
@@ -7516,15 +7409,15 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     int backgroundColor() {
         if (!isMinimalVisualTheme()) {
-            return PolarisVisualTheme.pageColor(visualTheme, isDarkModeActive());
+            return PolarisVisualTheme.pageColor(scheduleViewState.visualTheme, isDarkModeActive());
         }
         if (isDarkModeActive()) {
             return color("#0D1422");
         }
-        if ("纯白".equals(timetableBackground)) {
+        if ("纯白".equals(scheduleViewState.timetableBackground)) {
             return color("#F8FBFF");
         }
-        if ("深海".equals(timetableBackground)) {
+        if ("深海".equals(scheduleViewState.timetableBackground)) {
             return color("#DDE8F5");
         }
         return color("#EAF3FB");
@@ -7532,10 +7425,10 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     @Override
     public boolean isDarkModeActive() {
-        if ("深色".equals(darkMode)) {
+        if ("深色".equals(scheduleViewState.darkMode)) {
             return true;
         }
-        if ("浅色".equals(darkMode)) {
+        if ("浅色".equals(scheduleViewState.darkMode)) {
             return false;
         }
         int mode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
@@ -7544,41 +7437,41 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     @Override
     public int inkColor() {
-        return PolarisVisualTheme.inkColor(visualTheme, isDarkModeActive());
+        return PolarisVisualTheme.inkColor(scheduleViewState.visualTheme, isDarkModeActive());
     }
 
     @Override
     public int mutedColor() {
-        return PolarisVisualTheme.mutedColor(visualTheme, isDarkModeActive());
+        return PolarisVisualTheme.mutedColor(scheduleViewState.visualTheme, isDarkModeActive());
     }
 
     @Override
     public String cardColorHex() {
         return PolarisVisualTheme.hex(
-                PolarisVisualTheme.cardColor(visualTheme, isDarkModeActive()));
+                PolarisVisualTheme.cardColor(scheduleViewState.visualTheme, isDarkModeActive()));
     }
 
     @Override
     public String groupColorHex() {
         return PolarisVisualTheme.hex(
-                PolarisVisualTheme.groupColor(visualTheme, isDarkModeActive()));
+                PolarisVisualTheme.groupColor(scheduleViewState.visualTheme, isDarkModeActive()));
     }
 
     String selectedFillHex() {
         if (!isMinimalVisualTheme()) {
             return PolarisVisualTheme.hex(
-                    PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+                    PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
         }
         return isDarkModeActive() ? "#FFFFFF" : "#172033";
     }
 
     String primaryActionFillHex() {
         return PolarisVisualTheme.hex(
-                PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
+                PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
     }
 
     private int bottomNavRadius() {
-        return Math.max(0, Math.min(72, bottomNavRectCornerRadius));
+        return Math.max(0, Math.min(72, scheduleViewState.bottomNavRectCornerRadius));
     }
 
     int selectedTextColor() {
@@ -7591,7 +7484,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     @Override
     public boolean isMinimalVisualTheme() {
         return PolarisVisualTheme.MINIMAL.equals(
-                PolarisVisualTheme.normalize(visualTheme));
+                PolarisVisualTheme.normalize(scheduleViewState.visualTheme));
     }
 
     @Override
@@ -7603,7 +7496,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         if (isMinimalVisualTheme()) {
             return backgroundColor();
         }
-        int surface = PolarisVisualTheme.cardColor(visualTheme, isDarkModeActive());
+        int surface = PolarisVisualTheme.cardColor(scheduleViewState.visualTheme, isDarkModeActive());
         int alpha = isDarkModeActive() ? 220 : 226;
         return Color.argb(Math.min(alpha, Color.alpha(surface)),
                 Color.red(surface), Color.green(surface), Color.blue(surface));
@@ -7719,7 +7612,7 @@ private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
                     : Color.argb(130, 255, 255, 255));
         } else {
             drawable.setStroke(dp(1),
-                    PolarisVisualTheme.outlineColor(visualTheme, isDarkModeActive()));
+                    PolarisVisualTheme.outlineColor(scheduleViewState.visualTheme, isDarkModeActive()));
         }
         drawable.setCornerRadius(dp(radius));
         return drawable;
@@ -7812,7 +7705,7 @@ private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
     int currentWeekFromDate() {
         int week = CourseTimeResolver.weekForDate(
                 firstWeekStartMillis(), Calendar.getInstance());
-        return Math.max(1, Math.min(semesterWeeks, week));
+        return Math.max(1, Math.min(scheduleViewState.semesterWeeks, week));
     }
 
     @Override

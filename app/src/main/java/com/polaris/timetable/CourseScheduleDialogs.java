@@ -51,8 +51,8 @@ public class CourseScheduleDialogs extends DialogKit {
         panel.addView(message);
         for (SchoolParserModel model : SchoolParserModel.values()) {
             panel.addView(dialogAction(model.label, v -> {
-                host.selectedParserModel = model;
-                host.schoolName = model.label;
+                host.scheduleViewState.selectedParserModel = model;
+                host.scheduleViewState.schoolName = model.label;
                 host.applySchoolTimeDefaults(model);
                 host.saveConfig();
                 host.renderSchedule();
@@ -91,8 +91,8 @@ public class CourseScheduleDialogs extends DialogKit {
                 Toast.makeText(host, host.getString(R.string.school_error_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
-            host.selectedParserModel = null;
-            host.schoolName = value;
+            host.scheduleViewState.selectedParserModel = null;
+            host.scheduleViewState.schoolName = value;
             host.saveConfig();
             host.renderSchedule();
             dialog.dismiss();
@@ -191,7 +191,7 @@ public class CourseScheduleDialogs extends DialogKit {
             Toast.makeText(host, host.getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
         }
-        int maxWeek = Math.max(1, host.semesterWeeks);
+        int maxWeek = Math.max(1, host.scheduleViewState.semesterWeeks);
         final int[] selectedWeek = {
                 Math.max(1, Math.min(maxWeek, host.currentWeek))
         };
@@ -317,7 +317,7 @@ public class CourseScheduleDialogs extends DialogKit {
         Dialog dialog = new Dialog(host);
         LinearLayout panel = dialogPanel(host.getString(R.string.import_name_title));
         EditText nameInput = host.input(host.getString(R.string.settings_row_schedule_name),
-                host.scheduleName.length() == 0 ? "分享课表" : host.scheduleName);
+                host.scheduleViewState.scheduleName.length() == 0 ? "分享课表" : host.scheduleViewState.scheduleName);
         panel.addView(nameInput);
         panel.addView(host.pageSaveButton(() -> {
             String name = nameInput.getText().toString().trim();
@@ -476,7 +476,7 @@ public class CourseScheduleDialogs extends DialogKit {
     public void showRenameScheduleDialog() {
         Dialog dialog = new Dialog(host);
         LinearLayout panel = dialogPanel(host.getString(R.string.schedule_rename_title));
-        EditText nameInput = host.input(host.getString(R.string.settings_row_schedule_name), host.scheduleName);
+        EditText nameInput = host.input(host.getString(R.string.settings_row_schedule_name), host.scheduleViewState.scheduleName);
         panel.addView(nameInput);
         panel.addView(host.pageSaveButton(() -> {
             String nextName = nameInput.getText().toString().trim();
@@ -484,7 +484,7 @@ public class CourseScheduleDialogs extends DialogKit {
                 Toast.makeText(host, host.getString(R.string.import_error_name_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
-            host.scheduleName = nextName;
+            host.scheduleViewState.scheduleName = nextName;
             host.saveConfig();
             host.updateHeader();
             host.refreshMyPage();
@@ -525,7 +525,7 @@ public class CourseScheduleDialogs extends DialogKit {
         Dialog dialog = new Dialog(host);
         LinearLayout panel = dialogPanel(host.getString(R.string.schedule_delete_confirm_title));
         TextView message = new TextView(host);
-        message.setText(host.getString(R.string.schedule_delete_confirm_message, host.scheduleName));
+        message.setText(host.getString(R.string.schedule_delete_confirm_message, host.scheduleViewState.scheduleName));
         message.setTextColor(host.mutedColor());
         message.setTextSize(15);
         message.setLineSpacing(host.dp(4), 1f);
@@ -550,7 +550,7 @@ public class CourseScheduleDialogs extends DialogKit {
     public void showSemesterNameDialog() {
         Dialog dialog = new Dialog(host);
         LinearLayout panel = dialogPanel(host.getString(R.string.semester_edit_title));
-        EditText semesterInput = host.input(host.getString(R.string.semester_edit_hint), host.semesterName);
+        EditText semesterInput = host.input(host.getString(R.string.semester_edit_hint), host.scheduleViewState.semesterName);
         semesterInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(48)});
         panel.addView(semesterInput);
         panel.addView(host.pageSaveButton(() -> {
@@ -559,7 +559,7 @@ public class CourseScheduleDialogs extends DialogKit {
                 Toast.makeText(host, host.getString(R.string.semester_error_empty), Toast.LENGTH_SHORT).show();
                 return;
             }
-            host.semesterName = value;
+            host.scheduleViewState.semesterName = value;
             host.saveConfig();
             host.refreshMyPage();
             dialog.dismiss();
@@ -572,7 +572,7 @@ public class CourseScheduleDialogs extends DialogKit {
 
     public void showImportedFirstWeekDayDialog() {
         String defaultDate = SemesterStartDateDefaults.resolve(Calendar.getInstance());
-        host.firstWeekDay = defaultDate;
+        host.scheduleViewState.firstWeekDay = defaultDate;
         host.currentWeek = host.currentWeekFromDate();
         host.saveConfig();
         host.updateHeader();
@@ -597,7 +597,7 @@ public class CourseScheduleDialogs extends DialogKit {
         panel.addView(picker);
 
         panel.addView(dialogAction(host.getString(R.string.first_week_day_use), v -> {
-            host.firstWeekDay = picker.getYear() + "/" + (picker.getMonth() + 1) + "/" + picker.getDayOfMonth();
+            host.scheduleViewState.firstWeekDay = picker.getYear() + "/" + (picker.getMonth() + 1) + "/" + picker.getDayOfMonth();
             host.currentWeek = host.currentWeekFromDate();
             host.saveConfig();
             host.updateHeader();

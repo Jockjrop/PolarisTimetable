@@ -108,15 +108,15 @@ public class DialogKit {
     }
 
     public View dialogBlurSource() {
-        if (!host.shellBarsBlurEnabled || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+        if (!host.scheduleViewState.shellBarsBlurEnabled || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
             return null;
         }
         return host.rootView != null ? host.rootView : host.getWindow().getDecorView();
     }
 
     public GlassDialogFactory.Config glassConfig() {
-        return new GlassDialogFactory.Config(host, host.shellBarsBlurEnabled, host.isDarkModeActive(),
-                host.isMinimalVisualTheme(), host.visualTheme);
+        return new GlassDialogFactory.Config(host, host.scheduleViewState.shellBarsBlurEnabled, host.isDarkModeActive(),
+                host.isMinimalVisualTheme(), host.scheduleViewState.visualTheme);
     }
 
     public GradientDrawable dialogGlassBg(int radius) {
