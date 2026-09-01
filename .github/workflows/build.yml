@@ -84,14 +84,15 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      # 阶段 1 进度记录（2026-09-01）：
-      #   ✅ 根因一 EnumEntriesKt —— 已由 4120fb7 注入 kotlin-stdlib 解决（测试 APK 正常构建、用例被发现）
-      #   ✅ 根因二 /dev/kvm 无权限 —— 已由上一步 udev 规则解决，模拟器可 "Emulator booted" 并 "Starting 10 tests"
-      #   ❌ 遗留阻塞：App 主线程在模拟器上永不进入 idle，MainActivitySmokeTest 的
-      #      Espresso.onIdle()（无超时）无限阻塞，表现为 "Tests 0/10 completed" 且无失败无跳过。
-      #      根因未定位前按 docs/iteration-plan.md 阶段 1 风险条款临时保留兜底；定位后必须摘除本行。
+      # 阶段 1 已闭环（2026-09-01）：三个根因全部定位并修复，本 job 失败会阻塞合并。
+      #   ✅ 根因一 EnumEntriesKt —— 4120fb7 注入 kotlin-stdlib（测试 APK 正常构建、用例被发现）
+      #   ✅ 根因二 /dev/kvm 无权限 —— 上一步 udev 规则（模拟器 Emulator booted + Starting 10 tests）
+      #   ✅ 根因三 主线程永不 idle —— ScheduleBoardView.renderSchedule 原先用零延迟 post() 轮询等待
+      #      尺寸，尺寸为 0 时（空课表/板被隐藏）构成消息风暴，使 Espresso.onIdle() 无限阻塞
+      #      （表现为 "Tests 0/10 completed" 且无失败无跳过）；已改为 onSizeChanged 事件驱动补渲染。
+      #      同期修复 BackdropBlurView 在 onPreDraw 中无条件 invalidate 造成的静止态 60fps 自激重绘。
+      #      本机实测：静止时帧增量为 0，10/10 用例通过。
       - name: Run instrumented tests (Espresso)
-        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
