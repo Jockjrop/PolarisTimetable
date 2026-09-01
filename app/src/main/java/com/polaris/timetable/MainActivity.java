@@ -66,12 +66,7 @@ import android.widget.Toast;
 
 import com.polaris.timetable.importer.PdfImportCoordinator;
 import com.polaris.timetable.importer.ImportReviewSummary;
-import com.polaris.timetable.importer.ScheduleImportConfirmation;
-import com.polaris.timetable.importer.ScheduleImportPreviewData;
-import com.polaris.timetable.importer.ai.AiImportIssueFormatter;
-import com.polaris.timetable.importer.ai.AiExternalImportReturnController;
-import com.polaris.timetable.importer.ai.AiScheduleImportWorkflow;
-import com.polaris.timetable.importer.ai.PolarisAiPromptV1;
+import com.polaris.timetable.importer.ai.AiImportFlow;
 import com.polaris.timetable.export.ExportFileProvider;
 import com.polaris.timetable.export.ScheduleCalendarExporter;
 import com.polaris.timetable.export.ScheduleImageExporter;
@@ -143,7 +138,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host {
+public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host {
     private static final String TAG = "MainActivity";
 
 
@@ -170,7 +165,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final int PICK_PDF = 1001;
     private static final int PICK_BACKGROUND_IMAGE = 1002;
     private static final int PICK_AVATAR_IMAGE = 1003;
-    private static final int PICK_AI_RECOGNITION_IMAGE = 1004;
     private static final int PICK_SHARED_SCHEDULE_FILE = 1005;
     private static final int PICK_BACKUP_FILE = 1006;
     private static final int REQUEST_NOTIFICATION_PERMISSION = 2001;
@@ -195,10 +189,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
     private final CourseStructureMapper courseStructureMapper = new CourseStructureMapper();
-    private final AiScheduleImportWorkflow aiScheduleImportWorkflow =
-            new AiScheduleImportWorkflow();
-    private final AiExternalImportReturnController aiExternalImportReturnController =
-            new AiExternalImportReturnController();
+    private final AiImportFlow aiImportFlow = new AiImportFlow(this, this);
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
     ScheduleRepository scheduleRepository;
     private PlanRepository planRepository;
@@ -302,8 +293,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private boolean weekSwipeHintScheduled;
     private View weekSwipeHintView;
     private View courseSaveUndoView;
-    private EditText activeAiImportInput;
-    private TextView activeAiImportErrorView;
     private final Handler todayOverviewHandler = new Handler(Looper.getMainLooper());
     private final Runnable todayOverviewTicker = new Runnable() {
         @Override
@@ -346,7 +335,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     protected void onResume() {
         super.onResume();
         if (rootView != null) {
-            rootView.post(this::handleExternalAiReturn);
+            rootView.post(aiImportFlow::onHostResumed);
         }
         maybeWarnAboutMissedReminders();
         rescheduleCourseReminders();
@@ -381,7 +370,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     protected void onPause() {
-        aiExternalImportReturnController.onHostPaused();
+        aiImportFlow.onHostPaused();
         todayOverviewHandler.removeCallbacks(todayOverviewTicker);
         super.onPause();
     }
@@ -692,234 +681,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         startActivityForResult(intent, PICK_PDF);
     }
 
-    private void showAiImportDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.import_ai_title));
-
-        TextView instruction = new TextView(this);
-        instruction.setText(getString(R.string.import_ai_instruction));
-
-
-        instruction.setTextColor(mutedColor());
-        instruction.setTextSize(14);
-        instruction.setLineSpacing(dp(3), 1f);
-        instruction.setPadding(0, 0, 0, dp(6));
-        panel.addView(instruction);
-
-        panel.addView(dialogAction(getString(R.string.import_ai_copy_prompt), v -> copyAiRecognitionPrompt()));
-        panel.addView(dialogAction(getString(R.string.import_ai_pick_image),
-                v -> openAiRecognitionImagePicker()));
-
-        EditText input = new EditText(this);
-        input.setHint(getString(R.string.import_ai_paste_hint));
-        input.setTextColor(inkColor());
-        input.setHintTextColor(mutedColor());
-        input.setTextSize(15);
-        input.setGravity(Gravity.TOP | Gravity.LEFT);
-        input.setSingleLine(false);
-        input.setHorizontallyScrolling(false);
-        input.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setPadding(dp(12), dp(10), dp(12), dp(10));
-        input.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_CHIP));
-        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200_000)});
-        input.setContentDescription(getString(R.string.import_ai_input_cd));
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(190));
-        inputParams.setMargins(0, dp(8), 0, dp(4));
-        panel.addView(input, inputParams);
-
-        TextView errorView = new TextView(this);
-        errorView.setTextColor(Color.parseColor(
-                isDarkModeActive() ? "#FFC266" : "#8A4B00"));
-        errorView.setTextSize(14);
-        errorView.setLineSpacing(dp(3), 1f);
-        errorView.setPadding(dp(12), dp(10), dp(12), dp(10));
-        errorView.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_CHIP));
-        errorView.setTextIsSelectable(true);
-        errorView.setVisibility(View.GONE);
-        panel.addView(errorView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        activeAiImportInput = input;
-        activeAiImportErrorView = errorView;
-
-        panel.addView(dialogAction(getString(R.string.import_ai_paste),
-                v -> pasteAiTextFromClipboard(input, errorView)));
-
-        TextView parse = dialogAction(getString(R.string.import_ai_parse), v -> {
-            String aiText = input.getText() == null
-                    ? "" : input.getText().toString();
-            if (aiText.trim().isEmpty()) {
-                showAiImportErrors(errorView,
-                        Collections.singletonList(getString(R.string.import_ai_error_empty)));
-                return;
-            }
-            v.setEnabled(false);
-            AiScheduleImportWorkflow.PrepareResult prepared =
-                    aiScheduleImportWorkflow.prepare(aiText);
-            if (prepared instanceof AiScheduleImportWorkflow.PrepareFailure) {
-                List<String> messages = AiImportIssueFormatter.formatAll(
-                        ((AiScheduleImportWorkflow.PrepareFailure) prepared).errors);
-                showAiImportErrors(errorView, messages);
-                v.setEnabled(true);
-                return;
-            }
-            dialog.dismiss();
-            showAiImportPreview((AiScheduleImportWorkflow.PrepareSuccess) prepared);
-        });
-        parse.setTextColor(Color.WHITE);
-        parse.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
-        parse.setContentDescription(getString(R.string.import_ai_parse_cd));
-        panel.addView(parse);
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(false);
-        scroll.setVerticalScrollBarEnabled(true);
-        scroll.addView(panel, new ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT,
-                ScrollView.LayoutParams.WRAP_CONTENT));
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setOnDismissListener(ignored -> {
-            if (activeAiImportInput == input) {
-                activeAiImportInput = null;
-                activeAiImportErrorView = null;
-                aiExternalImportReturnController.cancel();
-            }
-        });
-        dialog.setContentView(glassDialogContent(scroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setSoftInputMode(
-                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        }
-    }
-
-    private void copyAiRecognitionPrompt() {
-        if (copyAiRecognitionPromptToClipboard()) {
-            Toast.makeText(this, getString(R.string.import_ai_prompt_copied), Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private boolean copyAiRecognitionPromptToClipboard() {
-        ClipboardManager clipboard = (ClipboardManager) getSystemService(
-                Context.CLIPBOARD_SERVICE);
-        if (clipboard == null) {
-            Toast.makeText(this, getString(R.string.import_clipboard_unavailable), Toast.LENGTH_LONG).show();
-            return false;
-        }
-        clipboard.setPrimaryClip(ClipData.newPlainText(
-                getString(R.string.import_clipboard_label), PolarisAiPromptV1.getPrompt()));
-        return true;
-    }
-
-    private void openAiRecognitionImagePicker() {
-        Intent pickImage = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        pickImage.addCategory(Intent.CATEGORY_OPENABLE);
-        pickImage.setType("image/*");
-        try {
-            startActivityForResult(pickImage, PICK_AI_RECOGNITION_IMAGE);
-        } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, getString(R.string.import_no_image_picker), Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void launchExternalAiRecognition(Uri scheduleImageUri) {
-        if (!copyAiRecognitionPromptToClipboard()) {
-            return;
-        }
-
-        Intent sendImage = new Intent(Intent.ACTION_SEND);
-        sendImage.setType("image/*");
-        sendImage.putExtra(Intent.EXTRA_TEXT, PolarisAiPromptV1.getPrompt());
-        sendImage.putExtra(Intent.EXTRA_STREAM, scheduleImageUri);
-        sendImage.setClipData(ClipData.newRawUri(
-                getString(R.string.import_ai_share_image_label), scheduleImageUri));
-        sendImage.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-        aiExternalImportReturnController.begin(readClipboardText());
-        Toast.makeText(this, getString(R.string.import_ai_send_hint),
-                Toast.LENGTH_LONG).show();
-        try {
-            startActivity(Intent.createChooser(
-                    sendImage, getString(R.string.import_ai_chooser_title)));
-        } catch (ActivityNotFoundException exception) {
-            aiExternalImportReturnController.cancel();
-            Toast.makeText(this, getString(R.string.import_no_ai_app),
-                    Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void handleExternalAiReturn() {
-        if (!aiExternalImportReturnController.shouldCheckClipboardOnResume()) {
-            return;
-        }
-        AiExternalImportReturnController.ReturnResult result =
-                aiExternalImportReturnController.onHostResumed(readClipboardText());
-        if (!result.returnedFromExternalApp) {
-            return;
-        }
-        if (!result.hasNewClipboardText()) {
-            Toast.makeText(this, getString(R.string.import_ai_return_none),
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (activeAiImportInput == null || activeAiImportErrorView == null) {
-            return;
-        }
-        activeAiImportInput.setText(result.newClipboardText);
-        activeAiImportInput.setSelection(activeAiImportInput.length());
-        activeAiImportErrorView.setVisibility(View.GONE);
-        activeAiImportInput.announceForAccessibility(getString(R.string.import_ai_return_read_cd));
-        Toast.makeText(this, getString(R.string.import_ai_return_read_cd),
-                Toast.LENGTH_SHORT).show();
-    }
-
-    private String readClipboardText() {
-        ClipboardManager clipboard = (ClipboardManager) getSystemService(
-                Context.CLIPBOARD_SERVICE);
-        try {
-            ClipData clip = clipboard == null ? null : clipboard.getPrimaryClip();
-            CharSequence text = clip == null || clip.getItemCount() == 0
-                    ? null : clip.getItemAt(0).coerceToText(this);
-            return text == null ? "" : text.toString();
-        } catch (SecurityException exception) {
-            Log.w(TAG, "Clipboard access was denied", exception);
-            return "";
-        }
-    }
-
-    void pasteAiTextFromClipboard(EditText input, TextView errorView) {
-        String text = readClipboardText();
-        if (text.trim().isEmpty()) {
-            Toast.makeText(this, getString(R.string.import_clipboard_empty), Toast.LENGTH_SHORT).show();
-            return;
-        }
-        input.setText(text);
-        input.setSelection(input.length());
-        errorView.setVisibility(View.GONE);
-        input.announceForAccessibility(getString(R.string.import_ai_paste_done_cd));
-    }
-
-    private void showAiImportErrors(TextView errorView, List<String> messages) {
-        StringBuilder text = new StringBuilder(getString(R.string.import_ai_errors_header));
-        if (messages == null || messages.isEmpty()) {
-            text.append("\n").append(getString(R.string.import_ai_parse_failed));
-        } else {
-            for (String message : messages) {
-                text.append("\n\n").append(message);
-            }
-        }
-        errorView.setText(text.toString());
-        errorView.setContentDescription(getString(R.string.import_ai_errors_cd, text));
-        errorView.setVisibility(View.VISIBLE);
-        errorView.announceForAccessibility(text);
-    }
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -932,15 +693,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             startSharedScheduleFileImportFlow(data.getData());
         } else if (requestCode == PICK_BACKUP_FILE) {
             startBackupRestoreFlow(data.getData());
-        } else if (requestCode == PICK_AI_RECOGNITION_IMAGE) {
-            Uri scheduleImageUri = data.getData();
-            if (rootView != null) {
-                rootView.post(() -> {
-                    if (activeAiImportInput != null) {
-                        launchExternalAiRecognition(scheduleImageUri);
-                    }
-                });
-            }
+        } else if (requestCode == AiImportFlow.REQUEST_PICK_AI_IMAGE) {
+            aiImportFlow.onImagePicked(data.getData());
         } else if (requestCode == PICK_BACKGROUND_IMAGE) {
             previewBackgroundImage(data.getData());
         } else if (requestCode == PICK_AVATAR_IMAGE) {
@@ -949,212 +703,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             }
             previewAvatarImage(data.getData());
         }
-    }
-
-    private void showAiImportPreview(AiScheduleImportWorkflow.PrepareSuccess prepared) {
-        ScheduleImportPreviewData preview = prepared.preview;
-        if (preview == null || preview.isEmpty()) {
-            Toast.makeText(this, getString(R.string.import_ai_no_courses), Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.import_ai_review_title));
-        addScheduleImportCandidatePreview(panel, preview);
-
-        boolean replacingExisting = !structuredCourses.isEmpty();
-        TextView replacementNotice = new TextView(this);
-        replacementNotice.setText(replacingExisting
-                ? getString(R.string.import_ai_note_overwrite)
-                : getString(R.string.import_ai_note_import));
-        replacementNotice.setTextColor(replacingExisting
-                ? Color.parseColor(isDarkModeActive() ? "#FFC266" : "#8A4B00")
-                : mutedColor());
-        replacementNotice.setTextSize(14);
-        replacementNotice.setLineSpacing(dp(3), 1f);
-        replacementNotice.setPadding(0, dp(12), 0, dp(4));
-        panel.addView(replacementNotice);
-
-        ScheduleImportConfirmation confirmation = new ScheduleImportConfirmation();
-        String confirmText = replacingExisting ? getString(R.string.import_confirm_overwrite) : getString(R.string.import_confirm_short);
-        TextView confirm = dialogAction(confirmText, v -> {
-            if (isFinishing()
-                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
-                    && isDestroyed())) {
-                confirmation.cancel();
-                dialog.dismiss();
-                return;
-            }
-            v.setEnabled(false);
-            confirmation.confirm(preview, candidates -> {
-                dialog.dismiss();
-                int courseCount = candidates.size();
-                applyCurrentScheduleImport(
-                        candidates,
-                        getString(R.string.import_ai_summary, courseCount,
-                                preview.meetingCount()),
-                        getString(R.string.import_ai_detail, courseCount,
-                                /* 协议与写入说明在资源内 */
-
-
-                                preview.meetingCount()),
-                        getString(R.string.import_ai_success_toast, courseCount));
-            });
-        });
-        confirm.setTextColor(Color.WHITE);
-        confirm.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
-        confirm.setContentDescription(confirmText + getString(R.string.import_confirm_cd_overwrite));
-        panel.addView(confirm);
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> {
-            confirmation.cancel();
-            dialog.dismiss();
-        }));
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(false);
-        scroll.setVerticalScrollBarEnabled(true);
-        scroll.addView(panel, new ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT,
-                ScrollView.LayoutParams.WRAP_CONTENT));
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setOnCancelListener(ignored -> confirmation.cancel());
-        dialog.setOnDismissListener(ignored -> confirmation.cancel());
-        dialog.setContentView(glassDialogContent(scroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void addScheduleImportCandidatePreview(
-            LinearLayout panel, ScheduleImportPreviewData preview) {
-        panel.addView(importReviewHeading(getString(R.string.import_candidates_heading)));
-        panel.addView(importReviewLine(getString(R.string.import_review_recognized),
-                getString(R.string.import_candidates_count, preview.regularCourseCount(),
-                        preview.practiceCourseCount()),
-                false));
-        if (preview.semester != null && !preview.semester.trim().isEmpty()) {
-            panel.addView(importReviewLine(getString(R.string.import_review_semester), preview.semester, false));
-        }
-
-        for (StructuredCourse course : preview.courses) {
-            if (course != null) {
-                panel.addView(scheduleImportCourseCard(course, preview));
-            }
-        }
-
-        if (!preview.warnings.isEmpty()) {
-            panel.addView(importReviewHeading(getString(R.string.import_review_needs_check)));
-            for (String warning : preview.warnings) {
-                panel.addView(importReviewLine(getString(R.string.import_review_hint), warning, true));
-            }
-        }
-    }
-
-    private View scheduleImportCourseCard(StructuredCourse course,
-                                          ScheduleImportPreviewData preview) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_CARD));
-        card.setContentDescription(getString(R.string.import_course_cd, course.name));
-
-        TextView name = new TextView(this);
-        name.setText(course.name);
-        name.setTextColor(inkColor());
-        name.setTextSize(16);
-        name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setSingleLine(false);
-        card.addView(name);
-
-        if (!course.teacher.trim().isEmpty()) {
-            card.addView(scheduleImportDetail(getString(R.string.import_detail_teacher, course.teacher), false));
-        }
-        if (!course.credit.trim().isEmpty()) {
-            card.addView(scheduleImportDetail(getString(R.string.import_detail_credit, course.credit), false));
-        }
-        for (ScheduleImportPreviewData.Detail detail : preview.detailsFor(course)) {
-            String note = detail.note.isEmpty() ? "" : "（" + detail.note + "）";
-            card.addView(scheduleImportDetail(
-                    detail.label + "：" + detail.value + note, false));
-        }
-
-        for (CourseMeeting meeting : course.meetings) {
-            if (meeting == null) {
-                continue;
-            }
-            card.addView(scheduleImportDetail(
-                    scheduleImportMeetingText(course, meeting), true));
-        }
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(6), 0, dp(6));
-        card.setLayoutParams(params);
-        return card;
-    }
-
-    private TextView scheduleImportDetail(String text, boolean meeting) {
-        TextView detail = new TextView(this);
-        detail.setText(text);
-        detail.setTextColor(meeting ? inkColor() : mutedColor());
-        detail.setTextSize(meeting ? 14 : 13);
-        detail.setLineSpacing(dp(2), 1f);
-        detail.setSingleLine(false);
-        detail.setPadding(0, meeting ? dp(8) : dp(3), 0, 0);
-        return detail;
-    }
-
-    private String scheduleImportMeetingText(StructuredCourse course,
-                                             CourseMeeting meeting) {
-        String weeks = meeting.weekRule == null
-                ? getString(R.string.editor_week_unknown_full) : meeting.weekRule.displayText();
-        if (course.courseType == CourseType.PRACTICE
-                && meeting.timeMode == CourseTimeMode.NONE) {
-            return weeks + "\n" + getString(R.string.import_no_fixed_time);
-        }
-
-        StringBuilder text = new StringBuilder();
-        text.append(dayName(meeting.day)).append(' ');
-        if (meeting.hasExactTime()) {
-            text.append(twoDigits(meeting.startMinuteOfDay / 60)).append(':')
-                    .append(twoDigits(meeting.startMinuteOfDay % 60)).append('-')
-                    .append(twoDigits(meeting.endMinuteOfDay / 60)).append(':')
-                    .append(twoDigits(meeting.endMinuteOfDay % 60));
-        } else {
-            text.append(meeting.startSection).append('-')
-                    .append(meeting.endSection).append(getString(R.string.import_section_suffix));
-        }
-        text.append('\n').append(weeks);
-        if (!meeting.location.trim().isEmpty()) {
-            text.append('\n').append(meeting.location);
-        }
-        return text.toString();
-    }
-
-    private void applyCurrentScheduleImport(List<StructuredCourse> importedCourses,
-                                            String diagnosticsSummary,
-                                            String diagnosticsText,
-                                            String successMessage) {
-        if (importedCourses == null || importedCourses.isEmpty()) {
-            Toast.makeText(this, getString(R.string.import_ai_no_courses), Toast.LENGTH_LONG).show();
-            return;
-        }
-        replaceCanonicalCourses(importedCourses);
-        scheduleViewState.semesterWeeks = inferSemesterWeeks(courses);
-        scheduleViewState.courseSectionCount = inferSectionCount(courses);
-        currentWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeekFromDate()));
-        lastParseDiagnosticsSummary = diagnosticsSummary == null ? "" : diagnosticsSummary;
-        lastParseDiagnosticsText = diagnosticsText == null ? "" : diagnosticsText;
-        scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
-        saveConfig();
-        rescheduleCourseReminders();
-        updateHeader();
-        renderSchedule();
-        updateEmptyScheduleView();
-        refreshCourseManageList();
-        refreshMyPage();
-        switchTab(0);
-        Toast.makeText(this, successMessage, Toast.LENGTH_LONG).show();
     }
 
     private void startPdfImportFlow(Uri uri) {
@@ -1433,7 +981,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         transparentDialog(dialog);
     }
 
-    private TextView importReviewHeading(String text) {
+    public TextView importReviewHeading(String text) {
         TextView heading = new TextView(this);
         heading.setText(text);
         heading.setTextColor(inkColor());
@@ -1443,7 +991,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return heading;
     }
 
-    private TextView importReviewLine(String label, String value, boolean needsAttention) {
+    public TextView importReviewLine(String label, String value, boolean needsAttention) {
         TextView line = new TextView(this);
         line.setText(label + "：" + value);
         line.setTextColor(needsAttention
@@ -3101,7 +2649,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }));
         panel.addView(popupMenuAction(getString(R.string.action_import_ai), v -> {
             popup.dismiss();
-            showAiImportDialog();
+            aiImportFlow.showImportDialog();
         }));
         panel.addView(popupMenuAction(getString(R.string.action_import_file), v -> {
             popup.dismiss();
@@ -4519,6 +4067,52 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         showPlanPage();
     }
 
+    // ===== AiImportFlow.Host 实现:既有课表判断、落库提交与相册/主线程动作 =====
+
+    @Override
+    public boolean hasExistingCourses() {
+        return !structuredCourses.isEmpty();
+    }
+
+    @Override
+    public void commitImport(List<StructuredCourse> importedCourses,
+                             String diagnosticsSummary,
+                             String diagnosticsText,
+                             String successMessage) {
+        if (importedCourses == null || importedCourses.isEmpty()) {
+            Toast.makeText(this, getString(R.string.import_ai_no_courses), Toast.LENGTH_LONG).show();
+            return;
+        }
+        replaceCanonicalCourses(importedCourses);
+        scheduleViewState.semesterWeeks = inferSemesterWeeks(courses);
+        scheduleViewState.courseSectionCount = inferSectionCount(courses);
+        currentWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeekFromDate()));
+        lastParseDiagnosticsSummary = diagnosticsSummary == null ? "" : diagnosticsSummary;
+        lastParseDiagnosticsText = diagnosticsText == null ? "" : diagnosticsText;
+        scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
+        saveConfig();
+        rescheduleCourseReminders();
+        updateHeader();
+        renderSchedule();
+        updateEmptyScheduleView();
+        refreshCourseManageList();
+        refreshMyPage();
+        switchTab(0);
+        Toast.makeText(this, successMessage, Toast.LENGTH_LONG).show();
+    }
+
+    @Override
+    public void launchImagePicker(Intent intent, int requestCode) {
+        startActivityForResult(intent, requestCode);
+    }
+
+    @Override
+    public void postOnRoot(Runnable runnable) {
+        if (rootView != null) {
+            rootView.post(runnable);
+        }
+    }
+
     // ===== SettingsPageBuilder.Host 实现:设置页数据与动作委托 =====
 
     @Override
@@ -5657,7 +5251,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return builder.toString();
     }
 
-    private String dayName(int day) {
+    public String dayName(int day) {
 
         if (day >= 0 && day < WeekdayLabels.count()) {
             return WeekdayLabels.label(this, day);
@@ -7125,7 +6719,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return normalizedTimeText(value == null || value.length() == 0 ? scheduleViewState.firstClassStartTime : value);
     }
 
-    String twoDigits(int value) {
+    public String twoDigits(int value) {
         return value < 10 ? "0" + value : String.valueOf(value);
     }
 
@@ -7187,7 +6781,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return isDarkModeActive() ? "#FFFFFF" : "#172033";
     }
 
-    String primaryActionFillHex() {
+    public String primaryActionFillHex() {
         return PolarisVisualTheme.hex(
                 PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
     }
@@ -7229,7 +6823,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return Color.parseColor(hex);
     }
 
-    int dp(int value) {
+    public int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 

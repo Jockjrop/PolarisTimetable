@@ -30,8 +30,8 @@ android {
         applicationId "com.polaris.timetable"
         minSdk 23
         targetSdk 35
-        versionCode 11507
-        versionName "1.15.7"
+        versionCode 11508
+        versionName "1.15.8"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
