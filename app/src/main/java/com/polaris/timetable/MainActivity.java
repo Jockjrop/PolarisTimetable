@@ -117,6 +117,7 @@ import com.polaris.timetable.ui.PolarisVisualTheme;
 import com.polaris.timetable.ui.ScheduleBoardView;
 import com.polaris.timetable.ui.TodayOverviewView;
 import com.polaris.timetable.ui.page.MyPageBuilder;
+import com.polaris.timetable.ui.page.PlanPageBuilder;
 import com.polaris.timetable.ui.page.SettingsPageBuilder;
 import com.polaris.timetable.ui.shell.BottomNavView;
 import com.polaris.timetable.ui.WeekdayLabels;
@@ -142,7 +143,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host {
+public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host {
     private static final String TAG = "MainActivity";
 
 
@@ -202,7 +203,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     ScheduleRepository scheduleRepository;
     private PlanRepository planRepository;
     private final List<StudyPlan> studyPlans = new ArrayList<>();
-    private LinearLayout planListContainer;
     private PdfImportCoordinator importCoordinator;
     private ScheduleBoardView scheduleBoard;
     private FrameLayout contentHost;
@@ -236,13 +236,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     /** 横屏平板：右侧下方剩余空间的本周计划面板。 */
     private FrameLayout planSidePanel;
     private LinearLayout planSidePanelContent;
-    /** 平板横屏：左侧滑出的手机宽度计划管理浮层（遮罩 + 面板）。 */
-    private FrameLayout planManageOverlay;
-    private LinearLayout planManagePanel;
-    /** 计划管理浮层头部（主题切换时刷新背景色）。 */
-    private LinearLayout planManageHeader;
-    /** 新建计划按钮（手机=计划页按钮，平板=管理浮层按钮；主题切换时刷新底色）。 */
-    private TextView planAddButton;
+    /** 平板横屏：左侧滑出的手机宽度计划管理浮层视图由 {@link PlanPageBuilder} 持有。 */
+    private final PlanPageBuilder planPageBuilder = new PlanPageBuilder(this);
     int currentWeek = 18;
     int visibleDayCount = 7;
     private final CourseScheduleDialogs scheduleDialogs = new CourseScheduleDialogs(this);
@@ -399,8 +394,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onBackPressed() {
-        if (planManageOverlay != null && planManageOverlay.getVisibility() == View.VISIBLE) {
-            closePlanManagePanel();
+        if (planPageBuilder.isManagePanelOpen()) {
+            planPageBuilder.closeManagePanel(this);
             return;
         }
         if (settingsPage != null && settingsPage.getVisibility() == View.VISIBLE) {
@@ -561,7 +556,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateConflictSummary();
 
         myPage = buildMyPage();
-        planPage = buildPlanPage();
+        planPage = planPageBuilder.buildPlanPage(this);
         settingsPage = new FrameLayout(this);
         settingsPage.setVisibility(View.GONE);
         contentHost = new FrameLayout(this);
@@ -664,7 +659,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         rootView.addView(bottomNavView, bottomNavLayoutParams());
         if (isLandscapeTablet()) {
             // 平板横屏：计划管理浮层（遮罩 + 右侧手机宽面板），盖在最上层。
-            buildPlanManageOverlay();
+            planPageBuilder.buildManageOverlay(this, rootView);
         }
         recordBuiltInsets();
         attachWindowInsetsListener();
@@ -1891,29 +1886,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         planSidePanelContent.removeAllViews();
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        // 内容层已有 8dp 水平 padding，这里与「本周实践」面板标题的缩进保持一致。
-        header.setPadding(dp(6), dp(10), dp(6), dp(4));
-        TextView title = new TextView(this);
-        title.setText(getString(R.string.side_panel_plan_title));
-        title.setTextColor(inkColor());
-        title.setTextSize(14);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        TextView manage = new TextView(this);
-        manage.setText(getString(R.string.common_manage));
-        manage.setTextSize(13);
-        manage.setTypeface(Typeface.DEFAULT_BOLD);
-        manage.setTextColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
-        manage.setGravity(Gravity.CENTER_VERTICAL);
-        manage.setPadding(dp(8), 0, dp(8), 0);
-        manage.setMinHeight(dp(32));
-        manage.setOnClickListener(v -> showPlanPage());
-        header.addView(manage);
-        planSidePanelContent.addView(header);
+        planSidePanelContent.addView(planPageBuilder.buildSidePanelHeader(this));
 
         List<StudyPlan> weekPlans = new ArrayList<>();
         for (StudyPlan plan : studyPlans) {
@@ -1936,7 +1909,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             planSidePanelContent.addView(empty);
         } else {
             for (StudyPlan plan : weekPlans) {
-                planSidePanelContent.addView(planRow(plan));
+                planSidePanelContent.addView(planPageBuilder.planRow(this, plan));
             }
         }
 
@@ -2138,7 +2111,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return course.name.trim();
     }
 
-    private String dayText(int day) {
+    public String dayText(int day) {
 
         return day >= 0 && day < WeekdayLabels.count() ? WeekdayLabels.label(this, day)
                 : getString(R.string.weekday_undetermined);
@@ -3817,7 +3790,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return "plan-" + System.currentTimeMillis() + "-" + planIdCounter;
     }
 
-    private String remindTimeText(int minute) {
+    public String remindTimeText(int minute) {
         return twoDigits(minute / 60) + ":" + twoDigits(minute % 60);
     }
 
@@ -3834,211 +3807,28 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    /** 平板横屏：全屏遮罩 + 右侧手机宽度计划管理浮层（内容与手机计划页一致）。 */
-    private void buildPlanManageOverlay() {
-        planManageOverlay = new FrameLayout(this);
-        planManageOverlay.setBackgroundColor(Color.argb(130, 0, 0, 0));
-        planManageOverlay.setVisibility(View.GONE);
-        planManageOverlay.setOnClickListener(v -> closePlanManagePanel());
-        rootView.addView(planManageOverlay, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-
-        int panelWidth = Math.min(dp(380),
-                getResources().getDisplayMetrics().widthPixels - dp(24));
-        planManagePanel = new LinearLayout(this);
-        planManagePanel.setOrientation(LinearLayout.VERTICAL);
-        planManagePanel.setBackgroundColor(pageSurfaceColor());
-        planManagePanel.setOnClickListener(v -> {
-            // 消费点击，阻止遮罩关闭。
-        });
-        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
-                panelWidth, FrameLayout.LayoutParams.MATCH_PARENT,
-                Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        planManageOverlay.addView(planManagePanel, panelParams);
-
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(0, statusBarHeight() + dp(8), 0, dp(8));
-        header.setBackgroundColor(settingsHeaderSurfaceColor());
-        planManageHeader = header;
-        TextView close = new TextView(this);
-        close.setText("×");
-        close.setTextColor(inkColor());
-        close.setTextSize(30);
-        close.setTypeface(Typeface.DEFAULT_BOLD);
-        close.setGravity(Gravity.CENTER);
-        close.setContentDescription(getString(R.string.plan_overlay_close_cd));
-        close.setOnClickListener(v -> closePlanManagePanel());
-        header.addView(close, new LinearLayout.LayoutParams(dp(52), dp(54)));
-        TextView title = new TextView(this);
-        title.setText(getString(R.string.plan_title));
-        title.setTextColor(inkColor());
-        title.setTextSize(21);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setSingleLine(true);
-        header.addView(title, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        planManagePanel.addView(header);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(8), dp(12), bottomContentInset() + dp(48));
-        scroll.addView(content);
-        planManagePanel.addView(scroll, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-
-        TextView addButton = new TextView(this);
-        addButton.setText(getString(R.string.plan_action_new));
-        addButton.setTextColor(Color.WHITE);
-        addButton.setTextSize(15);
-        addButton.setTypeface(Typeface.DEFAULT_BOLD);
-        addButton.setGravity(Gravity.CENTER);
-        addButton.setPadding(dp(14), 0, dp(14), 0);
-        addButton.setMinHeight(dp(44));
-        GradientDrawable addBg = new GradientDrawable();
-        addBg.setColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
-        addBg.setCornerRadius(dp(18));
-        addButton.setBackground(addBg);
-        addButton.setOnClickListener(v -> showPlanEditor(null));
-        attachPressFeedback(addButton);
-        planAddButton = addButton;
-        content.addView(addButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
-
-        planListContainer = new LinearLayout(this);
-        planListContainer.setOrientation(LinearLayout.VERTICAL);
-        content.addView(planListContainer);
-    }
-
     private void showPlanManagePanel() {
-        if (planManageOverlay == null) {
-            return;
-        }
-        planManageOverlay.setAlpha(0f);
-        planManagePanel.setTranslationX(dp(380));
-        planManageOverlay.setVisibility(View.VISIBLE);
-        planManagePanel.setVisibility(View.VISIBLE);
-        refreshPlanList();
-        planManageOverlay.animate().alpha(1f).setDuration(200).start();
-        planManagePanel.animate().translationX(0f).setDuration(200).start();
+        planPageBuilder.showManagePanel(this, studyPlans);
     }
 
     private void closePlanManagePanel() {
-        if (planManageOverlay == null || planManageOverlay.getVisibility() != View.VISIBLE) {
-            return;
-        }
-        planManageOverlay.animate().alpha(0f).setDuration(180).start();
-        planManagePanel.animate().translationX(dp(380)).setDuration(180)
-                .withEndAction(() -> planManageOverlay.setVisibility(View.GONE)).start();
+        planPageBuilder.closeManagePanel(this);
     }
 
-    /** 手机/竖屏平板：底部导航「计划」tab 的独立页面。 */
-    private ScrollView buildPlanPage() {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(pageSurfaceColor());
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(0, statusBarHeight() + dp(34), 0, bottomContentInset() + dp(48));
-        if (!isLandscapeTablet()) {
-            int columnWidth = contentColumnWidth();
-            if (columnWidth < getResources().getDisplayMetrics().widthPixels) {
-                page.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
-                        LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
-            }
-        }
-        scrollView.addView(page);
-
-        TextView addButton = new TextView(this);
-        addButton.setText(getString(R.string.plan_action_new));
-        addButton.setTextColor(Color.WHITE);
-        addButton.setTextSize(15);
-        addButton.setTypeface(Typeface.DEFAULT_BOLD);
-        addButton.setGravity(Gravity.CENTER);
-        addButton.setPadding(dp(14), 0, dp(14), 0);
-        addButton.setMinHeight(dp(44));
-        GradientDrawable addBg = new GradientDrawable();
-        addBg.setColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
-        addBg.setCornerRadius(dp(18));
-        addButton.setBackground(addBg);
-        addButton.setOnClickListener(v -> showPlanEditor(null));
-        attachPressFeedback(addButton);
-        planAddButton = addButton;
-        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
-        addParams.setMargins(dp(12), 0, dp(12), dp(6));
-        page.addView(addButton, addParams);
-
-        planListContainer = new LinearLayout(this);
-        planListContainer.setOrientation(LinearLayout.VERTICAL);
-        page.addView(planListContainer);
-        return scrollView;
-    }
-
-    /** 平板横屏：右侧面板「管理」→ 全屏计划页（settingsPage 模式）。 */
     private void refreshPlanList() {
-        if (planListContainer == null) {
-            return;
-        }
-        planListContainer.removeAllViews();
-        if (studyPlans.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText(getString(R.string.plan_empty_hint));
-            empty.setTextColor(mutedColor());
-            empty.setTextSize(15);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(42), 0, dp(42));
-            planListContainer.addView(empty);
-            return;
-        }
-        List<StudyPlan> pending = new ArrayList<>();
-        List<StudyPlan> finished = new ArrayList<>();
-        for (StudyPlan plan : studyPlans) {
-            (plan.done ? finished : pending).add(plan);
-        }
-        Collections.sort(pending, (a, b) -> weekDayValue(a) - weekDayValue(b));
-        Collections.sort(finished, (a, b) -> weekDayValue(b) - weekDayValue(a));
-        if (!pending.isEmpty()) {
-            planListContainer.addView(sectionHeader(getString(R.string.plan_section_pending)));
-            LinearLayout group = settingsGroup();
-            for (StudyPlan plan : pending) {
-                group.addView(planRow(plan));
-            }
-            planListContainer.addView(group);
-        }
-        if (!finished.isEmpty()) {
-            planListContainer.addView(sectionHeader(getString(R.string.plan_section_done)));
-            LinearLayout group = settingsGroup();
-            for (StudyPlan plan : finished) {
-                group.addView(planRow(plan));
-            }
-            planListContainer.addView(group);
-        }
+        planPageBuilder.refreshList(this, studyPlans);
     }
 
     /**
      * 主题/深色模式切换后刷新计划相关界面的固有色：
-     * 计划页与浮层背景、浮层头部、新建按钮底色、右侧玻璃面板底色，并重建列表行。
+     * 计划页背景、管理浮层视图（Builder 侧）、右侧玻璃面板底色，并重建列表行。
      * 与 refreshMyPageBehindSettings 同一刷新链，保证计划界面与主题同步。
      */
     private void refreshPlanTheme() {
         if (planPage != null) {
             planPage.setBackgroundColor(pageSurfaceColor());
         }
-        if (planManagePanel != null) {
-            planManagePanel.setBackgroundColor(pageSurfaceColor());
-        }
-        if (planManageHeader != null) {
-            planManageHeader.setBackgroundColor(settingsHeaderSurfaceColor());
-        }
-        if (planAddButton != null) {
-            GradientDrawable addBg = new GradientDrawable();
-            addBg.setColor(PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
-            addBg.setCornerRadius(dp(18));
-            planAddButton.setBackground(addBg);
-        }
+        planPageBuilder.refreshTheme(this, studyPlans);
         if (planSidePanel != null) {
             updateGlassLayer(planSidePanel, floatingPanelBg(scheduleViewState.bottomNavOpacity, 20), 20);
         }
@@ -4051,87 +3841,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         refreshPlanList();
     }
 
-    private int weekDayValue(StudyPlan plan) {
-        return plan.week * 7 + plan.dayOfWeek;
-    }
-
-    private View planRow(StudyPlan plan) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        row.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_MEDIUM));
-        row.setOnClickListener(v -> showPlanEditor(plan));
-        attachCardPressFeedback(row, 16);
-
-        TextView check = new TextView(this);
-        check.setText(plan.done ? "☑" : "☐");
-        check.setTextSize(24);
-        check.setGravity(Gravity.CENTER);
-        check.setTextColor(plan.done
-                ? PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()) : mutedColor());
-        check.setContentDescription(plan.done ? getString(R.string.plan_cd_mark_undone) : getString(R.string.plan_cd_mark_done));
-        check.setOnClickListener(v -> togglePlanDone(plan));
-        attachPressFeedback(check);
-        row.addView(check, new LinearLayout.LayoutParams(dp(44), dp(44)));
-
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(this);
-        title.setText(plan.title.length() == 0 ? getString(R.string.plan_unnamed) : plan.title);
-        title.setTextColor(inkColor());
-        title.setTextSize(15);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        if (plan.done) {
-            title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
-            title.setAlpha(0.55f);
-        }
-        content.addView(title);
-
-        StringBuilder meta = new StringBuilder(getString(R.string.plan_meta_week, plan.week))
-                .append(dayText(plan.dayOfWeek));
-        if (plan.hasCourse()) {
-            meta.append(" · ").append(plan.courseName);
-        }
-        if (plan.hasReminder()) {
-            meta.append(getString(R.string.plan_meta_remind, remindTimeText(plan.remindMinute)));
-        }
-        TextView metaView = new TextView(this);
-        metaView.setText(meta.toString());
-        metaView.setTextColor(mutedColor());
-        metaView.setTextSize(12);
-        metaView.setSingleLine(true);
-        metaView.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        metaParams.topMargin = dp(2);
-        content.addView(metaView, metaParams);
-        row.addView(content, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView edit = new TextView(this);
-        edit.setText("✎");
-        edit.setTextSize(18);
-        edit.setGravity(Gravity.CENTER);
-        edit.setTextColor(mutedColor());
-        edit.setContentDescription(getString(R.string.plan_edit));
-        edit.setOnClickListener(v -> showPlanEditor(plan));
-        attachPressFeedback(edit);
-        row.addView(edit, new LinearLayout.LayoutParams(dp(44), dp(44)));
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(8));
-        row.setLayoutParams(params);
-        return row;
-    }
-
-    private void togglePlanDone(StudyPlan plan) {
+    public void togglePlanDone(StudyPlan plan) {
         StudyPlan updated = plan.withDone(!plan.done);
         int index = indexOfPlan(plan.id);
         if (index >= 0) {
@@ -4168,7 +3878,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return names.toArray(new String[0]);
     }
 
-    private void showPlanEditor(StudyPlan existing) {
+    public void showPlanEditor(StudyPlan existing) {
         Dialog dialog = new Dialog(this);
         LinearLayout panel = dialogPanel(existing == null ? getString(R.string.plan_editor_new) : getString(R.string.plan_edit));
 
@@ -4797,6 +4507,18 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         showAccountProfileEditor();
     }
 
+    // ===== PlanPageBuilder.Host 实现:计划页专属的取色与入口（其余方法复用既有公共实现） =====
+
+    @Override
+    public int accentColor() {
+        return PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive());
+    }
+
+    @Override
+    public void openPlanPage() {
+        showPlanPage();
+    }
+
     // ===== SettingsPageBuilder.Host 实现:设置页数据与动作委托 =====
 
     @Override
@@ -5225,7 +4947,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return Math.round(sp * getResources().getDisplayMetrics().scaledDensity);
     }
 
-    private void attachPressFeedback(View view) {
+    public void attachPressFeedback(View view) {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 target.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
@@ -5283,11 +5005,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 PolarisVisualTheme.pressColor(scheduleViewState.visualTheme, isDarkModeActive()));
     }
 
-    private TextView sectionHeader(String text) {
+    public TextView sectionHeader(String text) {
         return new SettingsPageBuilder(this).sectionHeader(this, text);
     }
 
-    private LinearLayout settingsGroup() {
+    public LinearLayout settingsGroup() {
         return new SettingsPageBuilder(this).settingsGroup(this);
     }
 
@@ -7492,7 +7214,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return isMinimalVisualTheme() ? backgroundColor() : Color.TRANSPARENT;
     }
 
-    private int settingsHeaderSurfaceColor() {
+    public int settingsHeaderSurfaceColor() {
         if (isMinimalVisualTheme()) {
             return backgroundColor();
         }
