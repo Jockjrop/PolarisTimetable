@@ -82,6 +82,19 @@ configurations.all {
     exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
     exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
 }
+
+// AGP 8.7 强制 UTP（唯一测试运行器）。UTP host 插件（com.google.testing.platform:launcher:0.0.9-alpha02 等）
+// 由 Kotlin 1.9 编译，运行期需要 kotlin.enums.EnumEntriesKt，但其 POM 未声明 kotlin-stdlib。
+// 因此向其 host 插件配置注入 kotlin-stdlib 1.9.20，修复 connectedDebugAndroidTest 的
+// ClassNotFoundException: kotlin.enums.EnumEntriesKt（git log 49ffe5b / 6929893 的根治方案）。
+// 注意：_internal-unified-test-platform-core 被 AGP 当作"单一 jar 路径"校验，注入会让
+// classpath 变成多 jar 而报 "UnifiedTestPlatform core Jar path ... does not exist"，必须排除。
+configurations.configureEach {
+    if (name.startsWith("_internal-unified-test-platform-") && !name.endsWith("-core")) {
+        project.dependencies.add(name, "org.jetbrains.kotlin:kotlin-stdlib:1.9.20")
+    }
+}
+
 dependencies {
     implementation "androidx.appcompat:appcompat:1.7.0"
     implementation "androidx.constraintlayout:constraintlayout:2.1.4"
@@ -91,11 +104,13 @@ dependencies {
     implementation "com.tom-roush:pdfbox-android:2.0.27.0"
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.json:json:20240303"
+    // Kotlin stdlib 统一到 1.9.20（AGP 8.7 强制 UTP，UTP launcher 由 Kotlin 1.9 编译，
+    // 运行期需要 kotlin.enums.EnumEntriesKt）。主配置显式声明后，consistent resolution
+    // 的 strict 版本即 1.9.20，androidTest 侧的同版本声明才能通过。Release minify 会收缩未用代码。
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.20"
     androidTestImplementation "androidx.test.ext:junit:1.2.1"
     androidTestImplementation "androidx.test:runner:1.6.2"
     androidTestImplementation "androidx.test:rules:1.6.1"
     androidTestImplementation "androidx.test.espresso:espresso-core:3.6.1"
-    // Fix UTP launcher ClassNotFoundException: kotlin.enums.EnumEntriesKt (Kotlin 1.9+)
-    // UTP was compiled with Kotlin 1.9, needs 1.9 stdlib at runtime.
     androidTestImplementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.20"
 }
