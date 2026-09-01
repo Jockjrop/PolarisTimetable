@@ -27,9 +27,18 @@ public class BackdropBlurView extends FrameLayout {
     private final Path clipPath = new Path();
 
     private View sourceView;
+    // 源视图上一次采样时的几何/滚动状态：{left, top, width, height, scrollX, scrollY}
+    private final int[] lastSourceState = new int[6];
+    private boolean hasLastSourceState;
     private final ViewTreeObserver.OnPreDrawListener sourcePreDrawListener =
             () -> {
-                invalidateBackdrop();
+                // 仅在源视图几何或滚动状态真的变化时刷新背景采样。
+                // 无条件 invalidate 会与本视图自己的绘制请求构成 preDraw→invalidate→
+                // preDraw 自激环，使画面完全静止时仍以 60fps 持续重绘：既白烧 GPU/电量，
+                // 又让主线程永不 idle（Espresso.onIdle() 因此无限阻塞，见 CI 记录）。
+                if (sourceStateChanged()) {
+                    invalidateBackdrop();
+                }
                 return true;
             };
     private Bitmap buffer;
@@ -56,6 +65,7 @@ public class BackdropBlurView extends FrameLayout {
     public void setSourceView(View sourceView) {
         removeSourcePreDrawListener();
         this.sourceView = sourceView;
+        hasLastSourceState = false; // 换源后强制下一次 preDraw 重新采样
         addSourcePreDrawListener();
         invalidateBackdrop();
     }
@@ -143,6 +153,7 @@ public class BackdropBlurView extends FrameLayout {
         super.onDetachedFromWindow();
         removeSourcePreDrawListener();
         releaseBuffer();
+        hasLastSourceState = false; // buffer 已释放，重新挂载后需重新采样
     }
 
     private void drawBackdrop(Canvas canvas) {
@@ -199,6 +210,45 @@ public class BackdropBlurView extends FrameLayout {
 
     private void invalidateBackdrop() {
         blurLayer.invalidate();
+    }
+
+    /**
+     * 源视图是否需要重新采样：几何（位置/尺寸）或滚动状态发生变化。
+     * 变化后更新缓存并返回 true；无变化返回 false，用于断开 preDraw 自激环。
+     *
+     * 已知权衡：源视图「仅内容重绘、几何与滚动不变」时不会被判定为变化，
+     * 模糊背景会滞后一帧。该层是 0.24x 降采样 + 半透明面板下的装饰性模糊，
+     * 此代价显著低于静止时持续 60fps 重绘的电量开销，故接受该取舍。
+     */
+    private boolean sourceStateChanged() {
+        if (sourceView == null) {
+            return false;
+        }
+        sourceView.getLocationOnScreen(sourceLocation);
+        if (!hasLastSourceState) {
+            hasLastSourceState = true;
+            recordSourceState();
+            return true;
+        }
+        if (lastSourceState[0] != sourceLocation[0]
+                || lastSourceState[1] != sourceLocation[1]
+                || lastSourceState[2] != sourceView.getWidth()
+                || lastSourceState[3] != sourceView.getHeight()
+                || lastSourceState[4] != sourceView.getScrollX()
+                || lastSourceState[5] != sourceView.getScrollY()) {
+            recordSourceState();
+            return true;
+        }
+        return false;
+    }
+
+    private void recordSourceState() {
+        lastSourceState[0] = sourceLocation[0];
+        lastSourceState[1] = sourceLocation[1];
+        lastSourceState[2] = sourceView.getWidth();
+        lastSourceState[3] = sourceView.getHeight();
+        lastSourceState[4] = sourceView.getScrollX();
+        lastSourceState[5] = sourceView.getScrollY();
     }
 
     private void addSourcePreDrawListener() {

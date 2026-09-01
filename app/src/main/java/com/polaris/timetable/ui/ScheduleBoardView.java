@@ -144,7 +144,7 @@ public class ScheduleBoardView extends FrameLayout {
     private int overlayLeftInset;
     private float boardTouchX;
     private float boardTouchY;
-    private boolean waitingForLayout;
+    private boolean pendingRenderWhenSized;
     private int lastBoardWidth;
     private int lastRenderSignature = -1;
     private final Map<Integer, PreviewEntry> mainCache = new LinkedHashMap<>();
@@ -622,14 +622,15 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private void renderSchedule() {
-        if ((getWidth() <= 0 || getHeight() <= 0) && !waitingForLayout) {
-            waitingForLayout = true;
-            post(() -> {
-                waitingForLayout = false;
-                renderSchedule();
-            });
+        if (getWidth() <= 0 || getHeight() <= 0) {
+            // 尺寸尚未就绪：只登记待渲染，绝不轮询重试。
+            // 旧实现用零延迟 post() 自续约，尺寸一直为 0 时（空课表 / 板被隐藏）会构成
+            // 消息风暴：主线程永不 idle，Espresso.onIdle() 无限阻塞，真机上则满核烧 CPU。
+            // 尺寸就绪由 onSizeChanged 回调补渲染，无需轮询。
+            pendingRenderWhenSized = true;
             return;
         }
+        pendingRenderWhenSized = false;
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
         boolean landscape = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE;
@@ -726,7 +727,10 @@ public class ScheduleBoardView extends FrameLayout {
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
-        if (width != oldWidth) {
+        // 除宽度变化外，还需补上 renderSchedule 曾因尺寸为 0 而登记的待渲染
+        // （含仅高度由 0 变正的情形），替代原先的 post 轮询。
+        if (width != oldWidth
+                || (pendingRenderWhenSized && width > 0 && height > 0)) {
             renderSchedule();
         }
     }
