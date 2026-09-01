@@ -1,5 +1,9 @@
 # Polaris课程表 UI 重构计划
 
+> **竣工归档（2026-08-31，版本 1.15.2）**：阶段 0–6 全部完成，本文件仅作施工历史记录，**不要再据此排期**。后续 UI 与结构改进见 [`docs/iteration-plan.md`](iteration-plan.md)。
+>
+> ⚠️ **注意审计结论已部分失效**：第一节"字号大量 dp 绝对值 + AbsoluteSizeSpan 导致 fontScale 不生效"已不成立——代码现为 `spToPx()` + `TypedValue.COMPLEX_UNIT_SP`，系统字体缩放正常工作。**不要据此改字号代码。**
+
 > 制定依据:`android-viewsystem-foundations`(XML / ConstraintLayout / Fragment / ViewBinding / 生命周期归属与防泄漏)+ `android-mobile-frontend-design`(improve 模式:层级 / 节奏 / 间距 / 本地化与溢出防护 / 视觉姿态)。
 > 约束:遵守 AGENTS.md —— 原生 Android Java,不迁移 Compose/Kotlin;不一次性重构;不删除 `MainActivity.java`、`Course.java`、`ScheduleParser.java`;每轮只做一个明确任务;每次交付 APK 必须升版本。
 

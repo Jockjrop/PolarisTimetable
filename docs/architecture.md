@@ -12,61 +12,76 @@
 
 ## 2. 当前技术现状
 
-- Android Gradle 插件应用模块。
-- `compileSdk 35`，`minSdk 23`，`targetSdk 35`。
-- 依赖：`com.tom-roush:pdfbox-android:2.0.27.0`。
-- 单 Activity：`MainActivity`。
-- 模型：根包下 `Course`。
-- 解析：根包下 `ScheduleParser`。
-- UI：全部用 Java 动态创建原生 View。
-- Manifest 支持 Launcher 和 PDF VIEW intent。
+> 2026-08-31 核对，基线版本 `1.15.2`（`versionCode 11502`）。
 
-## 3. 建议目录结构
+- Android Gradle 插件应用模块，`buildFeatures.viewBinding` 已启用。
+- `compileSdk 35`，`minSdk 23`，`targetSdk 35`。
+- 主要依赖：`com.tom-roush:pdfbox-android:2.0.27.0`、`androidx.appcompat:1.7.0`、`androidx.fragment:1.8.2`、`androidx.constraintlayout:2.1.4`、`androidx.core:1.13.1`、`androidx.viewpager:1.0.0`。
+- 单 Activity：`MainActivity`（`AppCompatActivity`），8846 行，是当前最大的结构债。
+- 模型已结构化并在 `model/` 包下；根包仅保留 `Course.java`、`ScheduleParser.java` 等 6 个历史遗留文件。
+- UI 混合形态：课表网格、底栏、玻璃面板为 Java 自绘/代码构建；设置页与我的页已迁移 XML + ViewBinding + Fragment（`androidx.fragment.app.Fragment`）。
+- 测试：39 个单元测试文件（275 个用例，全绿）+ 6 个 Espresso instrumented 测试。
+- Manifest 支持 Launcher、PDF VIEW intent 与 `polaris://` 深链。
+
+## 3. 当前目录结构
+
+> 早期建议的部分类（`PdfTextExtractor`、`DayColumnDetector`、`SectionDetector`、`util/` 等）未单独落地，其职责仍内聚在 `ScheduleParser.java` 中。以下为 **2026-08-31 实际结构**。
 
 ```text
 app/src/main/java/com/polaris/timetable/
-├─ MainActivity.java
-├─ model/
-│  ├─ Course.java
-│  ├─ CourseMeeting.java
-│  ├─ Semester.java
-│  ├─ WeekRule.java
-│  ├─ ParseResult.java
-│  ├─ ParseError.java
-│  ├─ ScheduleState.java
-│  └─ UserSettings.java
-├─ parser/
-│  ├─ ScheduleParser.java
-│  ├─ PdfTextExtractor.java
-│  ├─ TextBlock.java
-│  ├─ DayColumnDetector.java
-│  ├─ SectionDetector.java
-│  ├─ CourseBlockParser.java
-│  ├─ WeekRuleParser.java
-│  ├─ CourseMerger.java
-│  └─ ParseDiagnostics.java
-├─ ui/
-│  ├─ ScheduleBoardView.java
-│  ├─ ScheduleHeaderView.java
-│  ├─ TodayOverviewView.java
-│  ├─ CourseDetailDialog.java
-│  ├─ ParseResultConfirmView.java
-│  ├─ EmptyStateView.java
-│  ├─ ErrorStateView.java
-│  └─ SettingsView.java
-├─ export/
-│  ├─ ScheduleImageExporter.java
-│  ├─ SchedulePdfExporter.java
-│  └─ ShareHelper.java
-├─ storage/
-│  ├─ ScheduleRepository.java
-│  ├─ SettingsRepository.java
-│  └─ LocalJsonStore.java
-└─ util/
-   ├─ ColorUtil.java
-   ├─ DateUtil.java
-   ├─ DimensionUtil.java
-   └─ CourseTimeUtil.java
+├─ MainActivity.java              # 编排层，8846 行 —— 当前最大结构债
+├─ Course.java                    # 历史遗留模型（受保护，不删除）
+├─ ScheduleParser.java            # 历史遗留解析入口（受保护，不删除）
+├─ CourseEditManager.java / CourseDeletionManager.java / CourseDeletionScope.java
+├─ SemesterStartDateDefaults.java
+├─ model/           # 结构化课程数据与解析结果
+│  ├─ StructuredCourse.java / CourseMeeting.java / WeekRule.java / CourseTimeMode.java
+│  ├─ CourseType.java / StudyPlan.java
+│  ├─ StableCourseId.java / StableMeetingId.java
+│  ├─ ParseResult.java / ParseError.java
+│  └─ CourseStructureMapper.java
+├─ parser/          # 解析支撑（主解析仍在根包 ScheduleParser）
+│  ├─ WeekRuleParser.java / SchoolParserModel.java
+│  ├─ ParseDiagnostics.java / ParseDiagnosticsReport.java
+│  └─ SemesterTextExtractor.java
+├─ time/            # 节次时间轴与课程时间解析
+│  └─ CourseTimeResolver.java / ScheduleTimeAxis.java
+├─ storage/         # 本地持久化与备份
+│  ├─ ScheduleRepository.java / PlanRepository.java
+│  ├─ ScheduleStorageSchema.java / ScheduleBackupManager.java
+├─ importer/        # 导入编排与审阅
+│  ├─ PdfImportCoordinator.java / ImportReviewSummary.java
+│  ├─ ScheduleImportPreviewData.java / ScheduleImportConfirmation.java
+│  └─ ai/           # AI 识别导入（Polaris Schedule JSON v1）
+│     ├─ AiScheduleImportWorkflow.java / AiScheduleJsonParser.java
+│     ├─ AiScheduleImportMapper.java / AiScheduleValidator.java
+│     ├─ AiScheduleTextExtractor.java / AiImportIssue*.java
+│     └─ PolarisAiPromptV1.java / AiExternalImportReturnController.java
+├─ export/          # 图片 / PDF / iCal 导出
+│  ├─ ScheduleImageExporter.java / SchedulePdfExporter.java / SemesterPdfExporter.java
+│  ├─ ScheduleCalendarExporter.java / SchedulePdfPagination.java
+│  └─ ScheduleExportLayout.java / ExportFileProvider.java
+├─ sharing/         # 课表分享与深链编解码
+│  └─ ScheduleShareCodec.java / ScheduleShareFile.java
+├─ reminder/        # 课前 / 计划到期提醒
+│  ├─ CourseReminderScheduler.java / CourseReminderPlanner.java
+│  ├─ PlanReminderScheduler.java / CourseReminderPopup.java
+│  └─ CourseReminderReceiver.java / PlanReminderReceiver.java
+├─ statistics/      # 课时 / 学分 / 教师分布统计
+│  └─ ScheduleStatistics.java
+├─ validation/      # 课程冲突检测
+│  └─ CourseConflictDetector.java
+├─ widget/          # 桌面小部件
+│  ├─ ScheduleWidgetProvider.java / ScheduleWidgetService.java
+│  └─ ScheduleWidgetData.java / ScheduleWidgetEntry.java / ScheduleWidgetTimeFormatter.java
+└─ ui/              # 界面层
+   ├─ ScheduleBoardView.java (2135) / TodayOverviewView.java / CourseConflictSummaryView.java
+   ├─ CourseEditorDialog.java (1436) / CourseDetailDialog.java
+   ├─ PolarisVisualTheme.java / DesignTokens.java / WindowSizeClass.java
+   ├─ BackdropBlurView.java / PolarisThemeBackgroundView.java / BackgroundCropView.java
+   ├─ dialog/  GlassDialogFactory.java / DialogWindowHelper.java
+   ├─ page/    MyPageBuilder.java / SettingsPageBuilder.java + 对应 Fragment
+   └─ shell/   BottomNavView.java
 ```
 
 ## 4. 模块职责
@@ -188,6 +203,8 @@ app/src/main/java/com/polaris/timetable/
 - 直接生成导出文件。
 
 ## 6. 分阶段迁移策略
+
+> **2026-08-31 核对：第一至第五阶段均已完成**（截至 `1.15.2`）。parser 支撑组件、UI 拆分、storage、export 与提醒都已落地，本节保留为演进记录。当前待办以 [`docs/iteration-plan.md`](iteration-plan.md) 为准。
 
 ### 第一阶段
 
