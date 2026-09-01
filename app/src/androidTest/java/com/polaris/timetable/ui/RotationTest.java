@@ -23,6 +23,7 @@ import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
+import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 
 /**
  * 旋转测试:横竖屏切换触发 onConfigurationChanged → rebuildLayout() 全量重建,
@@ -66,8 +67,8 @@ public class RotationTest {
         Espresso.onIdle();
         // 横屏重建后核心 UI 完整
         onView(withContentDescription("导入课表")).check(matches(isDisplayed()));
-        onView(withText("课表")).check(matches(isDisplayed()));
-        onView(withText("我的")).check(matches(isDisplayed()));
+        onView(withNavLabel("课表")).check(matches(isDisplayed()));
+        onView(withNavLabel("我的")).check(matches(isDisplayed()));
     }
 
     @Test
@@ -81,7 +82,7 @@ public class RotationTest {
         Espresso.onIdle();
         // 竖屏恢复后核心 UI 完整
         onView(withContentDescription("导入课表")).check(matches(isDisplayed()));
-        onView(withText("计划")).check(matches(isDisplayed()));
-        onView(withText("我的")).check(matches(isDisplayed()));
+        onView(withNavLabel("计划")).check(matches(isDisplayed()));
+        onView(withNavLabel("我的")).check(matches(isDisplayed()));
     }
 }

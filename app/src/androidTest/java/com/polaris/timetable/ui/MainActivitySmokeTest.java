@@ -21,6 +21,7 @@ import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
+import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 
 /**
  * 冒烟测试:App 冷启动后,空状态界面与底部导航必须完整呈现。
@@ -66,8 +67,8 @@ public class MainActivitySmokeTest {
     public void bottomNav_showsThreeTabs() {
         launch();
         // 手机竖屏底部导航:课表 / 计划 / 我的 三 tab
-        onView(withText("课表")).check(matches(isDisplayed()));
-        onView(withText("计划")).check(matches(isDisplayed()));
-        onView(withText("我的")).check(matches(isDisplayed()));
+        onView(withNavLabel("课表")).check(matches(isDisplayed()));
+        onView(withNavLabel("计划")).check(matches(isDisplayed()));
+        onView(withNavLabel("我的")).check(matches(isDisplayed()));
     }
 }

@@ -29,6 +29,7 @@ import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withClassName;
 import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.endsWith;
 
@@ -75,14 +76,14 @@ public class ScheduleBoardRenderTest {
     public void seededCourse_rendersOnBoard() {
         launch();
         // 课程块 contentDescription 包含课程名
-        onView(withContentDescription(containsString("高等数学A")))
+        onView(allOf(withContentDescription(containsString("高等数学A")), isDisplayed()))
                 .check(matches(isDisplayed()));
     }
 
     @Test
     public void swipeRight_switchesWeekAndShowsReturnButton() {
         launch();
-        onView(withContentDescription(containsString("高等数学A")))
+        onView(allOf(withContentDescription(containsString("高等数学A")), isDisplayed()))
                 .check(matches(isDisplayed()));
         // 当前周为学期末(20),向左滑会越界;向右滑切到上一周(19)
         onView(withClassName(endsWith("ScheduleBoardView")))
@@ -92,7 +93,7 @@ public class ScheduleBoardRenderTest {
         onView(withContentDescription("回到本周"))
                 .check(matches(isDisplayed()));
         // 课程仍在(课程覆盖 1-20 周)
-        onView(withContentDescription(containsString("高等数学A")))
+        onView(allOf(withContentDescription(containsString("高等数学A")), isDisplayed()))
                 .check(matches(isDisplayed()));
     }
 }

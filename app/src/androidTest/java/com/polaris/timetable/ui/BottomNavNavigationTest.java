@@ -23,6 +23,7 @@ import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
+import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 
 /**
  * 底部导航测试:手机竖屏三 tab(课表/计划/我的)切换后对应页面正确呈现。
@@ -60,7 +61,7 @@ public class BottomNavNavigationTest {
     @Test
     public void tapMy_thenMyPageVisible() {
         launch();
-        onView(withText("我的")).perform(click());
+        onView(withNavLabel("我的")).perform(click());
         Espresso.onIdle();
         // 我的页至少呈现一个入口卡片(课表设置)
         onView(withText("课表设置")).check(matches(isDisplayed()));
@@ -69,7 +70,7 @@ public class BottomNavNavigationTest {
     @Test
     public void tapPlan_thenPlanPageVisible() {
         launch();
-        onView(withText("计划")).perform(click());
+        onView(withNavLabel("计划")).perform(click());
         Espresso.onIdle();
         // 计划页呈现「新建计划」按钮(空状态时提示文字也可见)
         onView(withText("＋ 新建计划")).check(matches(isDisplayed()));
@@ -78,9 +79,9 @@ public class BottomNavNavigationTest {
     @Test
     public void tabRoundTrip_returnsToSchedule() {
         launch();
-        onView(withText("我的")).perform(click());
+        onView(withNavLabel("我的")).perform(click());
         Espresso.onIdle();
-        onView(withText("课表")).perform(click());
+        onView(withNavLabel("课表")).perform(click());
         Espresso.onIdle();
         // 回到课表后,空课表导入按钮重新可见
         onView(withContentDescription("导入课表")).check(matches(isDisplayed()));

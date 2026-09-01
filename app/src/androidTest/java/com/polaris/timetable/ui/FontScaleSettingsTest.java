@@ -23,6 +23,7 @@ import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
+import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 
 /**
  * 字号 1.3x 下设置页渲染测试:模拟系统字体设为 1.3x 后,
@@ -67,7 +68,7 @@ public class FontScaleSettingsTest {
     public void settingsPageAtFontScale13_rendersWithoutCrash() {
         launch();
         // 导航到我的页
-        onView(withText("我的")).perform(click());
+        onView(withNavLabel("我的")).perform(click());
         Espresso.onIdle();
         // 我的页卡片「课表设置」可见(≈dp 缩放后卡片应完整显示)
         onView(withText("课表设置")).check(matches(isDisplayed()));
