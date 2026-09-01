@@ -27,12 +27,12 @@ public class BackdropBlurView extends FrameLayout {
     private final Path clipPath = new Path();
 
     private View sourceView;
-    // 源视图上一次采样时的几何/滚动状态：{left, top, width, height, scrollX, scrollY}
-    private final int[] lastSourceState = new int[6];
+    // 源视图子树上一次采样时的内容签名（自身几何 + 各层滚动位置 + 子节点数）
+    private long lastSourceSignature;
     private boolean hasLastSourceState;
     private final ViewTreeObserver.OnPreDrawListener sourcePreDrawListener =
             () -> {
-                // 仅在源视图几何或滚动状态真的变化时刷新背景采样。
+                // 仅在源视图子树的内容签名真的变化时刷新背景采样。
                 // 无条件 invalidate 会与本视图自己的绘制请求构成 preDraw→invalidate→
                 // preDraw 自激环，使画面完全静止时仍以 60fps 持续重绘：既白烧 GPU/电量，
                 // 又让主线程永不 idle（Espresso.onIdle() 因此无限阻塞，见 CI 记录）。
@@ -213,42 +213,50 @@ public class BackdropBlurView extends FrameLayout {
     }
 
     /**
-     * 源视图是否需要重新采样：几何（位置/尺寸）或滚动状态发生变化。
-     * 变化后更新缓存并返回 true；无变化返回 false，用于断开 preDraw 自激环。
+     * 源视图子树是否需要重新采样。
      *
-     * 已知权衡：源视图「仅内容重绘、几何与滚动不变」时不会被判定为变化，
-     * 模糊背景会滞后一帧。该层是 0.24x 降采样 + 半透明面板下的装饰性模糊，
-     * 此代价显著低于静止时持续 60fps 重绘的电量开销，故接受该取舍。
+     * 关键点：顶栏/底栏的模糊源是整个 {@code contentHost} 容器，它自身的几何与
+     * scrollY 永不变化——真正在动的是它内部的 ScrollView / ViewPager。只比对源视图
+     * 自身状态会漏掉「课表纵向滚动」「周次横滑」这类最常见的背景变化，导致顶栏玻璃
+     * 长期定格在首帧（实测顶栏 changed% = 0.00）。
+     *
+     * 因此这里递归遍历源视图子树，把每层的 scrollX/scrollY、可见性、几何尺寸与子节点数
+     * 折进一个 64 位签名；任一层滚动或结构变化都会改变签名，从而触发重采样。
+     * 仍然不响应「纯像素级重绘」（如 Canvas 自绘动画帧），以此保留静止时零重绘的收益。
      */
     private boolean sourceStateChanged() {
         if (sourceView == null) {
             return false;
         }
-        sourceView.getLocationOnScreen(sourceLocation);
-        if (!hasLastSourceState) {
+        long signature = subtreeSignature(sourceView, 0);
+        if (!hasLastSourceState || signature != lastSourceSignature) {
             hasLastSourceState = true;
-            recordSourceState();
-            return true;
-        }
-        if (lastSourceState[0] != sourceLocation[0]
-                || lastSourceState[1] != sourceLocation[1]
-                || lastSourceState[2] != sourceView.getWidth()
-                || lastSourceState[3] != sourceView.getHeight()
-                || lastSourceState[4] != sourceView.getScrollX()
-                || lastSourceState[5] != sourceView.getScrollY()) {
-            recordSourceState();
+            lastSourceSignature = signature;
             return true;
         }
         return false;
     }
 
-    private void recordSourceState() {
-        lastSourceState[0] = sourceLocation[0];
-        lastSourceState[1] = sourceLocation[1];
-        lastSourceState[2] = sourceView.getWidth();
-        lastSourceState[3] = sourceView.getHeight();
-        lastSourceState[4] = sourceView.getScrollX();
-        lastSourceState[5] = sourceView.getScrollY();
+    /** 递归折算子树内容签名；限制深度避免深层级布局带来的遍历成本。 */
+    private long subtreeSignature(View view, int depth) {
+        long hash = 31L * view.getScrollX() + 131L * view.getScrollY()
+                + 17L * view.getWidth() + 19L * view.getHeight()
+                + 7L * view.getVisibility();
+        if (depth >= 6 || !(view instanceof android.view.ViewGroup)) {
+            return hash;
+        }
+        android.view.ViewGroup group = (android.view.ViewGroup) view;
+        int count = group.getChildCount();
+        hash = hash * 33L + count;
+        for (int i = 0; i < count; i++) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() == GONE) {
+                continue;
+            }
+            hash = hash * 1000003L + subtreeSignature(child, depth + 1)
+                    + 3L * child.getLeft() + 5L * child.getTop();
+        }
+        return hash;
     }
 
     private void addSourcePreDrawListener() {
