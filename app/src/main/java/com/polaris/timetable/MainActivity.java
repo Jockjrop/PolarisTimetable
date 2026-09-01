@@ -89,6 +89,9 @@ import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.StudyPlan;
 import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.parser.ParseDiagnosticsReport;
+import com.polaris.timetable.DialogKit.BooleanSetter;
+import com.polaris.timetable.DialogKit.IntSetter;
+import com.polaris.timetable.DialogKit.StringSetter;
 import com.polaris.timetable.reminder.CourseReminderScheduler;
 import com.polaris.timetable.reminder.PlanReminderScheduler;
 import com.polaris.timetable.sharing.ScheduleShareCodec;
@@ -140,13 +143,7 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host {
     private static final String TAG = "MainActivity";
-    private interface BooleanSetter {
-        void set(boolean value);
-    }
 
-    private interface StringSetter {
-        void set(String value);
-    }
 
     private static final class ImportDestination {
         final String scheduleId;
@@ -201,14 +198,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private final AiExternalImportReturnController aiExternalImportReturnController =
             new AiExternalImportReturnController();
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
-    private ScheduleRepository scheduleRepository;
+    ScheduleRepository scheduleRepository;
     private PlanRepository planRepository;
     private final List<StudyPlan> studyPlans = new ArrayList<>();
     private LinearLayout planListContainer;
     private PdfImportCoordinator importCoordinator;
     private ScheduleBoardView scheduleBoard;
     private FrameLayout contentHost;
-    private FrameLayout rootView;
+    FrameLayout rootView;
     private PolarisThemeBackgroundView themeBackgroundView;
     private FrameLayout topPanelContainer;
     private LinearLayout topPanel;
@@ -245,12 +242,20 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private LinearLayout planManageHeader;
     /** 新建计划按钮（手机=计划页按钮，平板=管理浮层按钮；主题切换时刷新底色）。 */
     private TextView planAddButton;
-    private int currentWeek = 18;
-    private int visibleDayCount = 7;
+    int currentWeek = 18;
+    int visibleDayCount = 7;
+    private final CourseScheduleDialogs scheduleDialogs = new CourseScheduleDialogs(this);
+    private final AppearanceDialogs appearanceDialogs = new AppearanceDialogs(this);
+    private final ReminderDialogs reminderDialogs = new ReminderDialogs(this);
+
+    boolean isImportLink(Uri uri) {
+        return ScheduleShareCodec.isImportLink(uri);
+    }
+
     private int activeTab = 0;
-    private String semesterName = "";
-    private String schoolName = "";
-    private String scheduleName = "默认课表";
+    String semesterName = "";
+    String schoolName = "";
+    String scheduleName = "默认课表";
     private String classTimeConfig = "08:00 开始";
     private String firstClassStartTime = "08:00";
     private int classDurationMinutes = 50;
@@ -258,9 +263,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private int classBigBreakMinutes = 30;
     private String afternoonStartTime = "14:30";
     private String lateAfternoonStartTime = "16:35";
-    private String firstWeekDay = "2026/3/3";
+    String firstWeekDay = "2026/3/3";
     private int courseSectionCount = 11;
-    private int semesterWeeks = 20;
+    int semesterWeeks = 20;
     private boolean remindersEnabled = false;
     private int reminderMinutesBefore = 15;
     private boolean showSaturday = false;
@@ -286,9 +291,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private int builtLeftInset = 0;
     private int builtRightInset = 0;
     private boolean insetsRebuildPending = false;
-    private boolean shellBarsBlurEnabled = true;
+    boolean shellBarsBlurEnabled = true;
     private String timetableBackground = "清爽蓝";
-    private String visualTheme = PolarisVisualTheme.MINIMAL;
+    String visualTheme = PolarisVisualTheme.MINIMAL;
     private String backgroundImageUri = "";
     private BackgroundImageCrop backgroundImageCrop = BackgroundImageCrop.full();
     private String accountName = "管理员";
@@ -304,9 +309,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private String currentSubtitle = "2026/7/1";
     private String activeSettingsTitle = "";
     private String previousSettingsTitle = "";
-    private String activeScheduleId = "default";
+    String activeScheduleId = "default";
     private boolean suppressSettingsPageAnimation = false;
-    private SchoolParserModel selectedParserModel;
+    SchoolParserModel selectedParserModel;
     private boolean collapseXautMiddleSections = false;
     private static final Pattern CLASS_TIME_LINE_PATTERN = Pattern.compile(
             "^(?:第?(\\d{1,2})\\s*节?\\s*[.、．:：]?\\s*)?"
@@ -318,8 +323,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private LinearLayout courseManageActionBar;
     private TextView courseManageSelectionCount;
     private boolean courseManageSelectionMode;
-    private final Set<String> courseManageSelectedIds = new HashSet<>();
-    private static final String[] BATCH_COLOR_VALUES = {
+    final Set<String> courseManageSelectedIds = new HashSet<>();
+    static final String[] BATCH_COLOR_VALUES = {
             "#4FA4F3", "#5AC8A6", "#F3A14F", "#E56A6A",
             "#9B7EDE", "#4FC3E0", "#7CB342", "#E57373",
             "#F06292", "#90A4AE"
@@ -327,10 +332,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private View backgroundSettingRow;
     private View appearancePresetSettingRow;
     private boolean bottomNavHidden;
-    private boolean scheduleExportInProgress;
+    boolean scheduleExportInProgress;
     private boolean pdfImportInProgress;
     private String lastParseDiagnosticsSummary = "暂无导入记录";
-    private String lastParseDiagnosticsText = "";
+    String lastParseDiagnosticsText = "";
     private int bottomNavScrollAccumulator;
     private boolean weekSwipeHintScheduled;
     private View weekSwipeHintView;
@@ -712,7 +717,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private void openPdfPicker() {
         if (selectedParserModel == null) {
-            showParserModelDialog(this::launchPdfPicker);
+            scheduleDialogs.showParserModelDialog(this::launchPdfPicker);
             return;
         }
         launchPdfPicker();
@@ -731,9 +736,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         TextView instruction = new TextView(this);
         instruction.setText(getString(R.string.import_ai_instruction));
-                
-                
-                
+
+
         instruction.setTextColor(mutedColor());
         instruction.setTextSize(14);
         instruction.setLineSpacing(dp(3), 1f);
@@ -927,7 +931,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void pasteAiTextFromClipboard(EditText input, TextView errorView) {
+    void pasteAiTextFromClipboard(EditText input, TextView errorView) {
         String text = readClipboardText();
         if (text.trim().isEmpty()) {
             Toast.makeText(this, getString(R.string.import_clipboard_empty), Toast.LENGTH_SHORT).show();
@@ -1029,8 +1033,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                                 preview.meetingCount()),
                         getString(R.string.import_ai_detail, courseCount,
                                 /* 协议与写入说明在资源内 */
-                                
-                                
+
+
                                 preview.meetingCount()),
                         getString(R.string.import_ai_success_toast, courseCount));
             });
@@ -1193,7 +1197,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private void startPdfImportFlow(Uri uri) {
         if (selectedParserModel == null) {
-            showParserModelDialog(() -> startPdfImportFlow(uri));
+            scheduleDialogs.showParserModelDialog(() -> startPdfImportFlow(uri));
             return;
         }
         if (courses.isEmpty()) {
@@ -1429,7 +1433,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
 
         if (lastParseDiagnosticsText.length() > 0) {
-            panel.addView(dialogAction(getString(R.string.import_review_diagnostics), v -> showParseDiagnosticsDialog()));
+            panel.addView(dialogAction(getString(R.string.import_review_diagnostics), v -> scheduleDialogs.showParseDiagnosticsDialog()));
         }
         if (review.canImport()) {
             String confirmText = destination.createNewSchedule
@@ -1527,7 +1531,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateHeader();
         renderSchedule();
         updateEmptyScheduleView();
-        showImportedFirstWeekDayDialog();
+        scheduleDialogs.showImportedFirstWeekDayDialog();
     }
 
     private String parseSubtitle(ParseResult result) {
@@ -1572,7 +1576,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateReturnCurrentWeekAction();
     }
 
-    private void renderSchedule() {
+    void renderSchedule() {
         if (scheduleBoard != null) {
             boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
             scheduleBoard.setWeekBounds(1, semesterWeeks);
@@ -2168,7 +2172,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private String dayText(int day) {
-        
+
         return day >= 0 && day < WeekdayLabels.count() ? WeekdayLabels.label(this, day)
                 : getString(R.string.weekday_undetermined);
     }
@@ -2237,80 +2241,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return layer;
     }
 
-    private void showParserModelDialog() {
-        showParserModelDialog(null);
-    }
 
-    private void showParserModelDialog(Runnable onSelected) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.import_school_chooser_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.school_picker_message));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        panel.addView(message);
-        for (SchoolParserModel model : SchoolParserModel.values()) {
-            panel.addView(dialogAction(model.label, v -> {
-                selectedParserModel = model;
-                schoolName = model.label;
-                applySchoolTimeDefaults(model);
-                saveConfig();
-                renderSchedule();
-                dialog.dismiss();
-                refreshActiveSettingsPage();
-                refreshMyPage();
-                if (onSelected != null) {
-                    onSelected.run();
-                }
-            }));
-        }
-        panel.addView(dialogAction(getString(R.string.school_custom_action), v -> {
-            dialog.dismiss();
-            showCustomSchoolDialog(onSelected);
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void showCustomSchoolDialog(Runnable onSelected) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.school_custom_title));
-        EditText schoolInput = input(getString(R.string.school_custom_hint_input), "");
-        schoolInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(48)});
-        panel.addView(schoolInput);
-        TextView hint = new TextView(this);
-        hint.setText(getString(R.string.school_custom_hint));
-        hint.setTextColor(mutedColor());
-        hint.setTextSize(13);
-        hint.setLineSpacing(dp(3), 1f);
-        panel.addView(hint);
-        panel.addView(pageSaveButton(() -> {
-            String value = schoolInput.getText().toString().trim();
-            if (value.length() == 0) {
-                Toast.makeText(this, getString(R.string.school_error_empty), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            selectedParserModel = null;
-            schoolName = value;
-            saveConfig();
-            renderSchedule();
-            dialog.dismiss();
-            refreshActiveSettingsPage();
-            refreshMyPage();
-            showClassTimeTableEditor(onSelected);
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void showClassTimeTableEditor() {
+    void showClassTimeTableEditor() {
         showClassTimeTableEditor(null);
     }
 
-    private void showClassTimeTableEditor(final Runnable onClosed) {
+    void showClassTimeTableEditor(final Runnable onClosed) {
         Dialog dialog = new Dialog(this);
         LinearLayout panel = dialogPanel(getString(R.string.classtime_title));
         TextView hint = new TextView(this);
@@ -2336,7 +2272,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        TextView example = compactDialogAction(getString(R.string.classtime_fill_example), v -> showChoiceDialog(v, getString(R.string.classtime_fill_example_title),
+        TextView example = compactDialogAction(getString(R.string.classtime_fill_example), v -> appearanceDialogs.showChoiceDialog(v, getString(R.string.classtime_fill_example_title),
                 new String[]{SchoolParserModel.XUPT.label,
                         SchoolParserModel.XAUT.label, SchoolParserModel.HDU.label},
                 "", value -> {
@@ -2350,7 +2286,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     }
                 }));
         TextView paste = compactDialogAction(getString(R.string.classtime_paste_action), v ->
-                showClassTimePasteDialog(rows, rowsContainer, dialog, scroll));
+                scheduleDialogs.showClassTimePasteDialog(rows, rowsContainer, dialog, scroll));
         TextView addRow = compactDialogAction(getString(R.string.classtime_add_row), v -> {
             rows.add(nextClassTimeRow(rows));
             renderClassTimeRows(rowsContainer, rows, dialog, scroll, true);
@@ -2379,55 +2315,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         transparentDialog(dialog);
     }
 
-    private void showClassTimePasteDialog(final List<int[]> rows,
-                                          final LinearLayout rowsContainer,
-                                          final Dialog owner, final ScrollView scroll) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.classtime_paste_title));
-        TextView hint = new TextView(this);
-        hint.setText(getString(R.string.classtime_paste_hint));
-        hint.setTextColor(mutedColor());
-        hint.setTextSize(13);
-        hint.setLineSpacing(dp(3), 1f);
-        panel.addView(hint);
 
-        EditText textInput = new EditText(this);
-        textInput.setHint(getString(R.string.classtime_paste_input_hint));
-        textInput.setHintTextColor(mutedColor());
-        textInput.setTextColor(inkColor());
-        textInput.setTextSize(15);
-        textInput.setGravity(Gravity.TOP | Gravity.START);
-        textInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        textInput.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH));
-        inputParams.topMargin = dp(8);
-        panel.addView(textInput, inputParams);
-
-        TextView apply = dialogAction(getString(R.string.classtime_parse_apply), v -> {
-            List<int[]> parsed = parseClassTimeText(textInput.getText().toString());
-            if (parsed.isEmpty()) {
-                Toast.makeText(this,
-                        getString(R.string.classtime_paste_no_rows), Toast.LENGTH_LONG).show();
-                return;
-            }
-            rows.clear();
-            rows.addAll(parsed);
-            renderClassTimeRows(rowsContainer, rows, owner, scroll, true);
-            dialog.dismiss();
-            Toast.makeText(this, getString(R.string.classtime_paste_done, parsed.size()),
-                    Toast.LENGTH_SHORT).show();
-        });
-        apply.setTextColor(Color.WHITE);
-        apply.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
-        panel.addView(apply);
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void renderClassTimeRows(LinearLayout container, List<int[]> rows,
+    void renderClassTimeRows(LinearLayout container, List<int[]> rows,
                                      Dialog owner, ScrollView scroll, boolean scrollToBottom) {
         container.removeAllViews();
         for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
@@ -2445,7 +2334,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             row.addView(label, new LinearLayout.LayoutParams(dp(54), dp(42)));
 
             TextView startPill = classTimePill(timeTextMinute(rows.get(index)[0]), v ->
-                    showTimeDialog(getString(R.string.classtime_section_start_title, index + 1),
+                    appearanceDialogs.showTimeDialog(getString(R.string.classtime_section_start_title, index + 1),
                             timeTextMinute(rows.get(index)[0]), value -> {
                                 rows.get(index)[0] = minutesFromTimeText(value);
                                 renderClassTimeRows(container, rows, owner, scroll, false);
@@ -2460,7 +2349,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             row.addView(dash, new LinearLayout.LayoutParams(dp(22), dp(42)));
 
             TextView endPill = classTimePill(timeTextMinute(rows.get(index)[1]), v ->
-                    showTimeDialog(getString(R.string.classtime_section_end_title, index + 1),
+                    appearanceDialogs.showTimeDialog(getString(R.string.classtime_section_end_title, index + 1),
                             timeTextMinute(rows.get(index)[1]), value -> {
                                 rows.get(index)[1] = minutesFromTimeText(value);
                                 renderClassTimeRows(container, rows, owner, scroll, false);
@@ -2516,7 +2405,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return item;
     }
 
-    private List<int[]> parseClassTimeText(String text) {
+    List<int[]> parseClassTimeText(String text) {
         Map<Integer, int[]> bySection = new LinkedHashMap<>();
         int sequential = 1;
         if (text != null) {
@@ -2677,7 +2566,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return twoDigits(bounded / 60) + ":" + twoDigits(bounded % 60);
     }
 
-    private void applySchoolTimeDefaults(SchoolParserModel model) {
+    void applySchoolTimeDefaults(SchoolParserModel model) {
         if (model == null) {
             return;
         }
@@ -3088,7 +2977,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         returnCurrentWeekButton.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
-    private void scheduleWeekSwipeHintIfNeeded() {
+    void scheduleWeekSwipeHintIfNeeded() {
         if (weekSwipeHintScheduled || weekSwipeHintView != null || courseSaveUndoView != null
                 || rootView == null
                 || activeTab != 0 || courses.isEmpty()
@@ -3288,7 +3177,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }));
         panel.addView(popupMenuAction(getString(R.string.export_dialog_title), v -> {
             popup.dismiss();
-            showWeekExportDialog();
+            scheduleDialogs.showWeekExportDialog();
         }));
         popup.setContentView(glassDialogContent(
                 panel, 18, ACTION_PANEL_OPACITY_PERCENT));
@@ -3410,7 +3299,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         try (InputStream input = getContentResolver().openInputStream(uri)) {
             ScheduleBackupManager.BackupBundle bundle =
                     ScheduleBackupManager.read(input);
-            showBackupRestoreConfirmDialog(bundle);
+            scheduleDialogs.showBackupRestoreConfirmDialog(bundle);
         } catch (Exception exception) {
             String reason = exception.getMessage() == null
                     ? getString(R.string.backup_read_unknown) : exception.getMessage();
@@ -3419,41 +3308,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void showBackupRestoreConfirmDialog(ScheduleBackupManager.BackupBundle bundle) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.settings_row_restore_backup));
-        ScheduleBackupManager.BackupSummary summary =
-                ScheduleBackupManager.summaryOf(bundle);
-        TextView message = new TextView(this);
-        String sourceVersion = summary.appVersion.length() == 0
-                ? getString(R.string.backup_version_unknown) : "v" + summary.appVersion;
-        message.setText(getString(R.string.backup_confirm_message, summary.createdAt,
-                sourceVersion,
-                summary.scheduleCount,
-                summary.courseCount));
-                
-                
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        messageParams.setMargins(0, 0, 0, dp(8));
-        panel.addView(message, messageParams);
-        TextView confirm = dialogAction(getString(R.string.backup_confirm_action), v -> {
-            dialog.dismiss();
-            applyBackupRestore(bundle);
-        });
-        confirm.setTextColor(Color.WHITE);
-        confirm.setBackground(roundedBg(primaryActionFillHex(), DesignTokens.RADIUS_CARD));
-        panel.addView(confirm);
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private void applyBackupRestore(ScheduleBackupManager.BackupBundle bundle) {
+    void applyBackupRestore(ScheduleBackupManager.BackupBundle bundle) {
         int restoredCourseCount;
         try {
             ScheduleBackupManager.restoreTo(scheduleRepository, bundle);
@@ -3494,82 +3350,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void showWeekExportDialog() {
-        if (scheduleExportInProgress) {
-            Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
-            return;
-        }
-        int maxWeek = Math.max(1, semesterWeeks);
-        final int[] selectedWeek = {
-                Math.max(1, Math.min(maxWeek, currentWeek))
-        };
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.export_dialog_title));
 
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.export_dialog_message));
-        message.setTextColor(mutedColor());
-        message.setTextSize(14);
-        message.setPadding(0, 0, 0, dp(8));
-        panel.addView(message);
-
-        EditText weekInput = stepInput(String.valueOf(selectedWeek[0]));
-        weekInput.setContentDescription(getString(R.string.export_cd_week));
-        LinearLayout weekRow = new LinearLayout(this);
-        weekRow.setOrientation(LinearLayout.HORIZONTAL);
-        weekRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView minus = stepButton("−");
-        TextView plus = stepButton("+");
-        minus.setContentDescription(getString(R.string.export_cd_prev_week));
-        plus.setContentDescription(getString(R.string.export_cd_next_week));
-        minus.setOnClickListener(v -> {
-            selectedWeek[0] = Math.max(1, parseBounded(
-                    weekInput.getText().toString(), 1, maxWeek, selectedWeek[0]) - 1);
-            weekInput.setText(String.valueOf(selectedWeek[0]));
-            weekInput.setSelection(weekInput.getText().length());
-        });
-        plus.setOnClickListener(v -> {
-            selectedWeek[0] = Math.min(maxWeek, parseBounded(
-                    weekInput.getText().toString(), 1, maxWeek, selectedWeek[0]) + 1);
-            weekInput.setText(String.valueOf(selectedWeek[0]));
-            weekInput.setSelection(weekInput.getText().length());
-        });
-        weekRow.addView(minus);
-        weekRow.addView(weekInput, new LinearLayout.LayoutParams(0, dp(46), 1f));
-        weekRow.addView(plus);
-        panel.addView(weekRow);
-
-        panel.addView(dialogAction(getString(R.string.export_action_week_image), v -> {
-            int week = parseBounded(weekInput.getText().toString(),
-                    1, maxWeek, selectedWeek[0]);
-            dialog.dismiss();
-            exportWeekImage(week);
-        }));
-        panel.addView(dialogAction(getString(R.string.export_action_week_pdf), v -> {
-            int week = parseBounded(weekInput.getText().toString(),
-                    1, maxWeek, selectedWeek[0]);
-            dialog.dismiss();
-            exportWeekPdf(week);
-        }));
-        panel.addView(dialogAction(getString(R.string.export_action_semester_pdf), v -> {
-            dialog.dismiss();
-            exportSemesterPdf();
-        }));
-        panel.addView(dialogAction(getString(R.string.export_action_ics), v -> {
-            dialog.dismiss();
-            exportICal();
-        }));
-        panel.addView(dialogAction(getString(R.string.export_action_csv), v -> {
-            dialog.dismiss();
-            exportCsv();
-        }));
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void exportWeekImage(int week) {
+    void exportWeekImage(int week) {
         if (scheduleExportInProgress) {
             Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
@@ -3619,7 +3401,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 firstWeekStartMillis());
     }
 
-    private void exportWeekPdf(int week) {
+    void exportWeekPdf(int week) {
         if (scheduleExportInProgress) {
             Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
@@ -3654,7 +3436,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void exportSemesterPdf() {
+    void exportSemesterPdf() {
         if (scheduleExportInProgress) {
             Toast.makeText(this, getString(R.string.export_busy), Toast.LENGTH_SHORT).show();
             return;
@@ -3750,7 +3532,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void exportICal() {
+    void exportICal() {
         if (structuredCourses.isEmpty()) {
             Toast.makeText(this, getString(R.string.export_semester_empty),
                     Toast.LENGTH_LONG).show();
@@ -3769,7 +3551,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void exportCsv() {
+    void exportCsv() {
         if (structuredCourses.isEmpty()) {
             Toast.makeText(this, getString(R.string.export_semester_empty),
                     Toast.LENGTH_LONG).show();
@@ -3855,37 +3637,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void showSharedLinkInputDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.shared_link_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.shared_link_message));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        panel.addView(message);
-        EditText linkInput = input("polaris://schedule/import?payload=...", "");
-        panel.addView(linkInput);
-        panel.addView(pageSaveButton(() -> {
-            String link = extractSharedScheduleLink(linkInput.getText().toString());
-            if (link.length() == 0) {
-                Toast.makeText(this, getString(R.string.shared_link_empty), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            Uri uri = Uri.parse(link);
-            if (!ScheduleShareCodec.isImportLink(uri)) {
-                Toast.makeText(this, getString(R.string.shared_link_invalid), Toast.LENGTH_LONG).show();
-                return;
-            }
-            dialog.dismiss();
-            startSharedScheduleImportFlow(uri);
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private String extractSharedScheduleLink(String text) {
+    String extractSharedScheduleLink(String text) {
         if (text == null) {
             return "";
         }
@@ -3907,7 +3660,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return text.substring(start, end).trim();
     }
 
-    private void startSharedScheduleImportFlow(Uri uri) {
+    void startSharedScheduleImportFlow(Uri uri) {
         try {
             List<Course> sharedCourses = ScheduleShareCodec.decodeLink(uri);
             if (sharedCourses.isEmpty()) {
@@ -3915,57 +3668,17 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 return;
             }
             if (courses.isEmpty()) {
-                showSharedImportNameDialog(sharedCourses);
+                scheduleDialogs.showSharedImportNameDialog(sharedCourses);
                 return;
             }
-            showSharedImportOverwriteDialog(sharedCourses);
+            scheduleDialogs.showSharedImportOverwriteDialog(sharedCourses);
         } catch (Exception exception) {
             Toast.makeText(this, getString(R.string.shared_link_invalid_toast, exception.getMessage()), Toast.LENGTH_LONG).show();
         }
     }
 
-    private void showSharedImportOverwriteDialog(List<Course> sharedCourses) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.shared_import_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.shared_import_message, sharedCourses.size()));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        messageParams.setMargins(0, 0, 0, dp(8));
-        panel.addView(message, messageParams);
-        panel.addView(dialogAction(getString(R.string.import_confirm_short), v -> {
-            dialog.dismiss();
-            showSharedImportNameDialog(sharedCourses);
-        }));
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private void showSharedImportNameDialog(List<Course> sharedCourses) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.import_name_title));
-        EditText nameInput = input(getString(R.string.settings_row_schedule_name), scheduleName.length() == 0 ? "分享课表" : scheduleName);
-        panel.addView(nameInput);
-        panel.addView(pageSaveButton(() -> {
-            String name = nameInput.getText().toString().trim();
-            if (name.length() == 0) {
-                Toast.makeText(this, getString(R.string.import_error_name_empty), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            dialog.dismiss();
-            applySharedCourses(sharedCourses, name);
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void applySharedCourses(List<Course> sharedCourses, String targetScheduleName) {
+    void applySharedCourses(List<Course> sharedCourses, String targetScheduleName) {
         replaceCanonicalCourses(scheduleRepository.replaceFromLegacyCourses(
                 activeScheduleId, sharedCourses));
         scheduleName = targetScheduleName;
@@ -3984,7 +3697,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateEmptyScheduleView();
         refreshMyPage();
         Toast.makeText(this, getString(R.string.shared_import_done, courses.size()), Toast.LENGTH_LONG).show();
-        showImportedFirstWeekDayDialog();
+        scheduleDialogs.showImportedFirstWeekDayDialog();
     }
 
     private void cycleVisibleDayCount() {
@@ -3999,38 +3712,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         Toast.makeText(this, getString(R.string.days_visible_toast, visibleDayCount), Toast.LENGTH_SHORT).show();
     }
 
-    private void showSettingsDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(18), dp(18), dp(18), dp(18));
-        panel.setBackgroundColor(backgroundColor());
-
-        TextView heading = new TextView(this);
-        heading.setText(getString(R.string.settings_title));
-        heading.setTextColor(inkColor());
-        heading.setTypeface(Typeface.DEFAULT_BOLD);
-        heading.setTextSize(22);
-        panel.addView(heading);
-
-        TextView description = new TextView(this);
-        description.setText(getString(R.string.settings_days_description));
-        description.setTextColor(mutedColor());
-        description.setTextSize(14);
-        description.setPadding(0, dp(6), 0, dp(14));
-        panel.addView(description);
-
-        LinearLayout choices = new LinearLayout(this);
-        choices.setOrientation(LinearLayout.HORIZONTAL);
-        panel.addView(choices);
-        choices.addView(dayChoice(getString(R.string.settings_days_option, 5), 5, dialog));
-        choices.addView(dayChoice(getString(R.string.settings_days_option, 6), 6, dialog));
-        choices.addView(dayChoice(getString(R.string.settings_days_option, 7), 7, dialog));
-
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
     private void showCourseEditor(Course course) {
         if (courseSaveUndoView != null) {
@@ -4539,7 +4220,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         final String[] choices = courseNameChoices();
         String currentCourseLabel = courseValue[0].length() == 0 ? "不关联" : courseValue[0];
         View courseRow = settingValueRow(getString(R.string.plan_row_related_course), currentCourseLabel, v ->
-                showChoiceDialog(v, getString(R.string.plan_row_related_course), choices, currentCourseLabel, value -> {
+                appearanceDialogs.showChoiceDialog(v, getString(R.string.plan_row_related_course), choices, currentCourseLabel, value -> {
                     courseValue[0] = "不关联".equals(value) ? "" : value;
                     updateSettingValueRow(v, "不关联".equals(value) ? "不关联" : value);
                 }));
@@ -4583,7 +4264,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         panel.addView(weekRow);
 
         // 周几选择
-        
+
         LinearLayout dayRow = new LinearLayout(this);
         dayRow.setOrientation(LinearLayout.HORIZONTAL);
         dayRow.setGravity(Gravity.CENTER);
@@ -4648,7 +4329,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         // 提醒时间
         View timeRow = settingValueRow(getString(R.string.plan_row_remind_time),
                 remindTimeText(remindMinuteValue[0]), v ->
-                        showTimeDialog(getString(R.string.plan_row_remind_time), remindTimeText(remindMinuteValue[0]), value -> {
+                        appearanceDialogs.showTimeDialog(getString(R.string.plan_row_remind_time), remindTimeText(remindMinuteValue[0]), value -> {
                             int[] time = timeFromText(value);
                             remindMinuteValue[0] = time[0] * 60 + time[1];
                             updateSettingValueRow(v, remindTimeText(remindMinuteValue[0]));
@@ -4712,7 +4393,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private EditText input(String hint, String value) {
+    EditText input(String hint, String value) {
         EditText editText = new EditText(this);
         editText.setHint(hint);
         editText.setText(value);
@@ -4742,25 +4423,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return view;
     }
 
-    private TextView dayChoice(String text, int count, Dialog dialog) {
-        TextView choice = new TextView(this);
-        choice.setText(text);
-        choice.setGravity(Gravity.CENTER);
-        choice.setTextSize(16);
-        choice.setTypeface(Typeface.DEFAULT_BOLD);
-        boolean active = count == visibleDayCount;
-        choice.setTextColor(active ? selectedTextColor() : inkColor());
-        choice.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), DesignTokens.RADIUS_CHIP));
-        choice.setOnClickListener(v -> {
-            visibleDayCount = count;
-            renderSchedule();
-            dialog.dismiss();
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        params.setMargins(dp(4), 0, dp(4), 0);
-        choice.setLayoutParams(params);
-        return choice;
-    }
 
     private BottomNavView bottomNav() {
         bottomNavView = new BottomNavView(this, this);
@@ -5113,7 +4775,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
 
-
     @Override
     public String accountName() {
         return accountName;
@@ -5266,7 +4927,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onReminderLeadClicked(View anchor) {
-        showChoiceDialog(anchor, getString(R.string.settings_row_reminder_lead),
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_reminder_lead),
                 new String[]{getString(R.string.settings_minutes_5), getString(R.string.settings_minutes_10), getString(R.string.settings_minutes_15), getString(R.string.settings_minutes_30)},
                 getString(R.string.settings_minutes_value, reminderMinutesBefore), value -> {
                     reminderMinutesBefore = Integer.parseInt(value.split(" ")[0]);
@@ -5287,7 +4948,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onFirstWeekDayClicked(View anchor) {
-        showDateDialog(getString(R.string.settings_row_first_week_day), firstWeekDay, value -> {
+        appearanceDialogs.showDateDialog(getString(R.string.settings_row_first_week_day), firstWeekDay, value -> {
             firstWeekDay = value;
             currentWeek = currentWeekFromDate();
             saveConfig();
@@ -5298,7 +4959,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onSemesterWeeksClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_semester_weeks), 1, 20, semesterWeeks, 1, value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_semester_weeks), 1, 20, semesterWeeks, 1, value -> {
             semesterWeeks = value;
             currentWeek = Math.max(1, Math.min(semesterWeeks, currentWeekFromDate()));
             saveConfig();
@@ -5315,7 +4976,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onParseDiagnosticsClicked() {
-        showParseDiagnosticsDialog();
+        scheduleDialogs.showParseDiagnosticsDialog();
     }
 
     @Override
@@ -5365,18 +5026,18 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onScheduleSwitchClicked(View anchor) {
-        showScheduleSwitchDialog();
+        scheduleDialogs.showScheduleSwitchDialog();
     }
 
     @Override
     public void onVisualThemeClicked(View anchor) {
-        showChoiceDialog(anchor, getString(R.string.settings_row_visual_theme), PolarisVisualTheme.NAMES,
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_visual_theme), PolarisVisualTheme.NAMES,
                 visualTheme, this::applyVisualTheme);
     }
 
     @Override
     public void onDarkModeClicked(View anchor) {
-        showChoiceDialog(anchor, getString(R.string.settings_row_dark_mode), new String[]{getString(R.string.settings_dark_follow_system), getString(R.string.settings_dark_light), getString(R.string.settings_dark_dark)}, darkMode,
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_dark_mode), new String[]{getString(R.string.settings_dark_follow_system), getString(R.string.settings_dark_light), getString(R.string.settings_dark_dark)}, darkMode,
                 value -> {
                     darkMode = value;
                     scheduleRepository.saveGlobalDarkMode(darkMode);
@@ -5392,7 +5053,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onBoardBackgroundClicked(View anchor) {
-        showChoiceDialog(anchor, getString(R.string.settings_row_board_background), new String[]{"从系统相册选择", "清除背景"}, backgroundImageUri.length() == 0 ? "清除背景" : "从系统相册选择",
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_board_background), new String[]{"从系统相册选择", "清除背景"}, backgroundImageUri.length() == 0 ? "清除背景" : "从系统相册选择",
                 value -> {
                     if (value.startsWith("从")) {
                         openBackgroundPicker();
@@ -5427,7 +5088,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onAppearancePresetClicked(View anchor) {
-        showChoiceDialog(anchor, getString(R.string.settings_row_appearance_preset), APPEARANCE_PRESETS,
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_appearance_preset), APPEARANCE_PRESETS,
                 appearancePresetName(), this::applyAppearancePreset);
     }
 
@@ -5440,7 +5101,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onHeaderOpacityClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_header_opacity), 40, 100, timetableHeaderOpacity, value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_header_opacity), 40, 100, timetableHeaderOpacity, value -> {
             timetableHeaderOpacity = Math.max(40, Math.min(100, value));
             saveGlobalAppearance();
             applyShellAppearance();
@@ -5450,7 +5111,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onNavOpacityClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_nav_opacity), 40, 100, bottomNavOpacity, value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_opacity), 40, 100, bottomNavOpacity, value -> {
             bottomNavOpacity = Math.max(40, Math.min(100, value));
             saveGlobalAppearance();
             applyShellAppearance();
@@ -5460,7 +5121,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onNavHeightClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_nav_height), 56, 120, bottomNavHeight, 1, value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_height), 56, 120, bottomNavHeight, 1, value -> {
             bottomNavHeight = Math.max(56, Math.min(120, value));
             saveGlobalAppearance();
             applyShellAppearance();
@@ -5472,7 +5133,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onNavRadiusClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_nav_radius), 0, 72, bottomNavRadius(), value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_radius), 0, 72, bottomNavRadius(), value -> {
             bottomNavRectCornerRadius = Math.max(0, Math.min(72, value));
             saveGlobalAppearance();
             applyShellAppearance();
@@ -5482,7 +5143,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onCellHeightClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_cell_height), 56, 120, courseCellHeight, value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_height), 56, 120, courseCellHeight, value -> {
             courseCellHeight = Math.max(56, Math.min(120, value));
             saveGlobalAppearance();
             renderSchedule();
@@ -5492,7 +5153,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onCellRadiusClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_cell_radius), 0, 24, courseCornerRadius, value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_radius), 0, 24, courseCornerRadius, value -> {
             courseCornerRadius = Math.max(0, Math.min(24, value));
             saveGlobalAppearance();
             renderSchedule();
@@ -5502,7 +5163,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onCellOpacityClicked(View anchor) {
-        showNumberDialog(getString(R.string.settings_row_cell_opacity), 45, 100, courseBlockOpacity, value -> {
+        appearanceDialogs.showNumberDialog(getString(R.string.settings_row_cell_opacity), 45, 100, courseBlockOpacity, value -> {
             courseBlockOpacity = Math.max(45, Math.min(100, value));
             saveGlobalAppearance();
             renderSchedule();
@@ -5532,12 +5193,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onSemesterNameClicked() {
-        showSemesterNameDialog();
+        scheduleDialogs.showSemesterNameDialog();
     }
 
     @Override
     public void onSchoolClicked() {
-        showParserModelDialog();
+        scheduleDialogs.showParserModelDialog();
     }
 
     @Override
@@ -5677,143 +5338,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    private void showChoiceDialog(String titleText, String[] values, String current, StringSetter setter) {
-        showChoiceDialog(null, titleText, values, current, setter);
-    }
-
-    private void showChoiceDialog(View anchor, String titleText, String[] values, String current, StringSetter setter) {
-        Dialog dialog = new Dialog(this);
-        final String[] pendingChoice = {null};
-        FrameLayout root = new FrameLayout(this);
-        root.setOnClickListener(v -> dialog.dismiss());
-
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(18), dp(14), dp(18), dp(14));
-        panel.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_DIALOG_SHEET));
-        panel.setOnClickListener(v -> {});
-
-        TextView title = new TextView(this);
-        title.setText(titleText);
-        title.setTextColor(mutedColor());
-        title.setTextSize(12);
-        title.setSingleLine(true);
-        title.setPadding(0, 0, 0, dp(4));
-        panel.addView(title, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        for (String value : values) {
-            boolean active = value.equals(current);
-            LinearLayout item = new LinearLayout(this);
-            item.setOrientation(LinearLayout.HORIZONTAL);
-            item.setGravity(Gravity.CENTER_VERTICAL);
-            item.setPadding(0, 0, 0, 0);
-            item.setBackgroundColor(Color.TRANSPARENT);
-
-            TextView label = new TextView(this);
-            label.setText(value);
-            label.setTextColor(inkColor());
-            label.setTextSize(16);
-            label.setSingleLine(false);
-            label.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            item.addView(label, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-            TextView check = new TextView(this);
-            check.setText(active ? "✓" : "");
-            check.setTextColor(inkColor());
-            check.setTextSize(25);
-            check.setTypeface(Typeface.DEFAULT_BOLD);
-            check.setGravity(Gravity.CENTER);
-            LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(dp(30), dp(48));
-            checkParams.leftMargin = dp(8);
-            item.addView(check, checkParams);
-
-            item.setOnClickListener(v -> {
-                if (!value.equals(current)) {
-                    pendingChoice[0] = value;
-                }
-                dialog.dismiss();
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(50));
-            panel.addView(item, params);
-        }
-
-        int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        int screenHeight = getResources().getDisplayMetrics().heightPixels;
-        int panelWidth = Math.min(dp(214), screenWidth - dp(56));
-        int panelHeight = dp(36) + values.length * dp(50) + dp(28);
-        int left = screenWidth - panelWidth - dp(28);
-        int top = statusBarHeight() + dp(88);
-        if (anchor != null) {
-            int[] location = new int[2];
-            anchor.getLocationOnScreen(location);
-            int belowTop = location[1] + anchor.getHeight() + dp(6);
-            int aboveTop = location[1] - panelHeight - dp(6);
-            int bottomLimit = choiceMenuBottomLimit(anchor, screenHeight, panelHeight);
-            top = belowTop + panelHeight <= bottomLimit
-                    ? belowTop
-                    : Math.max(statusBarHeight() + dp(12), aboveTop);
-            top = Math.min(top, screenHeight - panelHeight - dp(16));
-            top = Math.max(statusBarHeight() + dp(12), top);
-        }
-
-        View choiceContent = glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET);
-        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
-                panelWidth, LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT);
-        panelParams.leftMargin = left;
-        panelParams.topMargin = top;
-        root.addView(choiceContent, panelParams);
-
-        dialog.setContentView(root);
-        dialog.setOnDismissListener(d -> {
-            String value = pendingChoice[0];
-            if (value != null) {
-                View postTarget = rootView != null ? rootView : root;
-                postTarget.postDelayed(() -> setter.set(value), 80L);
-            }
-        });
-        dialog.show();
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT);
-            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            window.setDimAmount(isDarkModeActive() ? 0.68f : 0.42f);
-            makeDialogStill(window);
-        }
-    }
-
-    private int choiceMenuBottomLimit(View anchor, int screenHeight, int panelHeight) {
-        int screenLimit = screenHeight - bottomContentInset() - dp(16);
-        View group = settingGroupAncestor(anchor);
-        if (group == null) {
-            return screenLimit;
-        }
-        int[] groupLocation = new int[2];
-        group.getLocationOnScreen(groupLocation);
-        int groupLimit = groupLocation[1] + group.getHeight() - dp(8);
-        return group.getHeight() >= panelHeight + dp(72)
-                ? Math.min(screenLimit, groupLimit)
-                : screenLimit;
-    }
-
-    private View settingGroupAncestor(View anchor) {
-        ViewParent parent = anchor.getParent();
-        while (parent instanceof View) {
-            View view = (View) parent;
-            if (view instanceof LinearLayout && view.getBackground() != null && view.getHeight() > dp(100)) {
-                return view;
-            }
-            parent = view.getParent();
-        }
-        return null;
-    }
-
-    private void showToggleDialog(String titleText, boolean current, BooleanSetter setter) {
-        showChoiceDialog(titleText, new String[]{"开", "关"}, current ? "开" : "关",
-                value -> setter.set("开".equals(value)));
-    }
 
     private View settingSwitchRow(String label, boolean checked, BooleanSetter setter) {
         // Switch row moved to SettingsPageBuilder; delegate with adapter
@@ -5829,122 +5353,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return view;
     }
 
-    private void showNumberDialog(String titleText, int min, int max, int current, IntSetter setter) {
-        showNumberDialog(titleText, min, max, current, 10, setter);
-    }
-
-    private void showNumberDialog(String titleText, int min, int max, int current, int step, IntSetter setter) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(titleText);
-        final int[] value = {Math.max(min, Math.min(max, current))};
-        final int safeStep = Math.max(1, step);
-        EditText valueInput = stepInput(String.valueOf(value[0]));
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER);
-        row.addView(stepButton("−"));
-        row.addView(valueInput, new LinearLayout.LayoutParams(0, dp(46), 1f));
-        row.addView(stepButton("+"));
-        ((TextView) row.getChildAt(0)).setOnClickListener(v -> {
-            value[0] = Math.max(min, parseBounded(valueInput.getText().toString(), min, max, value[0]) - safeStep);
-            valueInput.setText(String.valueOf(value[0]));
-            valueInput.setSelection(valueInput.getText().length());
-        });
-        ((TextView) row.getChildAt(2)).setOnClickListener(v -> {
-            value[0] = Math.min(max, parseBounded(valueInput.getText().toString(), min, max, value[0]) + safeStep);
-            valueInput.setText(String.valueOf(value[0]));
-            valueInput.setSelection(valueInput.getText().length());
-        });
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        panel.addView(row, rowParams);
-        panel.addView(pageSaveButton(() -> {
-            setter.set(parseBounded(valueInput.getText().toString(), min, max, value[0]));
-            dialog.dismiss();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void showDateDialog(String titleText, String current, StringSetter setter) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(titleText);
-        Calendar date = calendarFromText(current);
-        DatePicker picker = new DatePicker(themedControlContext());
-        picker.init(date.get(Calendar.YEAR), date.get(Calendar.MONTH), date.get(Calendar.DAY_OF_MONTH), null);
-        panel.addView(picker);
-        panel.addView(pageSaveButton(() -> {
-            String value = picker.getYear() + "/" + (picker.getMonth() + 1) + "/" + picker.getDayOfMonth();
-            setter.set(value);
-            dialog.dismiss();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void showImportedFirstWeekDayDialog() {
-        String defaultDate = SemesterStartDateDefaults.resolve(Calendar.getInstance());
-        firstWeekDay = defaultDate;
-        currentWeek = currentWeekFromDate();
-        saveConfig();
-        updateHeader();
-        renderSchedule();
-
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.first_week_day_title));
-
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.first_week_day_message, defaultDate));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        messageParams.setMargins(0, 0, 0, dp(8));
-        panel.addView(message, messageParams);
-
-        Calendar date = calendarFromText(defaultDate);
-        DatePicker picker = new DatePicker(themedControlContext());
-        picker.init(date.get(Calendar.YEAR), date.get(Calendar.MONTH), date.get(Calendar.DAY_OF_MONTH), null);
-        panel.addView(picker);
-
-        panel.addView(dialogAction(getString(R.string.first_week_day_use), v -> {
-            firstWeekDay = picker.getYear() + "/" + (picker.getMonth() + 1) + "/" + picker.getDayOfMonth();
-            currentWeek = currentWeekFromDate();
-            saveConfig();
-            updateHeader();
-            renderSchedule();
-            dialog.dismiss();
-        }));
-        panel.addView(dialogAction(getString(R.string.first_week_day_skip), v -> dialog.dismiss()));
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setOnDismissListener(ignored -> scheduleWeekSwipeHintIfNeeded());
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void showTimeDialog(String titleText, String current, StringSetter setter) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(titleText);
-        int[] time = timeFromText(current);
-        TimePicker picker = new TimePicker(themedControlContext());
-        picker.setIs24HourView(true);
-        picker.setHour(time[0]);
-        picker.setMinute(time[1]);
-        panel.addView(picker);
-        panel.addView(pageSaveButton(() -> {
-            String value = getString(R.string.classtime_picker_value, twoDigits(picker.getHour())
-                + ":" + twoDigits(picker.getMinute()));
-            setter.set(value);
-            dialog.dismiss();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
     private LinearLayout dialogPanel(String titleText) {
         LinearLayout panel = new LinearLayout(this);
@@ -6017,49 +5425,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         showSettingsPage(getString(R.string.settings_title_schedule), panel);
     }
 
-    private void showParseDiagnosticsDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.diagnostics_title));
-        if (lastParseDiagnosticsText.length() == 0) {
-            TextView empty = new TextView(this);
-            empty.setText(getString(R.string.diagnostics_empty));
-            empty.setTextColor(mutedColor());
-            empty.setTextSize(15);
-            empty.setLineSpacing(dp(4), 1f);
-            empty.setPadding(0, dp(4), 0, dp(8));
-            panel.addView(empty);
-        } else {
-            TextView report = new TextView(this);
-            report.setText(lastParseDiagnosticsText);
-            report.setTextColor(inkColor());
-            report.setTextSize(13);
-            report.setTypeface(Typeface.MONOSPACE);
-            report.setTextIsSelectable(true);
-            report.setLineSpacing(dp(3), 1f);
-            report.setPadding(dp(12), dp(10), dp(12), dp(10));
-            report.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CHIP));
 
-            ScrollView reportScroll = new ScrollView(this);
-            reportScroll.setFillViewport(false);
-            reportScroll.setVerticalScrollBarEnabled(true);
-            reportScroll.addView(report, new ScrollView.LayoutParams(
-                    ScrollView.LayoutParams.MATCH_PARENT,
-                    ScrollView.LayoutParams.WRAP_CONTENT));
-            int lineCount = Math.max(1, lastParseDiagnosticsText.split("\\n", -1).length);
-            int visibleLines = Math.min(16, lineCount);
-            LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    Math.min(dp(360), Math.max(dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH), visibleLines * dp(22))));
-            panel.addView(reportScroll, scrollParams);
-            panel.addView(dialogAction(getString(R.string.diagnostics_copy_action), v -> copyParseDiagnostics()));
-        }
-        panel.addView(dialogAction(getString(R.string.import_close), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void copyParseDiagnostics() {
+    void copyParseDiagnostics() {
         if (lastParseDiagnosticsText.length() == 0) {
             Toast.makeText(this, getString(R.string.diagnostics_copy_none), Toast.LENGTH_SHORT).show();
             return;
@@ -6238,9 +5605,9 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         courseManageSelectionCount.setTypeface(Typeface.DEFAULT_BOLD);
         bar.addView(courseManageSelectionCount, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        bar.addView(courseManageActionButton(getString(R.string.manage_action_color), v -> showBatchColorDialog()));
-        bar.addView(courseManageActionButton(getString(R.string.manage_action_teacher), v -> showBatchTeacherDialog()));
-        bar.addView(courseManageActionButton(getString(R.string.manage_action_delete), v -> showBatchDeleteDialog()));
+        bar.addView(courseManageActionButton(getString(R.string.manage_action_color), v -> scheduleDialogs.showBatchColorDialog()));
+        bar.addView(courseManageActionButton(getString(R.string.manage_action_teacher), v -> scheduleDialogs.showBatchTeacherDialog()));
+        bar.addView(courseManageActionButton(getString(R.string.manage_action_delete), v -> scheduleDialogs.showBatchDeleteDialog()));
         bar.setVisibility(View.GONE);
         return bar;
     }
@@ -6328,46 +5695,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return matched;
     }
 
-    private void showBatchColorDialog() {
-        if (courseManageSelectedIds.isEmpty()) {
-            Toast.makeText(this, getString(R.string.manage_error_no_selection), Toast.LENGTH_SHORT).show();
-            return;
-        }
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.manage_batch_color_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.manage_batch_color_message, courseManageSelectedIds.size()));
-                
-        message.setTextColor(mutedColor());
-        message.setTextSize(14);
-        message.setPadding(0, 0, 0, dp(8));
-        panel.addView(message);
-        for (int index = 0; index < BATCH_COLOR_VALUES.length; index += 3) {
-            LinearLayout line = new LinearLayout(this);
-            line.setOrientation(LinearLayout.HORIZONTAL);
-            for (int offset = 0; offset < 3 && index + offset < BATCH_COLOR_VALUES.length; offset++) {
-                final String color = BATCH_COLOR_VALUES[index + offset];
-                TextView swatch = new TextView(this);
-                swatch.setBackground(roundedBg(color, DesignTokens.RADIUS_CARD));
-                swatch.setContentDescription(getString(R.string.manage_swatch_cd));
-                swatch.setOnClickListener(v -> {
-                    dialog.dismiss();
-                    applyBatchColor(color);
-                });
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                        0, dp(52), 1f);
-                params.setMargins(dp(3), dp(3), dp(3), dp(3));
-                line.addView(swatch, params);
-            }
-            panel.addView(line);
-        }
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private void applyBatchColor(String color) {
+    void applyBatchColor(String color) {
         int updated = CourseEditManager.batchUpdateColor(
                 structuredCourses, courseManageSelectedIds, color);
         if (updated <= 0) {
@@ -6383,40 +5712,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                 Toast.LENGTH_SHORT).show();
     }
 
-    private void showBatchTeacherDialog() {
-        if (courseManageSelectedIds.isEmpty()) {
-            Toast.makeText(this, getString(R.string.manage_error_no_selection), Toast.LENGTH_SHORT).show();
-            return;
-        }
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.manage_batch_teacher_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.manage_batch_teacher_message, courseManageSelectedIds.size()));
-                
-        message.setTextColor(mutedColor());
-        message.setTextSize(14);
-        message.setLineSpacing(dp(3), 1f);
-        message.setPadding(0, 0, 0, dp(4));
-        panel.addView(message);
-        EditText teacherInput = input(getString(R.string.manage_teacher_hint), "");
-        panel.addView(teacherInput);
-        panel.addView(pageSaveButton(() -> {
-            String teacher = teacherInput.getText() == null
-                    ? "" : teacherInput.getText().toString().trim();
-            if (teacher.length() == 0) {
-                Toast.makeText(this, getString(R.string.manage_error_teacher_empty), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            dialog.dismiss();
-            applyBatchTeacher(teacher);
-        }));
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private void applyBatchTeacher(String teacher) {
+    void applyBatchTeacher(String teacher) {
         int updated = CourseEditManager.batchUpdateTeacher(
                 structuredCourses, courseManageSelectedIds, teacher);
         if (updated <= 0) {
@@ -6432,34 +5729,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                 Toast.LENGTH_SHORT).show();
     }
 
-    private void showBatchDeleteDialog() {
-        if (courseManageSelectedIds.isEmpty()) {
-            Toast.makeText(this, getString(R.string.manage_error_no_selection), Toast.LENGTH_SHORT).show();
-            return;
-        }
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.manage_batch_delete_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.manage_batch_delete_message, courseManageSelectedIds.size()));
-                
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        messageParams.setMargins(0, 0, 0, dp(8));
-        panel.addView(message, messageParams);
-        panel.addView(dialogAction(getString(R.string.manage_batch_delete_action), v -> {
-            dialog.dismiss();
-            applyBatchDelete();
-        }));
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private void applyBatchDelete() {
+    void applyBatchDelete() {
         List<StructuredCourse> previous = new ArrayList<>(structuredCourses);
         int removed = 0;
         for (int index = structuredCourses.size() - 1; index >= 0; index--) {
@@ -6718,34 +5989,6 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
     }
 
-    private Dialog settingsDialog(String headingText) {
-        Dialog dialog = new Dialog(this);
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setId(View.generateViewId());
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(18), statusBarHeight() + dp(18), dp(18), dp(24));
-        panel.setBackgroundColor(backgroundColor());
-        scrollView.addView(panel);
-
-        TextView heading = new TextView(this);
-        heading.setText(headingText);
-        heading.setTextColor(inkColor());
-        heading.setTypeface(Typeface.DEFAULT_BOLD);
-        heading.setTextSize(22);
-        panel.addView(heading);
-
-        Button close = new Button(this);
-        close.setText(getString(R.string.editor_action_cancel));
-        close.setTextColor(mutedColor());
-        close.setBackgroundColor(Color.TRANSPARENT);
-        close.setOnClickListener(v -> dialog.dismiss());
-        panel.addView(close, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
-
-        dialog.setContentView(glassDialogContent(scrollView, panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        return dialog;
-    }
 
     private View toggleRow(String label, boolean initial, BooleanSetter setter) {
         final boolean[] value = {initial};
@@ -6810,7 +6053,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return save;
     }
 
-    private void refreshMyPage() {
+    void refreshMyPage() {
         if (contentHost == null || myPage == null) {
             return;
         }
@@ -7148,7 +6391,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
     }
 
-    private void refreshActiveSettingsPage() {
+    void refreshActiveSettingsPage() {
         if (settingsPage == null || settingsPage.getVisibility() != View.VISIBLE) {
             return;
         }
@@ -7407,11 +6650,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return group;
     }
 
-    private interface IntSetter {
-        void set(int value);
-    }
 
-    private TextView stepButton(String text) {
+    TextView stepButton(String text) {
         TextView button = new TextView(this);
         button.setText(text);
         button.setTextSize(22);
@@ -7438,7 +6678,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return value;
     }
 
-    private EditText stepInput(String text) {
+    EditText stepInput(String text) {
         EditText value = new EditText(this);
         value.setText(text);
         value.setTextSize(18);
@@ -7453,7 +6693,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return value;
     }
 
-    private Button pageSaveButton(Runnable onSave) {
+    Button pageSaveButton(Runnable onSave) {
         Button save = new Button(this);
         save.setText(getString(R.string.profile_save_apply));
         save.setTextColor(Color.WHITE);
@@ -7468,7 +6708,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return save;
     }
 
-    private void showGlobalSettings() {
+    void showGlobalSettings() {
         LinearLayout panel = new SettingsPageBuilder(this).createGlobalSettingsPanel(this);
         showSettingsPage(getString(R.string.settings_title_global), panel);
     }
@@ -7645,119 +6885,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
     }
 
-    private void showScheduleSwitchDialog() {
-        List<ScheduleRepository.ScheduleEntry> schedules = scheduleRepository.loadSchedules();
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.schedule_switch_title));
-        for (ScheduleRepository.ScheduleEntry entry : schedules) {
-            TextView item = new TextView(this);
-            item.setText(entry.id.equals(activeScheduleId) ? entry.name
-                + getString(R.string.schedule_switch_current_suffix) : entry.name);
-            item.setGravity(Gravity.CENTER);
-            item.setTextSize(17);
-            boolean active = entry.id.equals(activeScheduleId);
-            item.setTextColor(active ? selectedTextColor() : inkColor());
-            item.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            item.setBackground(roundedBg(active ? selectedFillHex() : cardColorHex(), DesignTokens.RADIUS_CARD));
-            item.setOnClickListener(v -> {
-                dialog.dismiss();
-                if (active) {
-                    showRenameScheduleDialog();
-                } else {
-                    switchSchedule(entry.id);
-                    showGlobalSettings();
-                }
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
-            params.setMargins(0, dp(5), 0, dp(5));
-            panel.addView(item, params);
-        }
-        panel.addView(dialogAction(getString(R.string.schedule_action_add), v -> {
-            dialog.dismiss();
-            showCreateScheduleDialog();
-        }));
-        panel.addView(dialogAction(getString(R.string.schedule_action_delete), v -> {
-            dialog.dismiss();
-            showDeleteCurrentScheduleDialog();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private void showRenameScheduleDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.schedule_rename_title));
-        EditText nameInput = input(getString(R.string.settings_row_schedule_name), scheduleName);
-        panel.addView(nameInput);
-        panel.addView(pageSaveButton(() -> {
-            String nextName = nameInput.getText().toString().trim();
-            if (nextName.length() == 0) {
-                Toast.makeText(this, getString(R.string.import_error_name_empty), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            scheduleName = nextName;
-            saveConfig();
-            updateHeader();
-            refreshMyPage();
-            dialog.dismiss();
-            showGlobalSettings();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void showCreateScheduleDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.schedule_action_add));
-        EditText nameInput = input(getString(R.string.schedule_create_name_hint), "");
-        panel.addView(nameInput);
-        panel.addView(pageSaveButton(() -> {
-            String name = nameInput.getText().toString().trim();
-            ScheduleRepository.ScheduleEntry entry = scheduleRepository.createSchedule(
-                    name.length() == 0 ? "新课表" : name);
-            copyGlobalAppearanceToSchedule(entry.id);
-            switchSchedule(entry.id);
-            dialog.dismiss();
-            showGlobalSettings();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void showDeleteCurrentScheduleDialog() {
-        List<ScheduleRepository.ScheduleEntry> schedules = scheduleRepository.loadSchedules();
-        if (schedules.size() <= 1) {
-            Toast.makeText(this, getString(R.string.schedule_error_last_one), Toast.LENGTH_SHORT).show();
-            showScheduleSwitchDialog();
-            return;
-        }
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.schedule_delete_confirm_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.schedule_delete_confirm_message, scheduleName));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(dp(4), 1f);
-        panel.addView(message);
-        panel.addView(dialogAction(getString(R.string.schedule_confirm_delete), v -> {
-            dialog.dismiss();
-            deleteCurrentSchedule();
-            showGlobalSettings();
-        }));
-        panel.addView(dialogAction(getString(R.string.editor_action_cancel), v -> {
-            dialog.dismiss();
-            showScheduleSwitchDialog();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    private void deleteCurrentSchedule() {
+    void deleteCurrentSchedule() {
         List<ScheduleRepository.ScheduleEntry> schedules = scheduleRepository.loadSchedules();
         if (schedules.size() <= 1) {
             Toast.makeText(this, getString(R.string.schedule_error_last_one), Toast.LENGTH_SHORT).show();
@@ -7792,7 +6921,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         Toast.makeText(this, getString(R.string.schedule_deleted_toast), Toast.LENGTH_SHORT).show();
     }
 
-    private void switchSchedule(String scheduleId) {
+    void switchSchedule(String scheduleId) {
         saveConfig();
         scheduleRepository.saveStructuredCourses(activeScheduleId, structuredCourses);
         activeScheduleId = scheduleId;
@@ -7841,28 +6970,6 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
     }
 
-    private void showSemesterNameDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.semester_edit_title));
-        EditText semesterInput = input(getString(R.string.semester_edit_hint), semesterName);
-        semesterInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(48)});
-        panel.addView(semesterInput);
-        panel.addView(pageSaveButton(() -> {
-            String value = semesterInput.getText().toString().trim();
-            if (value.length() == 0) {
-                Toast.makeText(this, getString(R.string.semester_error_empty), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            semesterName = value;
-            saveConfig();
-            refreshMyPage();
-            dialog.dismiss();
-            refreshActiveSettingsPage();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
     private void changeWeek(int delta) {
         int nextWeek = Math.max(1, Math.min(semesterWeeks, currentWeek + delta));
@@ -7993,7 +7100,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         updatePlanSidePanel();
     }
 
-    private void updateHeader() {
+    void updateHeader() {
         setHeader(headerTitle(), headerSubtitle());
     }
 
@@ -8079,7 +7186,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         updateVisibleDayCount();
     }
 
-    private void saveConfig() {
+    void saveConfig() {
         ScheduleRepository.Config config = new ScheduleRepository.Config();
         config.scheduleName = scheduleName;
         config.firstClassStartTime = firstClassStartTime;
@@ -8134,37 +7241,14 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             return;
         }
         if (!CourseReminderScheduler.hasOverlayPermission(this)) {
-            showOverlayPermissionDialog();
+            reminderDialogs.showOverlayPermissionDialog();
             return;
         }
         enableCourseReminders();
     }
 
-    private void showOverlayPermissionDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.reminder_overlay_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.reminder_overlay_message));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(0f, 1.2f);
-        message.setPadding(0, 0, 0, dp(8));
-        panel.addView(message);
-        panel.addView(dialogAction(getString(R.string.reminder_overlay_grant), v -> {
-            dialog.dismiss();
-            enableCourseReminders();
-            openOverlaySettings();
-        }));
-        panel.addView(dialogAction(getString(R.string.reminder_overlay_continue), v -> {
-            dialog.dismiss();
-            requestNotificationPermissionForReminders();
-        }));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
-    private void requestNotificationPermissionForReminders() {
+    void requestNotificationPermissionForReminders() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -8181,36 +7265,17 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         enableCourseReminders();
     }
 
-    private void enableCourseReminders() {
+    void enableCourseReminders() {
         remindersEnabled = true;
         saveConfig();
         refreshActiveSettingsPage();
         if (CourseReminderScheduler.canScheduleExactAlarms(this)) {
             Toast.makeText(this, getString(R.string.reminder_enabled_toast), Toast.LENGTH_SHORT).show();
         } else {
-            showExactReminderAccessDialog();
+            reminderDialogs.showExactReminderAccessDialog();
         }
     }
 
-    private void showExactReminderAccessDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.reminder_exact_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.reminder_exact_message));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(0f, 1.2f);
-        message.setPadding(0, 0, 0, dp(8));
-        panel.addView(message);
-        panel.addView(dialogAction(getString(R.string.reminder_exact_allow), v -> {
-            dialog.dismiss();
-            openExactAlarmSettings();
-        }));
-        panel.addView(dialogAction(getString(R.string.reminder_exact_use_normal), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
     private String courseReminderStatusText() {
         if (!remindersEnabled) {
@@ -8247,7 +7312,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         Toast.makeText(this, getString(R.string.reminder_status_overlay_exact_toast), Toast.LENGTH_SHORT).show();
     }
 
-    private void openOverlaySettings() {
+    void openOverlaySettings() {
         try {
             startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName())));
@@ -8256,7 +7321,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
     }
 
-    private void openExactAlarmSettings() {
+    void openExactAlarmSettings() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return;
         }
@@ -8287,7 +7352,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
     }
 
-    private void openAppDetailsSettings() {
+    void openAppDetailsSettings() {
         startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getPackageName())));
     }
@@ -8327,28 +7392,9 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
         // 本该触发的提醒没有触发；标记已提示，避免每次打开都弹。
         CourseReminderScheduler.setNextReminderAt(this, System.currentTimeMillis());
-        showReminderGuardDialog();
+        reminderDialogs.showReminderGuardDialog();
     }
 
-    private void showReminderGuardDialog() {
-        Dialog dialog = new Dialog(this);
-        LinearLayout panel = dialogPanel(getString(R.string.reminder_restore_title));
-        TextView message = new TextView(this);
-        message.setText(getString(R.string.reminder_restore_message));
-        message.setTextColor(mutedColor());
-        message.setTextSize(15);
-        message.setLineSpacing(0f, 1.2f);
-        message.setPadding(0, 0, 0, dp(8));
-        panel.addView(message);
-        panel.addView(dialogAction(getString(R.string.reminder_restore_go_settings), v -> {
-            dialog.dismiss();
-            openAppDetailsSettings();
-        }));
-        panel.addView(dialogAction(getString(R.string.reminder_restore_ack), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
 
     private SchoolParserModel parserModelFromConfig(String value) {
         if (value == null || value.length() == 0) {
@@ -8372,7 +7418,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
     }
 
-    private void copyGlobalAppearanceToSchedule(String scheduleId) {
+    void copyGlobalAppearanceToSchedule(String scheduleId) {
         ScheduleRepository.Config config = scheduleRepository.loadConfig(scheduleId);
         config.timetableBackground = timetableBackground;
         config.visualTheme = visualTheme;
@@ -8439,7 +7485,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                 + date.get(Calendar.DAY_OF_MONTH);
     }
 
-    private Calendar calendarFromText(String value) {
+    Calendar calendarFromText(String value) {
         Calendar date = Calendar.getInstance();
         String[] parts = value == null ? new String[0] : value.split("/");
         try {
@@ -8452,7 +7498,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return date;
     }
 
-    private int[] timeFromText(String value) {
+    int[] timeFromText(String value) {
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d{1,2})\\s*[:：]\\s*(\\d{1,2})")
                 .matcher(value == null ? "" : value);
         if (matcher.find()) {
@@ -8473,11 +7519,11 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return normalizedTimeText(value == null || value.length() == 0 ? firstClassStartTime : value);
     }
 
-    private String twoDigits(int value) {
+    String twoDigits(int value) {
         return value < 10 ? "0" + value : String.valueOf(value);
     }
 
-    private int backgroundColor() {
+    int backgroundColor() {
         if (!isMinimalVisualTheme()) {
             return PolarisVisualTheme.pageColor(visualTheme, isDarkModeActive());
         }
@@ -8527,7 +7573,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                 PolarisVisualTheme.groupColor(visualTheme, isDarkModeActive()));
     }
 
-    private String selectedFillHex() {
+    String selectedFillHex() {
         if (!isMinimalVisualTheme()) {
             return PolarisVisualTheme.hex(
                     PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
@@ -8535,7 +7581,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return isDarkModeActive() ? "#FFFFFF" : "#172033";
     }
 
-    private String primaryActionFillHex() {
+    String primaryActionFillHex() {
         return PolarisVisualTheme.hex(
                 PolarisVisualTheme.accentColor(visualTheme, isDarkModeActive()));
     }
@@ -8544,7 +7590,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return Math.max(0, Math.min(72, bottomNavRectCornerRadius));
     }
 
-    private int selectedTextColor() {
+    int selectedTextColor() {
         if (!isMinimalVisualTheme()) {
             return Color.WHITE;
         }
@@ -8577,7 +7623,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return Color.parseColor(hex);
     }
 
-    private int dp(int value) {
+    int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
@@ -8617,7 +7663,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return text.length() == 0 ? defaultWeeks() : text;
     }
 
-    private int parseBounded(String value, int min, int max, int fallback) {
+    int parseBounded(String value, int min, int max, int fallback) {
         try {
             int parsed = Integer.parseInt(value.trim());
             return Math.max(min, Math.min(max, parsed));
@@ -8772,7 +7818,7 @@ private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
         rebuildLayout();
     }
 
-    private int currentWeekFromDate() {
+    int currentWeekFromDate() {
         int week = CourseTimeResolver.weekForDate(
                 firstWeekStartMillis(), Calendar.getInstance());
         return Math.max(1, Math.min(semesterWeeks, week));
@@ -8840,6 +7886,4 @@ private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
         }
     }
 }
-
-
 
