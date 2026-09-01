@@ -178,6 +178,6 @@ public final class GlassDialogFactory {
                                    GradientDrawable background, int radius) {
         layer.setSourceView(source);
         layer.setGlassBackground(background, cfg.dp(radius));
-        layer.setBlurEnabled(cfg.blurEnabled, cfg.dp(28));
+        layer.setBlurEnabled(cfg.blurEnabled, cfg.dp(60));
     }
 }
