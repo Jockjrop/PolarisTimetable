@@ -30,8 +30,8 @@ android {
         applicationId "com.polaris.timetable"
         minSdk 23
         targetSdk 35
-        versionCode 11511
-        versionName "1.15.11"
+        versionCode 11600
+        versionName "1.16.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -96,10 +96,10 @@ configurations.configureEach {
 }
 
 dependencies {
-    implementation "androidx.appcompat:appcompat:1.7.0"
-    implementation "androidx.constraintlayout:constraintlayout:2.1.4"
-    implementation "androidx.fragment:fragment:1.8.2"
-    implementation "androidx.core:core:1.13.1"
+    implementation "androidx.appcompat:appcompat:1.7.1"
+    implementation "androidx.constraintlayout:constraintlayout:2.2.1"
+    implementation "androidx.fragment:fragment:1.8.9"
+    implementation "androidx.core:core:1.15.0"
     implementation "androidx.viewpager:viewpager:1.0.0"
     implementation "com.tom-roush:pdfbox-android:2.0.27.0"
     testImplementation "junit:junit:4.13.2"
