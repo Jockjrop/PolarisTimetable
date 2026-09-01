@@ -179,7 +179,7 @@
 顺序：先升与解析无关的 AndroidX 组件（`constraintlayout` → 2.2.x、`fragment` / `core` / `appcompat` 到当前稳定版），单独一个 patch 交付；确认无回归后，再单独评估 `pdfbox-android` 升级，必须回归三校模板（西安邮电 / 杭电 / 西安理工）各一份真实 PDF。
 
 - ✅ **4-1 AndroidX 升级（1.16.0，`9a6d275`）**：appcompat 1.7.0→1.7.1、constraintlayout 2.1.4→2.2.1、fragment 1.8.2→1.8.9、core 1.13.1→1.15.0（compileSdk 35 兼容上限；1.16+/1.17+ 需 compileSdk 36）。单测 275 全绿，模拟器 instrumented 10/10（首轮 1 例 `ScheduleBoardRenderTest` 偶发 AmbiguousViewMatcherException——ViewPager 相邻周页预加载时序 flake，复跑绿，持续观察 CI）。
-- ⏸ **4-2 pdfbox-android**：待单独一轮，须三校模板真实 PDF 回归。
+- ✅ **4-2 pdfbox-android 评估结论（不升版，护栏落地）**：`com.tom-roush:pdfbox-android:2.0.27.0` 已是 Android 移植线最新版（上游 Apache 2.0.x 已至 2.0.37，但 TomRoush 移植 2023 年后停更，无 3.x 移植），**无版本可升**。已交付三校 PDF 回归护栏 `androidTest/.../parser/PdfRegressionTest.java`：样例 PDF 因隐私不入库，经 `adb push` 至 app 内部 `files/pdfregression/` 后本地运行，缺文件自动跳过（Assume），CI 不受影响。基线（pdfbox 2.0.27.0，模拟器 API 35 实测）：`学生个人课表_3241711047`（西邮）×XUPT=24 课 success、`董明轩`（实测亦为西邮模板）×XUPT=27 课 success 0 错误、`苏国强`（杭电）×HDU=9 课 success。注意：`test pdf/` 三份中无西安理工真实样例，XAUT 路径的 PDF 级回归仍缺，后续取得样例后补入 `xaut_sample.pdf` 即自动纳入护栏。未来升级 pdfbox 或改解析器时以此护栏对比漂移。
 
 风险：`pdfbox-android` 是解析核心，跨版本升级可能改变文本坐标提取行为 —— 必须一校一测，不与其他改动混在同一轮。
 
