@@ -720,6 +720,15 @@ public class ScheduleBoardView extends FrameLayout {
             addCourseBlock(board, course, week, interactive, layouts.get(course),
                     containsIdentity(conflictingCourses, course));
         }
+        int todayColumn = todayColumn(week);
+        if (todayColumn >= 0) {
+            // 置于课程块之后：指示线浮在最上层，但不消费触摸（不可点击）。
+            FrameLayout.LayoutParams lineParams = new FrameLayout.LayoutParams(
+                    dayWidth, Math.max(1, boardHeight(week) - bodyTop(week)));
+            lineParams.leftMargin = boardContentOffset + timeWidth + dayWidth * todayColumn;
+            lineParams.topMargin = bodyTop(week);
+            board.addView(new NowLineView(getContext()), lineParams);
+        }
         board.setLayoutParams(new FrameLayout.LayoutParams(width, height));
         return board;
     }
@@ -870,6 +879,16 @@ public class ScheduleBoardView extends FrameLayout {
         Calendar today = Calendar.getInstance();
         return date.get(Calendar.YEAR) == today.get(Calendar.YEAR)
                 && date.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR);
+    }
+
+    /** 今天在本周页中的列号；今天不在该页（含周末隐藏列）返回 -1。 */
+    private int todayColumn(int week) {
+        for (int column = 0; column < visibleDayCount; column++) {
+            if (isToday(visibleDays.get(column), week)) {
+                return column;
+            }
+        }
+        return -1;
     }
 
     private void addPracticeBanner(FrameLayout board, int week, boolean interactive) {
@@ -2079,6 +2098,94 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     /** Maps pager positions to week boards, reusing the interactive board cache. */
+    /**
+     * 今天的列内绘制的"当前时间"指示线（2dp 圆帽线 + 左端描边圆点）。
+     * 仅上课时段绘制；附着期间每 30 秒自刷新（有界间隔，非零延迟轮询）。
+     * 不可点击、不参与无障碍树——触摸事件穿透给下层课程块。
+     */
+    private class NowLineView extends View {
+        private static final long REFRESH_INTERVAL_MILLIS = 30_000L;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private boolean ticking;
+        private float lastLineY = -1f;
+
+        NowLineView(Context context) {
+            super(context);
+            setClickable(false);
+            setFocusable(false);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        private final Runnable tickRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!ticking) {
+                    return;
+                }
+                float y = lineY();
+                if (Math.abs(y - lastLineY) >= 0.5f) {
+                    lastLineY = y;
+                    invalidate();
+                }
+                postDelayed(this, REFRESH_INTERVAL_MILLIS);
+            }
+        };
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            ticking = true;
+            post(tickRunnable);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            ticking = false;
+            removeCallbacks(tickRunnable);
+            super.onDetachedFromWindow();
+        }
+
+        /** 指示线 y（相对板体顶部）；非上课时段返回 -1。 */
+        private float lineY() {
+            if (timeAxis == null) {
+                return -1f;
+            }
+            Calendar now = Calendar.getInstance();
+            int nowMinute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+            if (nowMinute < timeAxis.startMinute || nowMinute >= timeAxis.endMinute) {
+                return -1f;
+            }
+            return timeAxis.yForMinute(nowMinute);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float y = lineY();
+            if (y < 0) {
+                return;
+            }
+            int color = PolarisVisualTheme.nowIndicatorColor(darkMode);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeWidth(dp(2));
+            paint.setColor(color);
+            float inset = dp(3);
+            canvas.drawLine(inset, y, getWidth() - inset, y, paint);
+            float dotX = dp(4);
+            float dotRadius = dp(3);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setStrokeWidth(0);
+            paint.setColor(color);
+            canvas.drawCircle(dotX, y, dotRadius, paint);
+            // 半透明亮色外环：压在任意课程块颜色上仍可辨识。
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(getResources().getDisplayMetrics().density * 1.2f);
+            paint.setColor(0x99FFFFFF);
+            canvas.drawCircle(dotX, y, dotRadius + dp(1), paint);
+        }
+    }
+
     private class WeekPagerAdapter extends PagerAdapter {
         @Override
         public int getCount() {

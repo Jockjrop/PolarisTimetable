@@ -166,6 +166,11 @@ public final class PolarisVisualTheme {
         return dark ? color("#FFC266") : color("#8A4B00");
     }
 
+    /** 课表"当前时间"指示线用的高强调红，不随视觉风格变化。 */
+    public static int nowIndicatorColor(boolean dark) {
+        return dark ? color("#FF7177") : color("#E0474D");
+    }
+
     public static int outlineColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {
