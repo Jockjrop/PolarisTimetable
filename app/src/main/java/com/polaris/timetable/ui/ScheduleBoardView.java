@@ -2150,21 +2150,57 @@ public class ScheduleBoardView extends FrameLayout {
             if (timeAxis == null) {
                 return -1f;
             }
-            Calendar now = Calendar.getInstance();
-            int nowMinute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+            int nowMinute = nowMinuteOfDay();
             if (nowMinute < timeAxis.startMinute || nowMinute >= timeAxis.endMinute) {
                 return -1f;
             }
             return timeAxis.yForMinute(nowMinute);
         }
 
+        private int nowMinuteOfDay() {
+            Calendar now = Calendar.getInstance();
+            return now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+        }
+
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            float y = lineY();
-            if (y < 0) {
+            if (timeAxis == null) {
                 return;
             }
+            int nowMinute = nowMinuteOfDay();
+            if (nowMinute < timeAxis.startMinute || nowMinute >= timeAxis.endMinute) {
+                return;
+            }
+            drawOngoingSlotHighlight(canvas, nowMinute);
+            drawLine(canvas, timeAxis.yForMinute(nowMinute));
+        }
+
+        /** 当前节格的圆角描边环：标记"正在进行"的时间段（有无课程都标，锚定当下位置）。 */
+        private void drawOngoingSlotHighlight(Canvas canvas, int nowMinute) {
+            for (int section = 1; section <= sectionCount; section++) {
+                CourseTimeResolver.TimeRange range = CourseTimeResolver.sectionTimeRange(
+                        classTimeSettings, section);
+                if (range == null || nowMinute < range.startMinutes
+                        || nowMinute >= range.endMinutes || sectionRowHeight(section) <= 0) {
+                    continue;
+                }
+                float inset = dp(1);
+                float radius = dp(10);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(dp(2));
+                paint.setColor(PolarisVisualTheme.nowIndicatorColor(darkMode));
+                paint.setAlpha(235);
+                paint.setAntiAlias(true);
+                canvas.drawRoundRect(inset, timeAxis.yForMinute(range.startMinutes) + inset,
+                        getWidth() - inset, timeAxis.yForMinute(range.endMinutes) - inset,
+                        radius, radius, paint);
+                paint.setAlpha(255);
+                break;
+            }
+        }
+
+        private void drawLine(Canvas canvas, float y) {
             int color = PolarisVisualTheme.nowIndicatorColor(darkMode);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeCap(Paint.Cap.ROUND);
