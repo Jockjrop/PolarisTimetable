@@ -4,6 +4,7 @@
 > 基线：`versionName 1.15.2` / `versionCode 11502`，单元测试 275 个全绿，`assembleDebug` 与 `assembleRelease` 均可构建。
 > 约束：遵守 `AGENTS.md` —— 原生 Android Java，不迁 Compose/Kotlin/Web；不一次性重构；不删除 `MainActivity.java`、`Course.java`、`ScheduleParser.java`；每轮只做一个明确任务；每次交付 APK 必须升版本。
 > 说明：本文件取代已过期的 `docs/roadmap.md`（其阶段 1–5 已全部落地）。
+> **状态（2026-09-03）：阶段 0–5 与"收官后修复"已全部闭环。** 第一节"现状体检"是制定时（1.15.2）的快照，其中 P2/P3 所列残留（UTP 开关、getIdentifier 反射、Gravity.LEFT/RIGHT）均已清零，以各阶段章节的 ✅ 标注为准。后续工作主线移步 `docs/autonomous-iteration-2026-09.md`。
 
 ---
 

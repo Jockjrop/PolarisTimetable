@@ -48,12 +48,10 @@ Polaris课程表是一个原生 Android Java 课程表 App，面向学生使用�
 - **UI 重构阶段 0–6 已竣工**（1.13.18 → 1.15.1）：设计令牌、edge-to-edge、字符串资源化、`MainActivity` 页面级 Builder 拆分、设置页/我的页 XML + ViewBinding + Fragment 迁移、边界与可访问性验收。详见 `docs/ui-refactor-plan.md`（已归档）。
 - **颜色/形状 token 架构已确立（2026-09-02 M3 审计后落地，1.16.6/1.16.7）**：主 UI 颜色 token 源是 `ui/PolarisVisualTheme.java`（4 风格 × 明暗），`res/values/colors.xml` 仅作 widget 与窗口主题的镜像层，Java UI 不引用 `R.color` 是既定形态；组件专属色（如开关）用类内命名常量；`reminder/CourseReminderPopup` 固定浅色卡片是覆盖窗的设计意图，勿"修"成主题化；警示文案色统一走 `PolarisVisualTheme.warningColor(dark)`。形状角半径与课表网格断点尺寸在 `values/dimens.xml`（平板覆盖 `values-sw600dp/dimens.xml`），新视图勿写魔法数。
 
-## 当前优先级
+## 当前优先级（2026-09-03 核对，iteration-plan 阶段 0–5 已全部收官）
 
-1. ✅ **文档对齐（2026-08-31 已完成）**：`docs/roadmap.md` 已标注归档、路线图由 `docs/iteration-plan.md` 接替；`docs/architecture.md` 技术现状与目录结构已同步；`docs/ui-refactor-plan.md` 已标注竣工。文档侧暂无待办。
-2. **`MainActivity.java` 第二轮瘦身**：当前 8846 行 / 约 300 方法 / 158 字段。第一轮只拆出页面级 Builder（净减 197 行），剩余部分是**用例编排 + 53 个对话框 + 配置状态镜像**，必须按"用例"而非"页面"继续拆。步骤见 `docs/iteration-plan.md` 阶段 2。
-3. **CI 可信度**：`instrumented` job 被设为 `continue-on-error: true`，UI 测试失败不阻塞合并；`gradle.properties` 中三行 UTP 开关为试探残留，待收敛。
-4. ✅ **兼容性与本地化收尾（2026-09-02 核对完成）**：`getIdentifier("status_bar_height")` 反射与 `Gravity.LEFT/RIGHT` 均已清零，无残留。
-5. **依赖升级**：`pdfbox-android` 等依赖陈旧，升级须按校回归解析模板。
+旧五项全部完成，勿再启动：① 文档对齐（2026-08-31）② MainActivity 第二轮瘦身（1.15.3–1.15.9 收官，8846→6309 行；1.16.x 回升至 6899 行属正常增长）③ CI 可信度（2026-09-01 闭环：continue-on-error 已摘、UTP 开关已清，instrumented 失败阻塞合并）④ 兼容性与本地化（getIdentifier/Gravity 均已清零）⑤ 依赖升级（AndroidX 已升 1.16.0；pdfbox 评估结论为无版本可升，三校 PDF 回归护栏已入库）。
+
+当前工作主线见 `docs/autonomous-iteration-2026-09.md`（自主迭代路线与进度台账）：测试护栏加固 → 课表当前时间指示线 → 下节课倒计时 → 数据备份/恢复 → UI 打磨批次。
 
 > 注意：字号已 sp 化（`spToPx` + `TypedValue.COMPLEX_UNIT_SP`）。`docs/ui-refactor-plan.md` 中"字号大量 dp 绝对值导致 fontScale 失效"的描述已失效，不要据此改代码。

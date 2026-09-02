@@ -26,7 +26,7 @@ import java.util.Collections;
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.swipeRight;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
-import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
+import static androidx.test.espresso.matcher.ViewMatchers.isCompletelyDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withClassName;
 import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static org.hamcrest.Matchers.allOf;
@@ -75,16 +75,18 @@ public class ScheduleBoardRenderTest {
     @Test
     public void seededCourse_rendersOnBoard() {
         launch();
-        // 课程块 contentDescription 包含课程名
-        onView(allOf(withContentDescription(containsString("高等数学A")), isDisplayed()))
-                .check(matches(isDisplayed()));
+        // 课程块 contentDescription 包含课程名。
+        // 用 isCompletelyDisplayed：相邻周页（ViewPager 预加载）同含该课程块，
+        // isDisplayed 在预加载瞬态可能双命中造成 AmbiguousViewMatcherException。
+        onView(allOf(withContentDescription(containsString("高等数学A")), isCompletelyDisplayed()))
+                .check(matches(isCompletelyDisplayed()));
     }
 
     @Test
     public void swipeRight_switchesWeekAndShowsReturnButton() {
         launch();
-        onView(allOf(withContentDescription(containsString("高等数学A")), isDisplayed()))
-                .check(matches(isDisplayed()));
+        onView(allOf(withContentDescription(containsString("高等数学A")), isCompletelyDisplayed()))
+                .check(matches(isCompletelyDisplayed()));
         // 当前周为学期末(20),向左滑会越界;向右滑切到上一周(19)
         onView(withClassName(endsWith("ScheduleBoardView")))
                 .perform(swipeRight());
@@ -93,7 +95,7 @@ public class ScheduleBoardRenderTest {
         onView(withContentDescription("回到本周"))
                 .check(matches(isDisplayed()));
         // 课程仍在(课程覆盖 1-20 周)
-        onView(allOf(withContentDescription(containsString("高等数学A")), isDisplayed()))
-                .check(matches(isDisplayed()));
+        onView(allOf(withContentDescription(containsString("高等数学A")), isCompletelyDisplayed()))
+                .check(matches(isCompletelyDisplayed()));
     }
 }
