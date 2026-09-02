@@ -161,6 +161,11 @@ public final class PolarisVisualTheme {
         return AURORA.equals(theme) ? color("#80DDD8FF") : color("#8ADCEAFF");
     }
 
+    /** 警示/需复核文案色，不随视觉风格变化。 */
+    public static int warningColor(boolean dark) {
+        return dark ? color("#FFC266") : color("#8A4B00");
+    }
+
     public static int outlineColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {

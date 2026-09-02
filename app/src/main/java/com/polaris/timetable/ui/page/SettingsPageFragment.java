@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.polaris.timetable.databinding.FragmentSettingsBinding;
+import com.polaris.timetable.ui.PolarisVisualTheme;
 
 /**
  * 「设置」页 Fragment（阶段 5-2/5-5）：ConstraintLayout 外壳 + ViewBinding + 委托 SettingsPageBuilder。
@@ -59,7 +60,7 @@ public class SettingsPageFragment extends Fragment {
         }
         SettingsPageBuilder.Host host = (SettingsPageBuilder.Host) getActivity();
         // 仅保留容器背景，内容由 Builder 按 panel 构建后注入
-        int bg = 0xFFEAF2FF;
+        int bg = PolarisVisualTheme.pageColor(PolarisVisualTheme.MINIMAL, false);
         if (getActivity() instanceof com.polaris.timetable.ui.page.MyPageBuilder.Host) {
             bg = ((com.polaris.timetable.ui.page.MyPageBuilder.Host) getActivity()).pageSurfaceColor();
         }

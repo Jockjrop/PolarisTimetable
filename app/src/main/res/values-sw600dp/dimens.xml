@@ -1,0 +1,6 @@
+<resources>
+    <!-- 平板（smallestScreenWidthDp >= 600）覆盖：课表网格加宽。
+         与 ScheduleBoardView 原tablet分支的 54/72dp 数值一致。 -->
+    <dimen name="board_time_width">54dp</dimen>
+    <dimen name="board_day_min_width">72dp</dimen>
+</resources>

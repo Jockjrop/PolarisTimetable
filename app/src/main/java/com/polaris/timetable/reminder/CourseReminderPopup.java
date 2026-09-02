@@ -29,11 +29,14 @@ public final class CourseReminderPopup {
     private static WindowManager activeWindowManager;
     private static final Handler handler = new Handler(Looper.getMainLooper());
 
+    // 悬浮提醒窗覆盖在任意应用之上，不跟随应用内视觉风格与暗色模式，
+    // 固定为浅色卡片（与 PolarisVisualTheme 极简亮色 token 同源）。
     private static final int INK = Color.parseColor("#172033");
     private static final int MUTED = Color.parseColor("#667085");
     private static final int ACCENT = Color.parseColor("#3D66C8");
     private static final int CARD = Color.WHITE;
     private static final int SURFACE = Color.parseColor("#EAF3FB");
+    private static final int STROKE = Color.parseColor("#D1DCEE");
 
     private CourseReminderPopup() {
     }
@@ -75,7 +78,7 @@ public final class CourseReminderPopup {
         GradientDrawable background = new GradientDrawable();
         background.setColor(CARD);
         background.setCornerRadius(dp(appContext, 20));
-        background.setStroke(dp(appContext, 1), Color.parseColor("#D1DCEE"));
+        background.setStroke(dp(appContext, 1), STROKE);
         card.setBackground(background);
         card.setElevation(dp(appContext, 10));
 

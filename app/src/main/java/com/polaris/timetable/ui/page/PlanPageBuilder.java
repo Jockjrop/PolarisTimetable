@@ -1,6 +1,7 @@
 package com.polaris.timetable.ui.page;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
@@ -102,7 +103,7 @@ public class PlanPageBuilder {
 
         TextView addButton = new TextView(context);
         addButton.setText(context.getString(R.string.plan_action_new));
-        addButton.setTextColor(0xFFFFFFFF);
+        addButton.setTextColor(Color.WHITE);
         addButton.setTextSize(15);
         addButton.setTypeface(Typeface.DEFAULT_BOLD);
         addButton.setGravity(Gravity.CENTER);
@@ -185,7 +186,7 @@ public class PlanPageBuilder {
 
         TextView addButton = new TextView(context);
         addButton.setText(context.getString(R.string.plan_action_new));
-        addButton.setTextColor(0xFFFFFFFF);
+        addButton.setTextColor(Color.WHITE);
         addButton.setTextSize(15);
         addButton.setTypeface(Typeface.DEFAULT_BOLD);
         addButton.setGravity(Gravity.CENTER);

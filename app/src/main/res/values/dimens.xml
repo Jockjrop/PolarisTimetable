@@ -1,0 +1,22 @@
+<resources>
+    <!-- MD3 形状角半径阶梯（corner_small=chips/menu，corner_medium=cards，
+         corner_large=FAB/drawer，corner_extra_large=dialog/sheet）。
+         新视图一律引用此处的 token，不再写魔法数。 -->
+    <dimen name="corner_small">8dp</dimen>
+    <dimen name="corner_medium">12dp</dimen>
+    <dimen name="corner_large">16dp</dimen>
+    <dimen name="corner_extra_large">28dp</dimen>
+
+    <!-- Widget 既有视觉：卡片 22dp、左侧色条 3dp，token 化但不改值 -->
+    <dimen name="corner_widget">22dp</dimen>
+    <dimen name="corner_widget_accent">3dp</dimen>
+
+    <!-- 课表网格断点尺寸（手机值；平板覆盖见 values-sw600dp/dimens.xml）。
+         ScheduleBoardView 与 MainActivity 顶栏/侧栏对齐计算共用，Java 经
+         getDimensionPixelSize 读取，勿在代码里另写魔法数。 -->
+    <dimen name="board_time_width">34dp</dimen>
+    <dimen name="board_day_min_width">38dp</dimen>
+    <dimen name="board_day_max_width">110dp</dimen>
+    <dimen name="content_column_width_tablet">640dp</dimen>
+    <dimen name="tablet_sidebar_width">320dp</dimen>
+</resources>

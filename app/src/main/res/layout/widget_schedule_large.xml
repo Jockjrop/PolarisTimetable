@@ -17,13 +17,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
-            android:fontFamily="sans"
             android:includeFontPadding="false"
             android:maxLines="1"
             android:text="@string/widget_today_preview_title"
-            android:textColor="@color/widget_text_main"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.TitleSmall"
+            android:textColor="@color/widget_text_main" />
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -48,8 +46,8 @@
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:text="@string/widget_today_empty"
-                android:textColor="@color/widget_text_muted"
-                android:textSize="13sp" />
+                android:textAppearance="@style/TextAppearance.Polaris.Widget.BodyMedium"
+                android:textColor="@color/widget_text_muted" />
         </FrameLayout>
     </RelativeLayout>
 
@@ -70,13 +68,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
-            android:fontFamily="sans"
             android:includeFontPadding="false"
             android:maxLines="1"
             android:text="@string/widget_tomorrow_preview_title"
-            android:textColor="@color/widget_text_main"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.TitleSmall"
+            android:textColor="@color/widget_text_main" />
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -101,8 +97,8 @@
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:text="@string/widget_tomorrow_empty"
-                android:textColor="@color/widget_text_muted"
-                android:textSize="13sp" />
+                android:textAppearance="@style/TextAppearance.Polaris.Widget.BodyMedium"
+                android:textColor="@color/widget_text_muted" />
         </FrameLayout>
     </RelativeLayout>
 </LinearLayout>

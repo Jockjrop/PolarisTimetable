@@ -6,4 +6,28 @@
         <item name="android:statusBarColor">@color/page_bg</item>
         <item name="android:navigationBarColor">@color/page_bg</item>
     </style>
+
+    <!-- Widget 类型标尺（MD3 typescale 子集）。颜色按角色留在布局里，样式只管字号/字重。 -->
+    <style name="TextAppearance.Polaris.Widget" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+
+    <style name="TextAppearance.Polaris.Widget.TitleSmall">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Polaris.Widget.BodyMedium">
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <style name="TextAppearance.Polaris.Widget.BodyMediumEmphasized">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Polaris.Widget.BodySmall">
+        <item name="android:textSize">11sp</item>
+    </style>
 </resources>

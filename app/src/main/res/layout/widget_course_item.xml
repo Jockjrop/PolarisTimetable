@@ -34,9 +34,8 @@
             android:ellipsize="end"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:textColor="@color/widget_text_main"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodyMediumEmphasized"
+            android:textColor="@color/widget_text_main" />
 
         <TextView
             android:id="@+id/widget_course_time"
@@ -46,8 +45,8 @@
             android:ellipsize="end"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:textColor="@color/widget_text_muted"
-            android:textSize="11sp" />
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
 
         <TextView
             android:id="@+id/widget_course_location"
@@ -57,7 +56,7 @@
             android:ellipsize="end"
             android:includeFontPadding="false"
             android:maxLines="1"
-            android:textColor="@color/widget_text_muted"
-            android:textSize="11sp" />
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
     </LinearLayout>
 </LinearLayout>

@@ -640,11 +640,11 @@ public class ScheduleBoardView extends FrameLayout {
                 : configuredSectionHeight);
         timeAxis = ScheduleTimeAxis.create(
                 courses, classTimeSettings, sectionCount, sectionHeight, collapseLunchBreak);
-        timeWidth = resolveTimeWidth(getContext(), tablet);
+        timeWidth = resolveTimeWidth(getContext());
         int availableWidth = getAvailableBoardWidth();
-        // 列宽在 resolveDayWidth 内封顶 110dp：平板横屏 7 列不再被无限拉宽。
+        // 列宽在 resolveDayWidth 内按 board_day_max_width 封顶：平板横屏 7 列不再被无限拉宽。
         // floor 取整保证手机/竖屏平板 content 不超出可用宽度（仅 1~7dp 居中微移）。
-        dayWidth = resolveDayWidth(getContext(), availableWidth, visibleDayCount, tablet);
+        dayWidth = resolveDayWidth(getContext(), availableWidth, visibleDayCount);
         dayHeaderHeight = dp(62);
         int contentWidth = timeWidth + dayWidth * visibleDayCount;
         // 横屏平板：网格左侧贴边（右侧空间留给实践/今日概览面板）；
@@ -1945,20 +1945,22 @@ public class ScheduleBoardView extends FrameLayout {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
-    /** 网格时间轴宽度（px），板内布局与外部对齐计算共用。 */
-    private static int resolveTimeWidth(Context context, boolean tablet) {
-        return dp(context, tablet ? 54 : 34);
+    /** 网格时间轴宽度（px），板内布局与外部对齐计算共用。手机/平板值由 sw600dp 资源限定符切换。 */
+    private static int resolveTimeWidth(Context context) {
+        return context.getResources().getDimensionPixelSize(R.dimen.board_time_width);
     }
 
     /**
-     * 网格单列宽度（px）：可用宽度均分后按 38/72dp 下限、110dp 上限夹取。
-     * 板内布局与 MainActivity 顶栏/右侧面板对齐计算共用同一组常数。
+     * 网格单列宽度（px）：可用宽度均分后按 board_day_min_width 下限、board_day_max_width
+     * 上限夹取。板内布局与 MainActivity 顶栏/右侧面板对齐计算共用同一组常数。
      */
     private static int resolveDayWidth(Context context, int availableWidthPx,
-                                       int visibleDayCount, boolean tablet) {
-        int perDay = (availableWidthPx - resolveTimeWidth(context, tablet))
+                                       int visibleDayCount) {
+        int perDay = (availableWidthPx - resolveTimeWidth(context))
                 / Math.max(1, visibleDayCount);
-        return Math.max(dp(context, tablet ? 72 : 38), Math.min(dp(context, 110), perDay));
+        int minWidth = context.getResources().getDimensionPixelSize(R.dimen.board_day_min_width);
+        int maxWidth = context.getResources().getDimensionPixelSize(R.dimen.board_day_max_width);
+        return Math.max(minWidth, Math.min(maxWidth, perDay));
     }
 
     /**
@@ -1967,10 +1969,8 @@ public class ScheduleBoardView extends FrameLayout {
      */
     public static int gridContentWidth(Context context, int availableWidthPx,
                                        int visibleDayCount) {
-        boolean tablet = context.getResources().getConfiguration()
-                .smallestScreenWidthDp >= 600;
-        return resolveTimeWidth(context, tablet)
-                + resolveDayWidth(context, availableWidthPx, visibleDayCount, tablet)
+        return resolveTimeWidth(context)
+                + resolveDayWidth(context, availableWidthPx, visibleDayCount)
                 * Math.max(1, visibleDayCount);
     }
 

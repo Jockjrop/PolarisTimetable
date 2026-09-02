@@ -780,7 +780,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         TextView line = new TextView(this);
         line.setText(label + "：" + value);
         line.setTextColor(needsAttention
-                ? Color.parseColor(isDarkModeActive() ? "#FFC266" : "#9A5B00")
+                ? PolarisVisualTheme.warningColor(isDarkModeActive())
                 : mutedColor());
         line.setTextSize(14);
         line.setSingleLine(false);
@@ -6631,7 +6631,9 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
      */
     @Override
     public int contentColumnWidth() {
-        return isLandscapeTablet() ? Math.min(dp(640), getResources().getDisplayMetrics().widthPixels)
+        return isLandscapeTablet() ? Math.min(
+                getResources().getDimensionPixelSize(R.dimen.content_column_width_tablet),
+                getResources().getDisplayMetrics().widthPixels)
                 : getResources().getDisplayMetrics().widthPixels;
     }
 
@@ -6646,7 +6648,9 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
      */
     private int menuCardWidth(float percent) {
         if (isLandscapeTablet()) {
-            float base = tabletSettingsOpen ? dp(320) : contentColumnWidth();
+            float base = tabletSettingsOpen
+                    ? getResources().getDimensionPixelSize(R.dimen.tablet_sidebar_width)
+                    : contentColumnWidth();
             return Math.round(base * percent);
         }
         return Math.round(contentColumnWidth() * percent);

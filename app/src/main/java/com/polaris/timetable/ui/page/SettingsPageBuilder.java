@@ -431,6 +431,14 @@ public class SettingsPageBuilder {
 
     // 自绘制开关_thumb，纯搬 MainActivity.SwitchThumbView，改为静态与 Context 解耦
     private static class SwitchThumbView extends View {
+        // 开关组件 token：选中态固定用夜色 brand（不随视觉风格变化），未选中态按明暗分叉
+        private static final int TRACK_CHECKED = Color.parseColor("#3E8BFF");
+        private static final int TRACK_OFF_DARK = Color.parseColor("#252B36");
+        private static final int TRACK_OFF_LIGHT = Color.parseColor("#D8DDE6");
+        private static final int STROKE_CHECKED = Color.parseColor("#63A4FF");
+        private static final int STROKE_OFF_DARK = Color.parseColor("#3B424D");
+        private static final int STROKE_OFF_LIGHT = Color.parseColor("#C9D0DA");
+
         private boolean checked;
         private boolean dark;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -460,11 +468,11 @@ public class SettingsPageBuilder {
             float height = getHeight();
             float radius = height / 2f;
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(checked ? Color.parseColor("#3E8BFF") : Color.parseColor(dark ? "#252B36" : "#D8DDE6"));
+            paint.setColor(checked ? TRACK_CHECKED : dark ? TRACK_OFF_DARK : TRACK_OFF_LIGHT);
             canvas.drawRoundRect(0f, 0f, width, height, radius, radius, paint);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(getResources().getDisplayMetrics().density * 1f);
-            paint.setColor(checked ? Color.parseColor("#63A4FF") : Color.parseColor(dark ? "#3B424D" : "#C9D0DA"));
+            paint.setColor(checked ? STROKE_CHECKED : dark ? STROKE_OFF_DARK : STROKE_OFF_LIGHT);
             float inset = getResources().getDisplayMetrics().density * 0.5f;
             canvas.drawRoundRect(inset, inset, width - inset, height - inset, radius, radius, paint);
             paint.setStyle(Paint.Style.FILL);

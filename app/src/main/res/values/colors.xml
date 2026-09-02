@@ -1,5 +1,7 @@
 <resources>
     <color name="brand">#2563EB</color>
+    <!-- 自适应图标背景：只定义在 values，不进 values-night，保证图标不随系统深色模式变色 -->
+    <color name="ic_launcher_background">#2563EB</color>
     <color name="brand_dark">#1D4ED8</color>
     <color name="page_bg">#F6F7FB</color>
     <color name="panel">#FFFFFF</color>

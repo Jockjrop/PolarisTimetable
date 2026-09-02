@@ -30,6 +30,7 @@ import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.ui.DesignTokens;
+import com.polaris.timetable.ui.PolarisVisualTheme;
 
 import java.util.Collections;
 import java.util.List;
@@ -151,8 +152,8 @@ public class AiImportFlow extends DialogKit {
         panel.addView(input, inputParams);
 
         TextView errorView = new TextView(host);
-        errorView.setTextColor(Color.parseColor(
-                host.isDarkModeActive() ? "#FFC266" : "#8A4B00"));
+        errorView.setTextColor(PolarisVisualTheme.warningColor(
+                host.isDarkModeActive()));
         errorView.setTextSize(14);
         errorView.setLineSpacing(host.dp(3), 1f);
         errorView.setPadding(host.dp(12), host.dp(10), host.dp(12), host.dp(10));
@@ -352,7 +353,7 @@ public class AiImportFlow extends DialogKit {
                 ? host.getString(R.string.import_ai_note_overwrite)
                 : host.getString(R.string.import_ai_note_import));
         replacementNotice.setTextColor(replacingExisting
-                ? Color.parseColor(host.isDarkModeActive() ? "#FFC266" : "#8A4B00")
+                ? PolarisVisualTheme.warningColor(host.isDarkModeActive())
                 : host.mutedColor());
         replacementNotice.setTextSize(14);
         replacementNotice.setLineSpacing(host.dp(3), 1f);
