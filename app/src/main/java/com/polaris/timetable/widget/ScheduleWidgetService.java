@@ -1,5 +1,6 @@
 package com.polaris.timetable.widget;
 
+import android.appwidget.AppWidgetManager;
 import android.content.Context;
 import android.content.Intent;
 import android.widget.RemoteViews;
@@ -21,11 +22,14 @@ public final class ScheduleWidgetService extends RemoteViewsService {
     private static final class CourseListFactory implements RemoteViewsFactory {
         private final Context context;
         private final int dayOffset;
+        private final int appWidgetId;
         private List<ScheduleWidgetEntry> entries = new ArrayList<>();
 
         CourseListFactory(Context context, Intent intent) {
             this.context = context;
-            dayOffset = intent.getIntExtra(ScheduleWidgetProvider.EXTRA_DAY_OFFSET, 0);
+            this.dayOffset = intent.getIntExtra(ScheduleWidgetProvider.EXTRA_DAY_OFFSET, 0);
+            this.appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
+                    AppWidgetManager.INVALID_APPWIDGET_ID);
         }
 
         @Override
@@ -40,7 +44,8 @@ public final class ScheduleWidgetService extends RemoteViewsService {
 
         private void reload() {
             ScheduleRepository repository = new ScheduleRepository(context);
-            String scheduleId = repository.activeScheduleId();
+            // 每个 widget 实例可绑定独立课表（未配置时回退激活课表）。
+            String scheduleId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
             ScheduleRepository.Config config = repository.loadConfig(scheduleId);
             Calendar now = Calendar.getInstance();
             Calendar target = (Calendar) now.clone();

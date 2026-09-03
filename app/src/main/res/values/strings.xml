@@ -2,6 +2,10 @@
     <string name="app_name">Polaris课程表</string>
     <string name="schedule_widget_name">Polaris 今日课表</string>
     <string name="schedule_widget_description">显示当前课表的今日与明日课程</string>
+    <string name="widget_config_title">选择课表</string>
+    <string name="widget_config_hint">为这个桌面小组件选择数据来源课表；不选择时跟随当前激活课表。添加后可长按小组件重新配置。</string>
+    <string name="widget_config_active_badge">当前激活</string>
+    <string name="widget_config_bind_action">点击绑定到小组件</string>
     <string name="widget_today_empty">今日无课</string>
     <string name="widget_tomorrow_empty">明日无课</string>
     <string name="widget_cd_ongoing">，进行中</string>

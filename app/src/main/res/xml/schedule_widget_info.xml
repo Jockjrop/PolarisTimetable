@@ -11,4 +11,6 @@
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable"
+    android:configure="com.polaris.timetable.widget.ScheduleWidgetConfigActivity"
     tools:targetApi="s" />

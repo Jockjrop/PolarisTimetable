@@ -108,13 +108,27 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_root, openApp);
 
         Calendar today = Calendar.getInstance();
-        views.setTextViewText(R.id.widget_today_title, dateTitle("今天", today));
+        // 绑定了非激活课表时在标题前缀课表名，让多 widget 用户可分辨数据源。
+        String boundId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
+        String titlePrefix = "";
+        ScheduleRepository repository = new ScheduleRepository(context);
+        if (!boundId.equals(repository.activeScheduleId())) {
+            for (ScheduleRepository.ScheduleEntry entry : repository.loadSchedules()) {
+                if (entry.id.equals(boundId)) {
+                    titlePrefix = entry.name + "·";
+                    break;
+                }
+            }
+        }
+        views.setTextViewText(R.id.widget_today_title,
+                titlePrefix + dateTitle("今天", today));
         configureList(context, views, R.id.widget_today_list, R.id.widget_today_empty,
                 appWidgetId, 0, openApp);
         if (wide) {
             Calendar tomorrow = (Calendar) today.clone();
             tomorrow.add(Calendar.DATE, 1);
-            views.setTextViewText(R.id.widget_tomorrow_title, dateTitle("明天", tomorrow));
+            views.setTextViewText(R.id.widget_tomorrow_title,
+                    titlePrefix + dateTitle("明天", tomorrow));
             configureList(context, views, R.id.widget_tomorrow_list, R.id.widget_tomorrow_empty,
                     appWidgetId, 1, openApp);
         }
