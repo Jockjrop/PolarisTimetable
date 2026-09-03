@@ -14,6 +14,7 @@
     <color name="widget_surface">#FF000000</color>
     <color name="widget_surface_border">#33465B7A</color>
     <color name="widget_item_surface">#00000000</color>
+    <color name="widget_item_ongoing_surface">#1AFFFFFF</color>
     <color name="widget_text_main">#F4F7FB</color>
     <color name="widget_text_muted">#AEB8C7</color>
     <color name="widget_divider">#46505E</color>

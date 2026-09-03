@@ -11,6 +11,8 @@ import java.util.Calendar;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class ScheduleWidgetDataTest {
     @Test
@@ -131,6 +133,50 @@ public class ScheduleWidgetDataTest {
                 Arrays.asList(morning), config, beforeEnd, beforeEnd).size());
         assertEquals(0, ScheduleWidgetData.forDate(
                 Arrays.asList(morning), config, atEnd, atEnd).size());
+    }
+
+    @Test
+    public void forDate_marksOngoingCourseOnlyDuringItsTime() {
+        ScheduleRepository.Config config = config();
+        Course morning = course(0, 1, 2, "高等数学", "1-2周");
+        // 节1-2 = 08:00–09:50
+        Calendar during = dateTime(2026, Calendar.MARCH, 2, 9, 0);
+        List<ScheduleWidgetEntry> entries = ScheduleWidgetData.forDate(
+                Arrays.asList(morning), config, during, during);
+        assertEquals(1, entries.size());
+        assertTrue(entries.get(0).ongoing);
+
+        Calendar before = dateTime(2026, Calendar.MARCH, 2, 7, 30);
+        entries = ScheduleWidgetData.forDate(Arrays.asList(morning), config, before, before);
+        assertEquals(1, entries.size());
+        assertFalse(entries.get(0).ongoing);
+    }
+
+    @Test
+    public void forDate_tomorrowCoursesNeverOngoing() {
+        ScheduleRepository.Config config = config();
+        Course monday = course(0, 1, 2, "高等数学", "1-2周");
+        Calendar now = dateTime(2026, Calendar.MARCH, 2, 9, 0);     // 周一 09:00 上课中
+        Calendar nextMonday = dateTime(2026, Calendar.MARCH, 9, 9, 0);
+
+        List<ScheduleWidgetEntry> entries = ScheduleWidgetData.forDate(
+                Arrays.asList(monday), config, nextMonday, now);
+        assertEquals(1, entries.size());
+        assertFalse(entries.get(0).ongoing);
+    }
+
+    @Test
+    public void nextCourseStartAfter_returnsNearestFutureStart() {
+        ScheduleRepository.Config config = config();
+        Course morning = course(0, 1, 2, "高等数学", "1-2周");
+        Course afternoon = course(0, 5, 6, "大学物理", "1-2周");
+        Calendar now = dateTime(2026, Calendar.MARCH, 2, 9, 0);
+        // 边界按课程整体 startMinutes 计：第一节 08:00 已开始（跳过），
+        // 最近的未来课程开始 = 下午课 14:30
+        Calendar expected = dateTime(2026, Calendar.MARCH, 2, 14, 30);
+
+        assertEquals(expected.getTimeInMillis(), ScheduleWidgetData.nextCourseStartAfter(
+                Arrays.asList(morning, afternoon), config, now));
     }
 
     private ScheduleRepository.Config config() {

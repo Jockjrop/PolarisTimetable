@@ -75,13 +75,43 @@ final class ScheduleWidgetData {
                     ScheduleWidgetTimeFormatter.format(course, config),
                     location,
                     stableId(course, week, day, index),
-                    courseColor(course, courseColors)));
+                    courseColor(course, courseColors),
+                    isOngoingNow(course, config, date, now)));
         }
         return entries;
     }
 
+    /** 目标日期=今天且当前时刻落在课程时间内（含开始、不含结束）时为进行中。 */
+    private static boolean isOngoingNow(
+            Course course, ScheduleRepository.Config config, Calendar target, Calendar now) {
+        if (now == null || !isSameDay(target, now)
+                || course.isBannerOnlyCourse() || !course.hasScheduledTime()) {
+            return false;
+        }
+        int startMinutes = ScheduleWidgetTimeFormatter.startMinutes(course, config);
+        int endMinutes = ScheduleWidgetTimeFormatter.endMinutes(course, config);
+        int nowMinutes = minutesOfDay(now);
+        return startMinutes >= 0 && endMinutes > startMinutes
+                && nowMinutes >= startMinutes && nowMinutes < endMinutes;
+    }
+
     static long nextCourseEndAfter(
             List<Course> source, ScheduleRepository.Config config, Calendar now) {
+        return nextCourseBoundaryAfter(source, config, now, false);
+    }
+
+    static long nextCourseStartAfter(
+            List<Course> source, ScheduleRepository.Config config, Calendar now) {
+        return nextCourseBoundaryAfter(source, config, now, true);
+    }
+
+    /**
+     * 下一个课程时间边界（开始或结束）的时间戳；无未来边界返回 -1。
+     * 供 provider 安排下一次刷新，使"进行中"高亮在课程开始/结束时刻准时切换。
+     */
+    private static long nextCourseBoundaryAfter(
+            List<Course> source, ScheduleRepository.Config config, Calendar now,
+            boolean startBoundary) {
         if (source == null || config == null || now == null) {
             return -1L;
         }
@@ -91,24 +121,26 @@ final class ScheduleWidgetData {
         }
         int day = mondayBasedDay(now);
         int currentMinutes = minutesOfDay(now);
-        long nextEnd = Long.MAX_VALUE;
+        long nextBoundary = Long.MAX_VALUE;
         for (Course course : source) {
             if (course == null || !course.hasScheduledTime() || course.day != day
                     || !isActiveInWeek(course, week)) {
                 continue;
             }
-            int endMinutes = ScheduleWidgetTimeFormatter.endMinutes(course, config);
-            if (endMinutes <= currentMinutes) {
+            int boundaryMinutes = startBoundary
+                    ? ScheduleWidgetTimeFormatter.startMinutes(course, config)
+                    : ScheduleWidgetTimeFormatter.endMinutes(course, config);
+            if (boundaryMinutes <= currentMinutes) {
                 continue;
             }
-            Calendar end = (Calendar) now.clone();
-            end.set(Calendar.HOUR_OF_DAY, endMinutes / 60);
-            end.set(Calendar.MINUTE, endMinutes % 60);
-            end.set(Calendar.SECOND, 1);
-            end.set(Calendar.MILLISECOND, 0);
-            nextEnd = Math.min(nextEnd, end.getTimeInMillis());
+            Calendar boundary = (Calendar) now.clone();
+            boundary.set(Calendar.HOUR_OF_DAY, boundaryMinutes / 60);
+            boundary.set(Calendar.MINUTE, boundaryMinutes % 60);
+            boundary.set(Calendar.SECOND, startBoundary ? 0 : 1);
+            boundary.set(Calendar.MILLISECOND, 0);
+            nextBoundary = Math.min(nextBoundary, boundary.getTimeInMillis());
         }
-        return nextEnd == Long.MAX_VALUE ? -1L : nextEnd;
+        return nextBoundary == Long.MAX_VALUE ? -1L : nextBoundary;
     }
 
     private static Map<String, Integer> buildCourseColors(List<Course> courses) {

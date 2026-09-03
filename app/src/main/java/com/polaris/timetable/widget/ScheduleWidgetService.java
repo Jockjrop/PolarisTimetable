@@ -65,13 +65,18 @@ public final class ScheduleWidgetService extends RemoteViewsService {
                 return null;
             }
             ScheduleWidgetEntry entry = entries.get(position);
-            RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_course_item);
+            // 进行中条目用独立布局（高亮底色 + 时间行主文本色），两布局 ID 一致，
+            // 绑定代码完全复用；viewTypeCount 同步为 2。
+            RemoteViews views = new RemoteViews(context.getPackageName(), entry.ongoing
+                    ? R.layout.widget_course_item_ongoing : R.layout.widget_course_item);
             views.setTextViewText(R.id.widget_course_name, entry.name);
             views.setTextViewText(R.id.widget_course_time, entry.time);
             views.setTextViewText(R.id.widget_course_location, entry.location);
             views.setInt(R.id.widget_course_accent, "setColorFilter", entry.color);
             views.setContentDescription(R.id.widget_course_item,
-                    entry.name + "，" + entry.time + "，" + entry.location);
+                    entry.name + "，" + entry.time + "，" + entry.location
+                            + (entry.ongoing
+                                    ? context.getString(R.string.widget_cd_ongoing) : ""));
             views.setOnClickFillInIntent(R.id.widget_course_item, new Intent());
             return views;
         }
@@ -83,7 +88,7 @@ public final class ScheduleWidgetService extends RemoteViewsService {
 
         @Override
         public int getViewTypeCount() {
-            return 1;
+            return 2;
         }
 
         @Override
