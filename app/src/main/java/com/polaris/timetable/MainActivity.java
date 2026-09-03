@@ -72,6 +72,7 @@ import com.polaris.timetable.importer.ImportReviewSummary;
 import com.polaris.timetable.importer.PdfImportReviewFlow;
 import com.polaris.timetable.importer.ai.AiImportFlow;
 import com.polaris.timetable.export.ExportFileProvider;
+import com.polaris.timetable.diagnostics.DiagnosticsBundleBuilder;
 import com.polaris.timetable.export.ScheduleCalendarExporter;
 import com.polaris.timetable.export.ScheduleImageExporter;
 import com.polaris.timetable.export.SchedulePdfExporter;
@@ -4713,6 +4714,69 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         clipboard.setPrimaryClip(ClipData.newPlainText(
                 getString(R.string.diagnostics_clip_label), lastParseDiagnosticsText));
         Toast.makeText(this, getString(R.string.diagnostics_copied), Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * 收集诊断信息并构建诊断包全文（P6）：应用/设备、激活课表概要、
+     * 提醒状态、最近解析诊断。仅含应用内配置概要，不含个人身份信息。
+     */
+    String buildDiagnosticsBundle() {
+        String stamp = new SimpleDateFormat("yyyy/M/d HH:mm", Locale.getDefault())
+                .format(new Date());
+        DiagnosticsBundleBuilder.Section app = new DiagnosticsBundleBuilder.Section("应用")
+                .put("版本", appVersionName())
+                .put("系统", "Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
+                .put("设备", Build.MANUFACTURER + " " + Build.MODEL);
+        DiagnosticsBundleBuilder.Section schedule = new DiagnosticsBundleBuilder.Section("当前课表")
+                .put("名称", scheduleViewState.scheduleName)
+                .put("学校", scheduleViewState.schoolName)
+                .put("学期", scheduleViewState.semesterName)
+                .put("开学日期", scheduleViewState.firstWeekDay)
+                .put("学期周数", String.valueOf(scheduleViewState.semesterWeeks))
+                .put("每日节次", String.valueOf(scheduleViewState.courseSectionCount))
+                .put("课程数", String.valueOf(courses.size()))
+                .put("计划数", String.valueOf(studyPlans.size()))
+                .put("考试/DDL数", String.valueOf(academicEvents.size()));
+        DiagnosticsBundleBuilder.Section reminder = new DiagnosticsBundleBuilder.Section("提醒")
+                .put("提醒总开关", scheduleViewState.remindersEnabled ? "开" : "关");
+        DiagnosticsBundleBuilder.Section parse = new DiagnosticsBundleBuilder.Section("最近解析诊断")
+                .putRawBody(lastParseDiagnosticsText.length() == 0
+                        ? "无导入记录" : lastParseDiagnosticsText);
+        java.util.ArrayList<DiagnosticsBundleBuilder.Section> sections = new java.util.ArrayList<>();
+        sections.add(app);
+        sections.add(schedule);
+        sections.add(reminder);
+        sections.add(parse);
+        return DiagnosticsBundleBuilder.build(stamp, sections);
+    }
+
+    /** 导出诊断包：写 cache 导出目录后经系统分享面板发出（.txt，text/plain）。 */
+    void exportDiagnosticsBundle() {
+        try {
+            String content = buildDiagnosticsBundle();
+            File directory = new File(getCacheDir(), ExportFileProvider.EXPORT_DIRECTORY);
+            if (!directory.exists() && !directory.mkdirs()) {
+                throw new IllegalStateException(getString(R.string.diagnostics_dir_failed));
+            }
+            String stamp = new SimpleDateFormat("yyyyMMdd-HHmm", Locale.ROOT)
+                    .format(new Date());
+            File file = new File(directory, "Polaris诊断-" + stamp + ".txt");
+            try (FileOutputStream output = new FileOutputStream(file, false)) {
+                output.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            Uri uri = ExportFileProvider.uriForFile(this, file);
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType("text/plain");
+            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostics_share_subject));
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.setClipData(ClipData.newRawUri(getString(R.string.diagnostics_clip_label), uri));
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(share,
+                    getString(R.string.diagnostics_chooser_title)));
+        } catch (Exception exception) {
+            Toast.makeText(this, getString(R.string.diagnostics_export_failed,
+                    exception.getMessage()), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void showCourseManagePage() {

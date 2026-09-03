@@ -655,6 +655,11 @@
     <string name="diagnostics_copy_none">暂无可复制的解析诊断</string>
     <string name="diagnostics_clip_label">Polaris解析诊断</string>
     <string name="diagnostics_copied">解析诊断已复制</string>
+    <string name="diagnostics_export_action">导出诊断包</string>
+    <string name="diagnostics_share_subject">Polaris 诊断包</string>
+    <string name="diagnostics_chooser_title">发送诊断包</string>
+    <string name="diagnostics_dir_failed">无法创建导出目录</string>
+    <string name="diagnostics_export_failed">导出诊断包失败：%1$s</string>
     <string name="manage_no_match">没有找到匹配的课程</string>
     <string name="row_selected_cd">已选中</string>
     <string name="row_unselected_cd">未选中</string>

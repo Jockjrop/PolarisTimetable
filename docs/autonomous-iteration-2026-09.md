@@ -20,7 +20,8 @@
 | P7 | **质量基线**（外部评估 P0/P1）：lint 清零入 CI、PDF 护栏真实化、PR smoke | 质量 | 1.19.1 | ✅ bac5f92/b6d287d |
 | P8 | **多课表 Widget**（外部评估 P2）：每实例独立绑定课表 + 配置页 + 标题课表名前缀 | 功能 | 1.20.0 | ✅ 8d44b06 |
 | P9 | **新学期向导**（外部评估 P3）：模板复制配置 + 日期锚定 + 切换 + 进入导入 | 功能 | 1.21.0 | ✅ 1797712 |
-| P10 | **考试/DDL 时间线**（外部评估 P4）：AcademicEvent 绝对日期事件模型 + 时间线对话框 + 完成勾选 | 功能 | 1.22.0 | ✅（本轮） |
+| P10 | **考试/DDL 时间线**（外部评估 P4）：AcademicEvent 绝对日期事件模型 + 时间线对话框 + 完成勾选 | 功能 | 1.22.0 | ✅ 2247409 |
+| P11 | **本地诊断包**（外部评估 P6）：一键导出诊断包 .txt（应用/设备/课表概要/提醒/解析日志）经系统分享 | 功能 | 1.23.0 | ✅（本轮） |
 
 ## 迭代总结（2026-09-03 收官）
 
@@ -41,7 +42,7 @@
 - **PDF 护栏真实化**（`b6d287d`）：原 `assertTrue(true)` 永真断言换两层——①合成文本层（反射注入 TextBlock）硬断言课程数/名称/节次/周次/地点，CI 必跑；②真三校 PDF 样例存在时按基线表（11/24/27）断言课程数。要点：fixture 必须用 ROOM_PATTERN 支持的教务地点格式（A-101），自然语言写法（教学楼A101）会被既定正则截断——这是格式约定不是 bug。
 - **CI 前置拦截**：build job 并入 lintDebug（PR+main 都跑）；instrumented job 改为 PR 跑 MainActivitySmokeTest（分钟级）、push main 跑全量。评估中"PR 无法拦截"的部分此前已由 build job 覆盖，本轮补齐仪器 smoke。
 
-后续候选（未排期）：学校模板扩展（P5，一校一迭代，先匿名样例）→ 本地诊断包（P6）；考试/DDL 余项：提醒调度（绝对日期 AlarmManager）、今日概览联动、课表网格标注。多课表 Widget 的余项：今日/明日独立模式、紧凑布局变体。英文本地化已明确不做。MainActivity 瘦身仍是长期结构债（约 6400 行）。
+后续候选（未排期）：学校模板扩展（P5，一校一迭代，先匿名样例）；考试/DDL 余项：提醒调度（绝对日期 AlarmManager）、今日概览联动、课表网格标注。多课表 Widget 的余项：今日/明日独立模式、紧凑布局变体。英文本地化已明确不做。MainActivity 瘦身仍是长期结构债（约 6400 行）。
 
 ## 考试/DDL 时间线轮（2026-09-03，外部评估 P4 落地，1.22.0）
 
@@ -52,9 +53,15 @@
 - **验证**：单测全绿（新增 AcademicEventRepositoryTest 9 例：往返/缺失/损坏/跳坏条目/未知类型/隔离/清空/默认键/normalizedDateMillis）；lint 0 error（警告仍为 bouncycastle 基线 3 条）；instrumented 13/13 全绿；模拟器明暗双主题截图验收（添加→列表→勾选→重启持久化全链路）。
 - **实测技法**：键盘弹出会平移对话框布局，adb 点击需先收键盘再按收起态坐标定位；`input text` 中文在模拟器报 NPE，UI 验证用英文占位文本即可。
 
-## 多课表 Widget 轮（2026-09-03，外部评估 P2 落地，1.20.0）
+## 本地诊断包轮（2026-09-03，外部评估 P6 落地，1.23.0）
 
-- **配置模型**：`ScheduleWidgetConfigActivity`（APPWIDGET_CONFIGURE）+ `polaris_widget_config` prefs 按 widgetId 存绑定；`boundScheduleId()` 统一回退（未配置/课表已删 → 激活课表）。`widgetFeatures=reconfigurable` 让长按 widget → 铅笔按钮可重配置。
+- **构建器**：`diagnostics/DiagnosticsBundleBuilder`（纯 Java，无 Android 依赖）——分节（标题 + 有序键值行 + 可选原文块）拼固定格式文本；空值统一「未设置」；顺序与输入一致。
+- **收集与导出**：`MainActivity.buildDiagnosticsBundle()`（应用版本/系统/设备、激活课表概要：学校/学期/开学/周数/节次/课程/计划/事件数、提醒总开关、最近解析诊断全文或"无导入记录"）+ `exportDiagnosticsBundle()`（写 cache/schedule_exports/`Polaris诊断-<stamp>.txt` → FileProvider → ACTION_SEND text/plain，复用备份导出模式）。
+- **入口**：解析诊断对话框新增「导出诊断包」按钮（空态同样可用，先 dismiss 再导出，与其他 action 模式一致）。
+- **验证**：新增 DiagnosticsBundleBuilderTest 5 例全绿；lint 0 error；instrumented 13/13；模拟器实测——对话框空态导出按钮可用，连续两次点击均落文件，run-as 验明内容完整（此模拟器无分享目标故 chooser 未弹出，属环境限制非缺陷）。
+- **实测技法**：设置页下部行滚动时才构建，uiautomator dump 需滑到底后再取 bounds 精确点击；BACK 会重置设置页滚动位置。
+
+## 多课表 Widget 轮（2026-09-03，外部评估 P2 落地，1.20.0）
 - **渲染隔离**：Service 按 `EXTRA_APPWIDGET_ID` 查绑定课表取数；Provider 标题在绑定非激活课表时前缀课表名。
 - **实测技法补充**：注入多课表需写全自包含 prefs（`schedules` 数组 + 每表 `config_/courses_/structured_courses_/schema_version_` 四键，schema_version=3）；instrumented 全量会 clearAll 清掉一切，注入要在测试跑完之后做。launcher 添加 widget 的 configure 流程会在放置前弹配置页，取消即不放置。
 - **坑**：模拟器 `auto_time` 恢复 1 后网络对时会覆盖手动拨的日期（真机日期 2026-09-03）——时间相关验证前必须先关 auto_time。截图坐标换算：缩略图坐标 × (1080/缩略宽)，别直接用。

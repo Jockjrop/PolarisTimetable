@@ -807,6 +807,11 @@ public class CourseScheduleDialogs extends DialogKit {
             panel.addView(reportScroll, scrollParams);
             panel.addView(dialogAction(host.getString(R.string.diagnostics_copy_action), v -> host.copyParseDiagnostics()));
         }
+        // 本地诊断包（P6）：始终可用；无导入记录时仍可导出设备/配置信息用于反馈。
+        panel.addView(dialogAction(host.getString(R.string.diagnostics_export_action), v -> {
+            dialog.dismiss();
+            host.exportDiagnosticsBundle();
+        }));
         panel.addView(dialogAction(host.getString(R.string.import_close), v -> dialog.dismiss()));
         dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
