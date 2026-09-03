@@ -69,6 +69,9 @@ public class PlanPageBuilder {
         String remindTimeText(int minute);
 
         void openPlanPage();
+
+        /** 打开考试/DDL 时间线对话框（P4）。 */
+        void openAcademicTimeline();
     }
 
     private final Host host;
@@ -79,6 +82,7 @@ public class PlanPageBuilder {
     private FrameLayout planManageOverlay;
     private LinearLayout planManagePanel;
     private LinearLayout planManageHeader;
+    private TextView academicEntryButton;
 
     public PlanPageBuilder(Host host) {
         this.host = host;
@@ -100,6 +104,24 @@ public class PlanPageBuilder {
             }
         }
         scrollView.addView(page);
+
+        // 考试/DDL 时间线入口（P4）
+        TextView eventEntry = new TextView(context);
+        eventEntry.setText(context.getString(R.string.academic_entry));
+        eventEntry.setTextColor(host.accentColor());
+        eventEntry.setTextSize(15);
+        eventEntry.setTypeface(Typeface.DEFAULT_BOLD);
+        eventEntry.setGravity(Gravity.CENTER_VERTICAL);
+        eventEntry.setPadding(dp(context, 14), 0, dp(context, 14), 0);
+        eventEntry.setMinHeight(dp(context, 44));
+        eventEntry.setBackground(host.roundedBg(host.cardColorHex(), 18));
+        eventEntry.setOnClickListener(v -> host.openAcademicTimeline());
+        host.attachPressFeedback(eventEntry);
+        academicEntryButton = eventEntry;
+        LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44));
+        entryParams.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, 10));
+        page.addView(eventEntry, entryParams);
 
         TextView addButton = new TextView(context);
         addButton.setText(context.getString(R.string.plan_action_new));
@@ -201,6 +223,24 @@ public class PlanPageBuilder {
         planAddButton = addButton;
         content.addView(addButton, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44)));
+
+        // 考试/DDL 时间线入口（P4，与手机计划页一致）
+        TextView eventEntry = new TextView(context);
+        eventEntry.setText(context.getString(R.string.academic_entry));
+        eventEntry.setTextColor(host.accentColor());
+        eventEntry.setTextSize(15);
+        eventEntry.setTypeface(Typeface.DEFAULT_BOLD);
+        eventEntry.setGravity(Gravity.CENTER_VERTICAL);
+        eventEntry.setPadding(dp(context, 14), 0, dp(context, 14), 0);
+        eventEntry.setMinHeight(dp(context, 44));
+        eventEntry.setBackground(host.roundedBg(host.cardColorHex(), 18));
+        eventEntry.setOnClickListener(v -> host.openAcademicTimeline());
+        host.attachPressFeedback(eventEntry);
+        academicEntryButton = eventEntry;
+        LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44));
+        entryParams.setMargins(0, dp(context, 10), 0, dp(context, 10));
+        content.addView(eventEntry, entryParams);
 
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
@@ -395,6 +435,10 @@ public class PlanPageBuilder {
             addBg.setColor(host.accentColor());
             addBg.setCornerRadius(dp(context, 18));
             planAddButton.setBackground(addBg);
+        }
+        if (academicEntryButton != null) {
+            academicEntryButton.setBackground(host.roundedBg(host.cardColorHex(), 18));
+            academicEntryButton.setTextColor(host.accentColor());
         }
         refreshList(context, plans);
     }

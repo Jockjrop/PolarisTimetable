@@ -76,6 +76,7 @@ import com.polaris.timetable.export.ScheduleCalendarExporter;
 import com.polaris.timetable.export.ScheduleImageExporter;
 import com.polaris.timetable.export.SchedulePdfExporter;
 import com.polaris.timetable.export.SemesterPdfExporter;
+import com.polaris.timetable.model.AcademicEvent;
 import com.polaris.timetable.model.ParseError;
 import com.polaris.timetable.model.ParseResult;
 import com.polaris.timetable.model.CourseStructureMapper;
@@ -90,12 +91,14 @@ import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.parser.ParseDiagnosticsReport;
 import com.polaris.timetable.DialogKit.BooleanSetter;
 import com.polaris.timetable.DialogKit.IntSetter;
+import com.polaris.timetable.DialogKit.LongSetter;
 import com.polaris.timetable.DialogKit.StringSetter;
 import com.polaris.timetable.reminder.CourseReminderScheduler;
 import com.polaris.timetable.reminder.PlanReminderScheduler;
 import com.polaris.timetable.sharing.ScheduleShareCodec;
 import com.polaris.timetable.sharing.ScheduleShareFile;
 import com.polaris.timetable.statistics.ScheduleStatistics;
+import com.polaris.timetable.storage.AcademicEventRepository;
 import com.polaris.timetable.storage.PlanRepository;
 import com.polaris.timetable.storage.ScheduleBackupManager;
 import com.polaris.timetable.storage.ScheduleRepository;
@@ -179,6 +182,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     ScheduleRepository scheduleRepository;
     private PlanRepository planRepository;
     private final List<StudyPlan> studyPlans = new ArrayList<>();
+    private AcademicEventRepository academicEventRepository;
+    private final List<AcademicEvent> academicEvents = new ArrayList<>();
+    private final AcademicEventDialogs academicEventDialogs = new AcademicEventDialogs(this);
     private PdfImportCoordinator importCoordinator;
     private ScheduleBoardView scheduleBoard;
     private FrameLayout contentHost;
@@ -294,6 +300,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         applyEdgeToEdgeWindow(getWindow());
         scheduleRepository = new ScheduleRepository(this);
         planRepository = new PlanRepository(this);
+        academicEventRepository = new AcademicEventRepository(this);
         importCoordinator = new PdfImportCoordinator(this);
         activeScheduleId = scheduleRepository.activeScheduleId();
         scheduleViewState.darkMode = scheduleRepository.loadGlobalDarkMode();
@@ -302,6 +309,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         currentWeek = currentWeekFromDate();
         loadActiveCourses();
         reloadStudyPlans();
+        reloadAcademicEvents();
         buildLayout();
         renderSchedule();
         Intent launchIntent = getIntent();
@@ -2463,6 +2471,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             popup.dismiss();
             showFreeSlotDialog();
         }));
+        panel.addView(popupMenuAction(getString(R.string.action_academic_events), v -> {
+            popup.dismiss();
+            showAcademicTimelineDialog();
+        }));
         popup.setContentView(glassDialogContent(
                 panel, 18, ACTION_PANEL_OPACITY_PERCENT));
         popup.setWidth(dp(224));
@@ -3118,6 +3130,134 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         planRepository.savePlans(activeScheduleId, studyPlans);
     }
 
+    // ===== 学业事件（考试/DDL/实践）=====
+
+    private void reloadAcademicEvents() {
+        academicEvents.clear();
+        academicEvents.addAll(academicEventRepository.loadEvents(activeScheduleId));
+    }
+
+    private void persistAcademicEvents() {
+        academicEventRepository.saveEvents(activeScheduleId, academicEvents);
+    }
+
+    private int indexOfAcademicEvent(String id) {
+        for (int i = 0; i < academicEvents.size(); i++) {
+            if (academicEvents.get(i).id.equals(id)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int academicEventIdCounter;
+
+    private String newAcademicEventId() {
+        academicEventIdCounter++;
+        return "event-" + System.currentTimeMillis() + "-" + academicEventIdCounter;
+    }
+
+    /** 时间线对话框读取快照（避免对话框持有可变引用）。 */
+    List<AcademicEvent> academicEventSnapshot() {
+        return new ArrayList<>(academicEvents);
+    }
+
+    void showAcademicTimelineDialog() {
+        academicEventDialogs.showTimelineDialog();
+    }
+
+    public void toggleAcademicEventDone(AcademicEvent event) {
+        AcademicEvent updated = event.withDone(!event.done);
+        int index = indexOfAcademicEvent(event.id);
+        if (index >= 0) {
+            academicEvents.set(index, updated);
+        }
+        persistAcademicEvents();
+    }
+
+    /** 供时间线编辑器调用的删除入口（同包可访问）。 */
+    void deleteAcademicEvent(AcademicEvent event) {
+        Iterator<AcademicEvent> eventIterator = academicEvents.iterator();
+        while (eventIterator.hasNext()) {
+            if (eventIterator.next().id.equals(event.id)) {
+                eventIterator.remove();
+            }
+        }
+        persistAcademicEvents();
+    }
+
+    /**
+     * 保存新增或编辑后的学业事件。existing 为 null 时新增，否则按 id 替换既有条目。
+     */
+    void saveAcademicEvent(AcademicEvent existing, String title, String courseName,
+                           AcademicEvent.Type type, long dateMillis, int minuteOfDay,
+                           String location, String seat, String note) {
+        String id = existing == null ? newAcademicEventId() : existing.id;
+        long createdAt = existing == null ? System.currentTimeMillis() : existing.createdAt;
+        boolean done = existing != null && existing.done;
+        AcademicEvent event = new AcademicEvent(id, title, courseName, type,
+                dateMillis, minuteOfDay, location, seat, note, done, createdAt);
+        if (existing == null) {
+            academicEvents.add(event);
+        } else {
+            int index = indexOfAcademicEvent(existing.id);
+            if (index >= 0) {
+                academicEvents.set(index, event);
+            }
+        }
+        persistAcademicEvents();
+    }
+
+    // ===== 学业事件对话框辅助（供 AcademicEventDialogs 复用）=====
+
+    /** 通用选择对话框（包装 appearanceDialogs，保持入口统一）。 */
+    void showChooser(View anchor, String titleText, String[] values, String current,
+                     DialogKit.StringSetter setter) {
+        appearanceDialogs.showChoiceDialog(anchor, titleText, values, current, setter);
+    }
+
+    /** 日期选择对话框：接收本地零点毫秒，回写归一化后的本地零点毫秒。 */
+    void showDatePickerDialog(String titleText, long currentMillis, LongSetter setter) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(titleText);
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(currentMillis);
+        DatePicker picker = new DatePicker(themedControlContext());
+        picker.init(date.get(Calendar.YEAR), date.get(Calendar.MONTH),
+                date.get(Calendar.DAY_OF_MONTH), null);
+        panel.addView(picker);
+        panel.addView(pageSaveButton(() -> {
+            Calendar result = Calendar.getInstance();
+            result.set(picker.getYear(), picker.getMonth(), picker.getDayOfMonth(),
+                    0, 0, 0);
+            result.set(Calendar.MILLISECOND, 0);
+            setter.set(result.getTimeInMillis());
+            dialog.dismiss();
+        }));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        dialog.show();
+        transparentDialog(dialog);
+    }
+
+    /** 时刻选择对话框：接收分钟（0..1439），回写分钟。 */
+    void showTimePickerDialog(String titleText, int currentMinute, IntSetter setter) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(titleText);
+        int safeMinute = Math.max(0, Math.min(23 * 60 + 59, currentMinute));
+        TimePicker picker = new TimePicker(themedControlContext());
+        picker.setIs24HourView(true);
+        picker.setHour(safeMinute / 60);
+        picker.setMinute(safeMinute % 60);
+        panel.addView(picker);
+        panel.addView(pageSaveButton(() -> {
+            setter.set(picker.getHour() * 60 + picker.getMinute());
+            dialog.dismiss();
+        }));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        dialog.show();
+        transparentDialog(dialog);
+    }
+
     private int indexOfPlan(String id) {
         for (int i = 0; i < studyPlans.size(); i++) {
             if (studyPlans.get(i).id.equals(id)) {
@@ -3210,7 +3350,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         PlanReminderScheduler.reschedule(this);
     }
 
-    private String[] courseNameChoices() {
+    String[] courseNameChoices() {
         List<String> names = new ArrayList<>();
         for (Course course : courses) {
             String name = course.name == null ? "" : course.name.trim();
@@ -3863,6 +4003,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         showPlanPage();
     }
 
+    @Override
+    public void openAcademicTimeline() {
+        showAcademicTimelineDialog();
+    }
+
     // ===== AiImportFlow.Host 实现:既有课表判断、落库提交与相册/主线程动作 =====
 
     @Override
@@ -4452,11 +4597,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return new SettingsPageBuilder(this).settingsGroup(this);
     }
 
-    private View settingValueRow(String label, String value, View.OnClickListener listener) {
+    View settingValueRow(String label, String value, View.OnClickListener listener) {
         return new SettingsPageBuilder(this).settingValueRow(this, label, value, listener);
     }
 
-    private void updateSettingValueRow(View row, String value) {
+    void updateSettingValueRow(View row, String value) {
         if (!(row instanceof LinearLayout)) {
             return;
         }
@@ -6059,6 +6204,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
         currentWeek = currentWeekFromDate();
         loadActiveCourses();
+        reloadStudyPlans();
+        reloadAcademicEvents();
         rescheduleCourseReminders();
         updateHeader();
         renderSchedule();

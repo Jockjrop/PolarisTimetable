@@ -41,6 +41,11 @@ public class DialogKit {
         void set(int value);
     }
 
+    /** 长整数回写回调（日期毫秒等）。 */
+    public interface LongSetter {
+        void set(long value);
+    }
+
     public LinearLayout dialogPanel(String titleText) {
         LinearLayout panel = new LinearLayout(host);
         panel.setOrientation(LinearLayout.VERTICAL);

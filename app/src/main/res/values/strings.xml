@@ -299,6 +299,35 @@
     <string name="plan_toast_no_permission">未获得通知权限，计划提醒不会生效，请在系统设置中允许通知</string>
     <string name="plan_toast_remind_time_passed">提醒时间已过，不会触发通知，请调整计划周次或提醒时间</string>
 
+    <!-- 学业事件（考试/DDL/实践，P4）。
+         注意:"不关联"/"未指定"是选择对话框的比较值,保持字面量。 -->
+    <string name="academic_title">考试 / DDL</string>
+    <string name="academic_entry">考试 / DDL 时间线</string>
+    <string name="academic_action_add">＋ 添加事件</string>
+    <string name="academic_empty_hint">还没有考试 / 截止事件，点击上方「＋ 添加事件」</string>
+    <string name="academic_unnamed">未命名事件</string>
+    <string name="academic_edit">编辑事件</string>
+    <string name="academic_cd_mark_undone">标记为未完成</string>
+    <string name="academic_cd_mark_done">标记为完成</string>
+    <string name="academic_meta_date">%1$d月%2$d日 %3$s</string>
+    <string name="academic_meta_seat">座位 %1$s</string>
+    <string name="academic_type_exam">考试</string>
+    <string name="academic_type_deadline">截止</string>
+    <string name="academic_type_practice">实践</string>
+    <string name="academic_course_none">不关联</string>
+    <string name="academic_editor_new">新建事件</string>
+    <string name="academic_editor_title_hint">事件内容，如：高数期中考试</string>
+    <string name="academic_row_course">关联课程</string>
+    <string name="academic_row_date">日期</string>
+    <string name="academic_row_time">时刻</string>
+    <string name="academic_time_none">未指定</string>
+    <string name="academic_time_clear">清除时刻（仅日期）</string>
+    <string name="academic_editor_location">地点（可选）</string>
+    <string name="academic_editor_seat">座位（可选）</string>
+    <string name="academic_editor_note">备注（可选）</string>
+    <string name="academic_error_title_required">请填写事件内容</string>
+    <string name="academic_action_delete">删除事件</string>
+
     <!-- 导入流程(AI 识别 + PDF)。
          注意:"新课表"+序号是持久化默认课表名;学校名来自 SchoolParserModel 持久化标识,均保持字面量。 -->
     <string name="import_ai_title">AI 识别导入</string>
@@ -407,6 +436,7 @@
     <string name="action_import_file">导入课表文件</string>
     <string name="action_add_course">手动添加课程</string>
     <string name="action_free_slots">空闲时段</string>
+    <string name="action_academic_events">考试 / DDL</string>
     <string name="action_new_semester">新学期向导</string>
     <string name="semester_wizard_title">新学期向导</string>
     <string name="semester_wizard_hint">以所选课表为模板复制上课时间、显示与提醒设置；旧课表保留在列表中，随时可切回。创建后将进入课表导入。</string>

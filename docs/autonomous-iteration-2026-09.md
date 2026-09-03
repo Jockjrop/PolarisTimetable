@@ -19,7 +19,8 @@
 | P6 | **Widget 进行中高亮**（用户点单）：ongoing 条目高亮底+时间强调+开始时刻刷新 | 功能 | 1.19.0 | ✅ 03ba6fb |
 | P7 | **质量基线**（外部评估 P0/P1）：lint 清零入 CI、PDF 护栏真实化、PR smoke | 质量 | 1.19.1 | ✅ bac5f92/b6d287d |
 | P8 | **多课表 Widget**（外部评估 P2）：每实例独立绑定课表 + 配置页 + 标题课表名前缀 | 功能 | 1.20.0 | ✅ 8d44b06 |
-| P9 | **新学期向导**（外部评估 P3）：模板复制配置 + 日期锚定 + 切换 + 进入导入 | 功能 | 1.21.0 | ✅（本轮） |
+| P9 | **新学期向导**（外部评估 P3）：模板复制配置 + 日期锚定 + 切换 + 进入导入 | 功能 | 1.21.0 | ✅ 1797712 |
+| P10 | **考试/DDL 时间线**（外部评估 P4）：AcademicEvent 绝对日期事件模型 + 时间线对话框 + 完成勾选 | 功能 | 1.22.0 | ✅（本轮） |
 
 ## 迭代总结（2026-09-03 收官）
 
@@ -40,7 +41,16 @@
 - **PDF 护栏真实化**（`b6d287d`）：原 `assertTrue(true)` 永真断言换两层——①合成文本层（反射注入 TextBlock）硬断言课程数/名称/节次/周次/地点，CI 必跑；②真三校 PDF 样例存在时按基线表（11/24/27）断言课程数。要点：fixture 必须用 ROOM_PATTERN 支持的教务地点格式（A-101），自然语言写法（教学楼A101）会被既定正则截断——这是格式约定不是 bug。
 - **CI 前置拦截**：build job 并入 lintDebug（PR+main 都跑）；instrumented job 改为 PR 跑 MainActivitySmokeTest（分钟级）、push main 跑全量。评估中"PR 无法拦截"的部分此前已由 build job 覆盖，本轮补齐仪器 smoke。
 
-后续候选（未排期）：新学期向导（P3）→ 考试/DDL（P4，需 AcademicEvent 新模型）→ 学校模板扩展（P5）→ 本地诊断包（P6）；多课表 Widget 的余项：今日/明日独立模式、紧凑布局变体。英文本地化已明确不做。MainActivity 瘦身仍是长期结构债（6348 行）。
+后续候选（未排期）：学校模板扩展（P5，一校一迭代，先匿名样例）→ 本地诊断包（P6）；考试/DDL 余项：提醒调度（绝对日期 AlarmManager）、今日概览联动、课表网格标注。多课表 Widget 的余项：今日/明日独立模式、紧凑布局变体。英文本地化已明确不做。MainActivity 瘦身仍是长期结构债（约 6400 行）。
+
+## 考试/DDL 时间线轮（2026-09-03，外部评估 P4 落地，1.22.0）
+
+- **数据模型**：`model/AcademicEvent`（不可变，与 StudyPlan 隔离）——id/标题/关联课程/类型(EXAM·DEADLINE·PRACTICE)/dateMillis（本地零点毫秒，`normalizedDateMillis` 归一）/minuteOfDay（-1=仅日期）/地点/座位/备注/done/createdAt；`withDone` 派生。
+- **存储**：`storage/AcademicEventRepository` 与 PlanRepository 完全同构（`polaris_schedule` prefs、`academic_events_<scheduleId>` 键、损坏容错、未知 type 回退 EXAM）。切换课表时 reloadAcademicEvents（onCreate + switchSchedule）。
+- **UI**：`AcademicEventDialogs extends DialogKit`——时间线对话框（待完成按日期升序/已完成降序分组，类型徽标 考/截/践 用组件专属色常量，勾选即时落库并重建对话框）+ 编辑器（类型 chips、关联课程复用 courseNameChoices、DatePicker/TimePicker、清除时刻=仅日期、地点/座位/备注）。入口两处：计划页/平板管理浮层入口卡（PlanPageBuilder.Host.openAcademicTimeline）+ 动作面板「考试 / DDL」。
+- **Host 契约变化**：DialogKit 新增 LongSetter；MainActivity 的 courseNameChoices/settingValueRow/updateSettingValueRow 由 private 放宽到包可见（同包对话框类复用，无行为变化）。
+- **验证**：单测全绿（新增 AcademicEventRepositoryTest 9 例：往返/缺失/损坏/跳坏条目/未知类型/隔离/清空/默认键/normalizedDateMillis）；lint 0 error（警告仍为 bouncycastle 基线 3 条）；instrumented 13/13 全绿；模拟器明暗双主题截图验收（添加→列表→勾选→重启持久化全链路）。
+- **实测技法**：键盘弹出会平移对话框布局，adb 点击需先收键盘再按收起态坐标定位；`input text` 中文在模拟器报 NPE，UI 验证用英文占位文本即可。
 
 ## 多课表 Widget 轮（2026-09-03，外部评估 P2 落地，1.20.0）
 
