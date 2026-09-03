@@ -403,6 +403,12 @@
     <string name="action_add_course">手动添加课程</string>
     <string name="action_share_file">分享课表文件</string>
     <string name="action_export">导出课表</string>
+    <string name="action_free_slots">空闲时段</string>
+    <string name="free_slot_title">空闲时段 · 第%1$d周</string>
+    <string name="free_slot_range">第%1$d–%2$d节</string>
+    <string name="free_slot_single">第%1$d节</string>
+    <string name="free_slot_none">无空档</string>
+    <string name="free_slot_cd">%1$s空闲：%2$s</string>
     <string name="import_no_file_picker">未找到可选择课表文件的应用</string>
     <string name="share_no_courses">还没有课程，先导入或添加课程后再分享</string>
     <string name="share_dir_failed">无法创建课表分享目录</string>

@@ -2391,6 +2391,19 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 .start();
     }
 
+    /** 空闲时段速查：按当前查看的周过滤课程后交给对话框按天计算。 */
+    private void showFreeSlotDialog() {
+        List<Course> weekCourses = new ArrayList<>();
+        for (Course course : courses) {
+            if (CourseTimeResolver.isActiveInWeek(course, currentWeek)) {
+                weekCourses.add(course);
+            }
+        }
+        scheduleDialogs.showFreeSlotDialog(currentWeek, weekCourses, courseTimeSettings(),
+                scheduleViewState.courseSectionCount,
+                scheduleViewState.showSaturday, scheduleViewState.showSunday);
+    }
+
     private void showActionPanel(View anchor) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -2421,6 +2434,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         panel.addView(popupMenuAction(getString(R.string.export_dialog_title), v -> {
             popup.dismiss();
             scheduleDialogs.showWeekExportDialog();
+        }));
+        panel.addView(popupMenuAction(getString(R.string.action_free_slots), v -> {
+            popup.dismiss();
+            showFreeSlotDialog();
         }));
         popup.setContentView(glassDialogContent(
                 panel, 18, ACTION_PANEL_OPACITY_PERCENT));
