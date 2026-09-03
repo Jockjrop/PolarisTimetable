@@ -48,7 +48,9 @@ jobs:
           if-no-files-found: error
 
   instrumented:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # PR 跑 smoke 快速拦截；push main 跑全量（周切换/旋转/字体缩放等）。
+    if: github.event_name == 'pull_request'
+        || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     # 2026-09-01 教训：用例挂死时该 job 曾占用 runner 近 3 小时无输出。
     timeout-minutes: 20
@@ -100,7 +102,15 @@ jobs:
           api-level: 35
           arch: x86_64
           disable-animations: true
-          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --console=plain
+          # PR 只跑 smoke（主界面启动/课表渲染路径，分钟级）；main 全量。
+          script: |
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              ./gradlew :app:connectedDebugAndroidTest \
+                -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.ui.MainActivitySmokeTest \
+                --no-daemon --console=plain
+            else
+              ./gradlew :app:connectedDebugAndroidTest --no-daemon --console=plain
+            fi
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

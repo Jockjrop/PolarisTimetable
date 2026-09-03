@@ -17,6 +17,7 @@
 | P4' | **空闲时段速查**：动作面板入口 + FreeSlotCalculator 纯计算 + 按天对话框 | 功能 | 1.18.0 | ✅ 9ded5bb |
 | P5 | UI 打磨批：学期外副标题与网格日期对齐、环/线白色衬底晕 | 优化 | 1.18.1 | ✅ 7cada91 |
 | P6 | **Widget 进行中高亮**（用户点单）：ongoing 条目高亮底+时间强调+开始时刻刷新 | 功能 | 1.19.0 | ✅ 03ba6fb |
+| P7 | **质量基线**（外部评估 P0/P1）：lint 清零入 CI、PDF 护栏真实化、PR smoke | 质量 | 1.19.1 | ✅ bac5f92/b6d287d |
 
 ## 迭代总结（2026-09-03 收官）
 
@@ -31,7 +32,13 @@
 
 **Widget 桌面实测技法**：Pixel Launcher（launcher3）添加 widget = widget 选择器中**单击预览本体** → 预览下方出现「+ ADD」→ 点击放置（长按拖拽手势在 `input swipe` 下会被识别为滚动，不可靠）。误加的 widget 移除：长按 → 顶部「✕ Remove」；弹窗时有时无时，卸载来源应用（`pm uninstall -k --user 0`）最可靠。
 
-后续候选（未排期）：考试/DDL 实体（需新数据模型，建议用户决策）。英文本地化已明确不做。
+## 质量基线轮（2026-09-03，外部评估 P0/P1 落地）
+
+- **Lint 61 警告+2 错误 → 0 error/3 警告**（`bac5f92`，1.19.1）：3 条剩余为 bouncycastle 依赖内部 TrustAllX509TrustManager（pdfbox 传递依赖，随依赖线）。约定：`@SuppressLint`/`tools:ignore` 必须带理由注释；colors.xml 镜像层已瘦身为仅被引用 token。
+- **PDF 护栏真实化**（`b6d287d`）：原 `assertTrue(true)` 永真断言换两层——①合成文本层（反射注入 TextBlock）硬断言课程数/名称/节次/周次/地点，CI 必跑；②真三校 PDF 样例存在时按基线表（11/24/27）断言课程数。要点：fixture 必须用 ROOM_PATTERN 支持的教务地点格式（A-101），自然语言写法（教学楼A101）会被既定正则截断——这是格式约定不是 bug。
+- **CI 前置拦截**：build job 并入 lintDebug（PR+main 都跑）；instrumented job 改为 PR 跑 MainActivitySmokeTest（分钟级）、push main 跑全量。评估中"PR 无法拦截"的部分此前已由 build job 覆盖，本轮补齐仪器 smoke。
+
+后续候选（未排期）：多课表 Widget（评估 P2）→ 新学期向导（P3）→ 考试/DDL（P4，需 AcademicEvent 新模型）→ 学校模板扩展（P5）→ 本地诊断包（P6）。英文本地化已明确不做。MainActivity 瘦身仍是长期结构债（6348 行）。
 
 ## 执行纪律（每轮固定）
 
