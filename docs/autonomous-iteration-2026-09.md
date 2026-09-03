@@ -18,6 +18,7 @@
 | P5 | UI 打磨批：学期外副标题与网格日期对齐、环/线白色衬底晕 | 优化 | 1.18.1 | ✅ 7cada91 |
 | P6 | **Widget 进行中高亮**（用户点单）：ongoing 条目高亮底+时间强调+开始时刻刷新 | 功能 | 1.19.0 | ✅ 03ba6fb |
 | P7 | **质量基线**（外部评估 P0/P1）：lint 清零入 CI、PDF 护栏真实化、PR smoke | 质量 | 1.19.1 | ✅ bac5f92/b6d287d |
+| P8 | **多课表 Widget**（外部评估 P2）：每实例独立绑定课表 + 配置页 + 标题课表名前缀 | 功能 | 1.20.0 | ✅ 8d44b06 |
 
 ## 迭代总结（2026-09-03 收官）
 
@@ -38,7 +39,14 @@
 - **PDF 护栏真实化**（`b6d287d`）：原 `assertTrue(true)` 永真断言换两层——①合成文本层（反射注入 TextBlock）硬断言课程数/名称/节次/周次/地点，CI 必跑；②真三校 PDF 样例存在时按基线表（11/24/27）断言课程数。要点：fixture 必须用 ROOM_PATTERN 支持的教务地点格式（A-101），自然语言写法（教学楼A101）会被既定正则截断——这是格式约定不是 bug。
 - **CI 前置拦截**：build job 并入 lintDebug（PR+main 都跑）；instrumented job 改为 PR 跑 MainActivitySmokeTest（分钟级）、push main 跑全量。评估中"PR 无法拦截"的部分此前已由 build job 覆盖，本轮补齐仪器 smoke。
 
-后续候选（未排期）：多课表 Widget（评估 P2）→ 新学期向导（P3）→ 考试/DDL（P4，需 AcademicEvent 新模型）→ 学校模板扩展（P5）→ 本地诊断包（P6）。英文本地化已明确不做。MainActivity 瘦身仍是长期结构债（6348 行）。
+后续候选（未排期）：新学期向导（P3）→ 考试/DDL（P4，需 AcademicEvent 新模型）→ 学校模板扩展（P5）→ 本地诊断包（P6）；多课表 Widget 的余项：今日/明日独立模式、紧凑布局变体。英文本地化已明确不做。MainActivity 瘦身仍是长期结构债（6348 行）。
+
+## 多课表 Widget 轮（2026-09-03，外部评估 P2 落地，1.20.0）
+
+- **配置模型**：`ScheduleWidgetConfigActivity`（APPWIDGET_CONFIGURE）+ `polaris_widget_config` prefs 按 widgetId 存绑定；`boundScheduleId()` 统一回退（未配置/课表已删 → 激活课表）。`widgetFeatures=reconfigurable` 让长按 widget → 铅笔按钮可重配置。
+- **渲染隔离**：Service 按 `EXTRA_APPWIDGET_ID` 查绑定课表取数；Provider 标题在绑定非激活课表时前缀课表名。
+- **实测技法补充**：注入多课表需写全自包含 prefs（`schedules` 数组 + 每表 `config_/courses_/structured_courses_/schema_version_` 四键，schema_version=3）；instrumented 全量会 clearAll 清掉一切，注入要在测试跑完之后做。launcher 添加 widget 的 configure 流程会在放置前弹配置页，取消即不放置。
+- **坑**：模拟器 `auto_time` 恢复 1 后网络对时会覆盖手动拨的日期（真机日期 2026-09-03）——时间相关验证前必须先关 auto_time。截图坐标换算：缩略图坐标 × (1080/缩略宽)，别直接用。
 
 ## 执行纪律（每轮固定）
 
