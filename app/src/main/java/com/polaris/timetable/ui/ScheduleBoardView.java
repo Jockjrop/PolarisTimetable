@@ -2187,11 +2187,18 @@ public class ScheduleBoardView extends FrameLayout {
                 }
                 float inset = dp(1);
                 float radius = dp(10);
+                float haloWidth = getResources().getDisplayMetrics().density * 3.5f;
+                // 白色半透明衬底晕：环压在同色系课程块上仍有分界。
                 paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(haloWidth);
+                paint.setColor(0x59FFFFFF);
+                paint.setAntiAlias(true);
+                canvas.drawRoundRect(inset, timeAxis.yForMinute(range.startMinutes) + inset,
+                        getWidth() - inset, timeAxis.yForMinute(range.endMinutes) - inset,
+                        radius, radius, paint);
                 paint.setStrokeWidth(dp(2));
                 paint.setColor(PolarisVisualTheme.nowIndicatorColor(darkMode));
                 paint.setAlpha(235);
-                paint.setAntiAlias(true);
                 canvas.drawRoundRect(inset, timeAxis.yForMinute(range.startMinutes) + inset,
                         getWidth() - inset, timeAxis.yForMinute(range.endMinutes) - inset,
                         radius, radius, paint);
@@ -2204,9 +2211,12 @@ public class ScheduleBoardView extends FrameLayout {
             int color = PolarisVisualTheme.nowIndicatorColor(darkMode);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeCap(Paint.Cap.ROUND);
+            float inset = dp(3);
+            paint.setStrokeWidth(getResources().getDisplayMetrics().density * 3.5f);
+            paint.setColor(0x59FFFFFF);
+            canvas.drawLine(inset, y, getWidth() - inset, y, paint);
             paint.setStrokeWidth(dp(2));
             paint.setColor(color);
-            float inset = dp(3);
             canvas.drawLine(inset, y, getWidth() - inset, y, paint);
             float dotX = dp(4);
             float dotRadius = dp(3);

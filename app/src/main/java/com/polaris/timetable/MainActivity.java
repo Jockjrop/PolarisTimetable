@@ -6216,7 +6216,15 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     private String weekSubtitle() {
         Calendar date = Calendar.getInstance();
-        date.setTimeInMillis(System.currentTimeMillis());
+        int realWeek = CourseTimeResolver.weekForDate(firstWeekStartMillis(), date);
+        if (realWeek < 1 || realWeek > scheduleViewState.semesterWeeks) {
+            // 学期外：周号被钳制到边界周，今天并不属于该周——副标题改显该周周一，
+            // 与课表网格列日期同源一致，避免"第 20 周 + 今天日期"的错配观感。
+            Calendar weekStart = Calendar.getInstance();
+            weekStart.setTimeInMillis(firstWeekStartMillis());
+            weekStart.add(Calendar.DATE, (currentWeek - 1) * 7);
+            date = weekStart;
+        }
         return date.get(Calendar.YEAR) + "/" + (date.get(Calendar.MONTH) + 1) + "/"
                 + date.get(Calendar.DAY_OF_MONTH) + " " + weekdayText(date);
     }
