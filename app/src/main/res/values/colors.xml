@@ -1,10 +1,8 @@
 <resources>
     <!-- 镜像 token 层：仅保留被 widget 布局 / 窗口主题 / 图标实际引用的颜色；
-         主 UI 颜色真源是 ui/PolarisVisualTheme.java（勿在此堆未用 token）。
-         自适应图标背景只定义在 values，不进 values-night，保证图标不随系统深色变色。 -->
+         主 UI 颜色真源是 ui/PolarisVisualTheme.java（勿在此堆未用 token）。 -->
     <color name="page_bg">#F6F7FB</color>
     <color name="course_1">#EAF2FF</color>
-    <color name="ic_launcher_background">#2563EB</color>
     <color name="widget_surface">#FFFFFFFF</color>
     <color name="widget_surface_border">#1A172033</color>
     <color name="widget_item_ongoing_surface">#0F172033</color>
