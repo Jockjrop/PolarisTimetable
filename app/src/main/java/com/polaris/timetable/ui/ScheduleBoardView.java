@@ -65,10 +65,6 @@ public class ScheduleBoardView extends FrameLayout {
         void onSlotLongClick(int day, int section);
     }
 
-    public interface OnPracticeBannerClickListener {
-        void onPracticeBannerClick(List<Course> practiceCourses);
-    }
-
     public interface OnCourseDragListener {
         void onCourseDragDrop(Course course, int day, int section);
     }
@@ -94,7 +90,6 @@ public class ScheduleBoardView extends FrameLayout {
     private OnWeekSwipeListener weekSwipeListener;
     private OnCourseLongClickListener courseLongClickListener;
     private OnSlotLongClickListener slotLongClickListener;
-    private OnPracticeBannerClickListener practiceBannerClickListener;
     private OnVerticalScrollListener verticalScrollListener;
     private OnCourseDragListener courseDragListener;
     private TextView dragGhostView;
@@ -117,7 +112,6 @@ public class ScheduleBoardView extends FrameLayout {
     private boolean darkMode;
     private String visualTheme = PolarisVisualTheme.MINIMAL;
     private boolean showOutOfWeekCourses;
-    private boolean showPracticeBanner = true;
     private boolean hasBackgroundImage;
     private String currentBackgroundImageUri = "";
     private BackgroundImageCrop currentBackgroundCrop = BackgroundImageCrop.full();
@@ -221,11 +215,6 @@ public class ScheduleBoardView extends FrameLayout {
     public void setOnSlotLongClickListener(OnSlotLongClickListener listener) {
         slotLongClickListener = listener;
     }
-
-    public void setOnPracticeBannerClickListener(OnPracticeBannerClickListener listener) {
-        practiceBannerClickListener = listener;
-    }
-
     public void setOnVerticalScrollListener(OnVerticalScrollListener listener) {
         verticalScrollListener = listener;
     }
@@ -260,14 +249,6 @@ public class ScheduleBoardView extends FrameLayout {
         firstWeek = nextFirstWeek;
         lastWeek = nextLastWeek;
         currentWeek = nextCurrentWeek;
-        renderSchedule();
-    }
-
-    public void setShowPracticeBanner(boolean enabled) {
-        if (showPracticeBanner == enabled) {
-            return;
-        }
-        showPracticeBanner = enabled;
         renderSchedule();
     }
 
@@ -554,7 +535,6 @@ public class ScheduleBoardView extends FrameLayout {
         hash = 31 * hash + (visualTheme == null ? 0 : visualTheme.hashCode());
         hash = 31 * hash + (darkMode ? 1 : 0);
         hash = 31 * hash + (showOutOfWeekCourses ? 1 : 0);
-        hash = 31 * hash + (showPracticeBanner ? 1 : 0);
         hash = 31 * hash + hashOf(currentBackgroundImageUri);
         hash = 31 * hash + sectionCount;
         hash = 31 * hash + (collapseLunchBreak ? 1 : 0);
@@ -707,7 +687,6 @@ public class ScheduleBoardView extends FrameLayout {
         for (int day = 0; day < visibleDayCount; day++) {
             addDayHeader(board, day, visibleDays.get(day), week);
         }
-        addPracticeBanner(board, week, interactive);
         for (int section = 1; section <= sectionCount; section++) {
             if (sectionRowHeight(section) <= 0) {
                 continue;
@@ -895,160 +874,6 @@ public class ScheduleBoardView extends FrameLayout {
         return -1;
     }
 
-    private void addPracticeBanner(FrameLayout board, int week, boolean interactive) {
-        List<Course> practiceCourses = practiceCoursesForWeek(week);
-        if (practiceCourses.isEmpty()) {
-            return;
-        }
-
-        LinearLayout banner = new LinearLayout(getContext());
-        banner.setOrientation(LinearLayout.VERTICAL);
-        banner.setGravity(Gravity.CENTER_VERTICAL);
-        banner.setPadding(dp(14), dp(7), dp(14), dp(7));
-        banner.setBackground(practiceBannerBg());
-
-        LinearLayout heading = new LinearLayout(getContext());
-        heading.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(getContext());
-        title.setText(getContext().getString(R.string.board_practice_title));
-        title.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
-                ? (darkMode ? color("#9CE9DF") : color("#075E56"))
-                : PolarisVisualTheme.accentColor(visualTheme, darkMode));
-        title.setTextSize(14);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setSingleLine(true);
-        heading.addView(title, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView count = new TextView(getContext());
-        count.setText(getContext().getString(R.string.board_practice_view_count, practiceCourses.size()));
-        count.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
-                ? (darkMode ? color("#B7D8D4") : color("#39736D"))
-                : mutedColor());
-        count.setTextSize(11);
-        count.setSingleLine(true);
-        heading.addView(count);
-        banner.addView(heading, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        TextView summary = new TextView(getContext());
-        summary.setText(practiceSummary(practiceCourses));
-        summary.setTextColor(PolarisVisualTheme.MINIMAL.equals(visualTheme)
-                ? (darkMode ? color("#F0FFFC") : color("#123B38"))
-                : inkColor());
-        summary.setTextSize(14);
-        summary.setTypeface(Typeface.DEFAULT_BOLD);
-        summary.setSingleLine(true);
-        summary.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        summaryParams.topMargin = dp(2);
-        banner.addView(summary, summaryParams);
-        banner.setContentDescription(getContext().getString(R.string.board_cd_practice, practiceCourses.size()));
-
-        if (interactive) {
-            banner.setClickable(true);
-            banner.setOnClickListener(v -> {
-                if (practiceCourses.size() == 1 && courseClickListener != null) {
-                    courseClickListener.onCourseClick(practiceCourses.get(0));
-                } else if (practiceBannerClickListener != null) {
-                    practiceBannerClickListener.onPracticeBannerClick(new ArrayList<>(practiceCourses));
-                }
-            });
-            if (practiceCourses.size() == 1) {
-                banner.setOnLongClickListener(v -> {
-                    if (courseLongClickListener != null) {
-                        courseLongClickListener.onCourseLongClick(practiceCourses.get(0));
-                        return true;
-                    }
-                    return false;
-                });
-            }
-        }
-
-        // 实践横幅与网格列区对齐：左右各留 8dp，不再横跨整块空白。
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                Math.max(dp(120), dayWidth * visibleDayCount - dp(16)), dp(64));
-        params.leftMargin = boardContentOffset + timeWidth + dp(8);
-        params.topMargin = dayHeaderHeight + dp(6);
-        board.addView(banner, params);
-    }
-
-    private List<Course> practiceCoursesForWeek(int week) {
-        List<Course> result = new ArrayList<>();
-        if (!showPracticeBanner) {
-            return result;
-        }
-        for (Course course : courses) {
-            if (course != null && isPracticeBannerCourse(course)
-                    && isCourseInWeek(course, week)) {
-                result.add(course);
-            }
-        }
-        return result;
-    }
-
-    private int practiceBannerInset(int week) {
-        if (!showPracticeBanner) {
-            return 0;
-        }
-        for (Course course : courses) {
-            if (course != null && isPracticeBannerCourse(course)
-                    && isCourseInWeek(course, week)) {
-                return dp(76);
-            }
-        }
-        return 0;
-    }
-
-    private String practiceSummary(List<Course> practiceCourses) {
-        StringBuilder summary = new StringBuilder();
-        int visibleCount = Math.min(3, practiceCourses.size());
-        for (int index = 0; index < visibleCount; index++) {
-            Course course = practiceCourses.get(index);
-            if (summary.length() > 0) {
-                summary.append(" · ");
-            }
-            summary.append(course.name == null || course.name.trim().isEmpty()
-                    ? getContext().getString(R.string.board_practice_unnamed) : course.name.trim());
-        }
-        if (practiceCourses.size() == 1) {
-            summary.append(" · ").append(practiceTimeText(practiceCourses.get(0)));
-        } else if (practiceCourses.size() > visibleCount) {
-            summary.append(getContext().getString(R.string.board_practice_more, practiceCourses.size()));
-        }
-        return summary.toString();
-    }
-
-    private boolean isPracticeBannerCourse(Course course) {
-        return course.courseType == CourseType.PRACTICE || course.isBannerOnlyCourse();
-    }
-
-    private String practiceTimeText(Course course) {
-        if (course.isBannerOnlyCourse()) {
-            return getContext().getString(R.string.board_practice_concentrated);
-        }
-        if (course.day >= 0 && course.day < DAY_COUNT && course.hasScheduledTime()) {
-            return WeekdayLabels.label(getContext(), course.day) + " "
-                    + CourseTimeResolver.format(course, classTimeSettings);
-        }
-        return getContext().getString(R.string.board_time_pending);
-    }
-
-    private GradientDrawable practiceBannerBg() {
-        GradientDrawable drawable = new GradientDrawable();
-        if (PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
-            drawable.setColor(darkMode ? color("#E620504D") : color("#F2DDF4F0"));
-            drawable.setStroke(dp(1), darkMode ? color("#5B58CFC0") : color("#8044AFA2"));
-            drawable.setCornerRadius(dp(14));
-            return drawable;
-        }
-        drawable.setColor(PolarisVisualTheme.accentSurfaceColor(visualTheme, darkMode));
-        drawable.setStroke(dp(1), PolarisVisualTheme.outlineColor(visualTheme, darkMode));
-        drawable.setCornerRadius(dp(18));
-        return drawable;
-    }
-
     private void addTimeLabel(FrameLayout board, int section, int week) {
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(LinearLayout.VERTICAL);
@@ -1139,7 +964,7 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private int bodyTop(int week) {
-        return dayHeaderHeight + practiceBannerInset(week);
+        return dayHeaderHeight;
     }
 
     private int sectionTop(int section, int week) {

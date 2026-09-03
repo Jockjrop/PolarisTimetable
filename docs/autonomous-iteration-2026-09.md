@@ -21,7 +21,8 @@
 | P8 | **多课表 Widget**（外部评估 P2）：每实例独立绑定课表 + 配置页 + 标题课表名前缀 | 功能 | 1.20.0 | ✅ 8d44b06 |
 | P9 | **新学期向导**（外部评估 P3）：模板复制配置 + 日期锚定 + 切换 + 进入导入 | 功能 | 1.21.0 | ✅ 1797712 |
 | P10 | **考试/DDL 时间线**（外部评估 P4）：AcademicEvent 绝对日期事件模型 + 时间线对话框 + 完成勾选 | 功能 | 1.22.0 | ✅ 2247409 |
-| P11 | **本地诊断包**（外部评估 P6）：一键导出诊断包 .txt（应用/设备/课表概要/提醒/解析日志）经系统分享 | 功能 | 1.23.0 | ✅（本轮） |
+| P11 | **本地诊断包**（外部评估 P6）：一键导出诊断包 .txt（应用/设备/课表概要/提醒/解析日志）经系统分享 | 功能 | 1.23.0 | ✅ 2990972 |
+| P12 | **日程体验整合**：移除空闲时段速查；计划页已完成分组可折叠；本周实践并入课表顶部栏（3s 折叠 + 多实践轮播）；板内横幅移除后网格上移补位 | 优化 | 1.24.0 | ✅（本轮） |
 
 ## 迭代总结（2026-09-03 收官）
 
@@ -65,6 +66,14 @@
 - **渲染隔离**：Service 按 `EXTRA_APPWIDGET_ID` 查绑定课表取数；Provider 标题在绑定非激活课表时前缀课表名。
 - **实测技法补充**：注入多课表需写全自包含 prefs（`schedules` 数组 + 每表 `config_/courses_/structured_courses_/schema_version_` 四键，schema_version=3）；instrumented 全量会 clearAll 清掉一切，注入要在测试跑完之后做。launcher 添加 widget 的 configure 流程会在放置前弹配置页，取消即不放置。
 - **坑**：模拟器 `auto_time` 恢复 1 后网络对时会覆盖手动拨的日期（真机日期 2026-09-03）——时间相关验证前必须先关 auto_time。截图坐标换算：缩略图坐标 × (1080/缩略宽)，别直接用。
+
+## 日程体验整合轮（2026-09-03，1.24.0）
+
+- **目标**：清理低频入口并收敛实践课展示位置——移除空闲时段速查；计划页已完成分组可折叠；本周实践从板内横幅并入课表顶部栏（3s 折叠 + 多实践轮播）；板内横幅移除后课表网格自动上移补位。
+- **涉及文件**：`MainActivity.java`（顶栏实践条 `buildPracticeTopBar`/`updatePracticeTopBar`/`cancelPracticeBarTimers`/`practiceTopSummaryText`/`showPracticeCourses`，动作面板移除空闲时段入口，设置开关/切页/周变化回调联动）；`ui/ScheduleBoardView.java`（移除板内实践横幅渲染与空闲速查栏共 -177 行，网格上移补位）；`ui/page/PlanPageBuilder.java`（已完成分组头：标题+数量+箭头，点击切换 + 新鲜打开 3s 自动折叠 `armDoneAutoCollapse`，手动切换取消计时）；删除 `time/FreeSlotCalculator.java` 与 `FreeSlotCalculatorTest.java`（回撤 1.18.0 引入的空闲速查）；`res/values/strings.xml`（新增 `plan_done_count`/`plan_done_cd_expand`/`plan_done_cd_collapse`/`board_cd_practice_single`，删除 `action_free_slots` 与 `free_slot_*`）；`app/build.gradle`（1.23.0→1.24.0，12300→12400）。
+- **行为细节**：顶栏实践条仅在「课表页 + 展示实践开关开 + 本周有实践」显示；展开态 3s 后折叠为单行名称，多实践每 3s 轮播；关键修复——重复 layout/render 进入时不重复武装折叠计时（`practiceBarCollapse == null` 判定），避免 3s 折叠被无限推迟；切页隐藏与销毁均 `cancelPracticeBarTimers` 防泄漏，回课表页重新展开。计划页已完成组折叠态与自动折叠逻辑同构（手动切换取消计时）。
+- **验证**：`testDebugUnitTest` 全绿、`assembleDebug` 成功（`Polaris-1.24.0-debug.apk`）、`lintDebug` 0 error（警告仍为 bouncycastle 基线 3 条）；模拟器（Polaris_Test）冒烟——启动顶栏展开态 → 3s 折叠为单行「实践课」→ 切「我的」回「课表」重新展开；计划页「已完成（1）」可折叠分组头渲染正常。
+- **风险**：折叠/轮播 Runnable 经 Handler 持有视图引用，隐藏与销毁分支均已清回调；FreeSlotCalculator 为纯计算类无存储迁移负担，删除无数据兼容问题。
 
 ## 执行纪律（每轮固定）
 

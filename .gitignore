@@ -24,5 +24,7 @@ captures/
 .gh-cache/
 .workbuddy/
 verify/
+# 本机 gradle 用户目录（构建时经 GRADLE_USER_HOME 重定向，不入库）
+.gradle-home/
 # 三校 PDF 样例含真实姓名/学号，隐私原因不入库（PdfRegressionTest 经 run-as 推入 app 私有目录）
 test pdf/

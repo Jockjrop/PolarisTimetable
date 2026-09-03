@@ -117,6 +117,7 @@
     <string name="board_time_pending">时间待定</string>
     <string name="board_badge_conflict">冲突 · </string>
     <string name="board_cd_practice">本周实践，%1$d项，点击查看</string>
+    <string name="board_cd_practice_single">本周实践，%1$s，点击查看</string>
     <string name="board_cd_dragging">正在拖动课程 %1$s</string>
     <string name="board_cd_drop_target">目标位置 第%1$d节</string>
     <string name="board_cd_conflict_prefix">时间冲突，</string>
@@ -281,6 +282,9 @@
     <string name="plan_empty_hint">还没有计划，点击上方「＋ 新建计划」</string>
     <string name="plan_section_pending">待完成</string>
     <string name="plan_section_done">已完成</string>
+    <string name="plan_done_count">已完成（%1$d）</string>
+    <string name="plan_done_cd_expand">展开已完成分组</string>
+    <string name="plan_done_cd_collapse">折叠已完成分组</string>
     <string name="plan_cd_mark_undone">标记为未完成</string>
     <string name="plan_cd_mark_done">标记为完成</string>
     <string name="plan_unnamed">未命名计划</string>
@@ -435,7 +439,6 @@
     <string name="action_import_ai">AI 识别导入</string>
     <string name="action_import_file">导入课表文件</string>
     <string name="action_add_course">手动添加课程</string>
-    <string name="action_free_slots">空闲时段</string>
     <string name="action_academic_events">考试 / DDL</string>
     <string name="action_new_semester">新学期向导</string>
     <string name="semester_wizard_title">新学期向导</string>
@@ -447,11 +450,6 @@
     <string name="semester_wizard_create">创建并导入课表</string>
     <string name="semester_wizard_created_toast">已创建 %1$s，请选择课表 PDF 导入</string>
     <string name="semester_wizard_name_empty">请填写新课表名称</string>
-    <string name="free_slot_title">空闲时段 · 第%1$d周</string>
-    <string name="free_slot_range">第%1$d–%2$d节</string>
-    <string name="free_slot_single">第%1$d节</string>
-    <string name="free_slot_none">无空档</string>
-    <string name="free_slot_cd">%1$s空闲：%2$s</string>
     <string name="import_no_file_picker">未找到可选择课表文件的应用</string>
     <string name="share_no_courses">还没有课程，先导入或添加课程后再分享</string>
     <string name="share_dir_failed">无法创建课表分享目录</string>

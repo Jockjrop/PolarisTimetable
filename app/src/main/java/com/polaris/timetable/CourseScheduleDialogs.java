@@ -19,10 +19,7 @@ import com.polaris.timetable.importer.ScheduleImportPreviewData;
 import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.storage.ScheduleBackupManager;
 import com.polaris.timetable.storage.ScheduleRepository;
-import com.polaris.timetable.time.CourseTimeResolver;
-import com.polaris.timetable.time.FreeSlotCalculator;
 import com.polaris.timetable.ui.DesignTokens;
-import com.polaris.timetable.ui.WeekdayLabels;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -152,73 +149,6 @@ public class CourseScheduleDialogs extends DialogKit {
         apply.setBackground(host.roundedBg(host.primaryActionFillHex(), DesignTokens.RADIUS_CARD));
         panel.addView(apply);
         panel.addView(dialogAction(host.getString(R.string.editor_action_cancel), v -> dialog.dismiss()));
-        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
-        dialog.show();
-        transparentDialog(dialog);
-    }
-
-    /**
-     * 空闲时段速查：按课表当前显示的天列出连续空闲节段。
-     * 占用判定按分钟重叠（FreeSlotCalculator），节次/钟点两种时间模式统一处理。
-     */
-    public void showFreeSlotDialog(int week, List<Course> weekCourses,
-                                   CourseTimeResolver.Settings settings, int sectionCount,
-                                   boolean showSaturday, boolean showSunday) {
-        Dialog dialog = new Dialog(host);
-        LinearLayout panel = dialogPanel(host.getString(R.string.free_slot_title, week));
-        ScrollView scroll = new ScrollView(host);
-        scroll.setVerticalScrollBarEnabled(false);
-        LinearLayout list = new LinearLayout(host);
-        list.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(list);
-        panel.addView(scroll, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        List<Integer> shownDays = new ArrayList<>();
-        for (int day = 1; day <= 7; day++) {
-            if (day <= 5 || (day == 6 && showSaturday) || (day == 7 && showSunday)) {
-                shownDays.add(day);
-            }
-        }
-        for (int index = 0; index < shownDays.size(); index++) {
-            int day = shownDays.get(index);
-            List<int[]> ranges = FreeSlotCalculator.freeSectionsForDay(
-                    weekCourses, day - 1, settings, sectionCount);
-            StringBuilder summary = new StringBuilder();
-            for (int[] range : ranges) {
-                if (summary.length() > 0) {
-                    summary.append("、");
-                }
-                summary.append(range[0] == range[1]
-                        ? host.getString(R.string.free_slot_single, range[0])
-                        : host.getString(R.string.free_slot_range, range[0], range[1]));
-            }
-            String summaryText = summary.length() == 0
-                    ? host.getString(R.string.free_slot_none) : summary.toString();
-            String dayLabel = WeekdayLabels.label(host, day - 1);
-
-            LinearLayout row = new LinearLayout(host);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(0, host.dp(9), 0, index == shownDays.size() - 1 ? 0 : host.dp(9));
-            TextView dayView = new TextView(host);
-            dayView.setText(dayLabel);
-            dayView.setTextColor(host.inkColor());
-            dayView.setTextSize(15);
-            dayView.setTypeface(Typeface.DEFAULT_BOLD);
-            row.addView(dayView);
-            TextView valueView = new TextView(host);
-            valueView.setText(summaryText);
-            valueView.setTextColor(host.mutedColor());
-            valueView.setTextSize(14);
-            LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            valueParams.leftMargin = host.dp(14);
-            row.addView(valueView, valueParams);
-            row.setContentDescription(host.getString(R.string.free_slot_cd, dayLabel, summaryText));
-            list.addView(row);
-        }
         dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
         transparentDialog(dialog);

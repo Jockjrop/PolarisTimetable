@@ -28,6 +28,15 @@ import java.util.List;
  */
 public class PlanPageBuilder {
 
+    /** 已完成分组折叠态：Builder 常驻，勾选/主题刷新重建列表时保持。 */
+    private boolean doneCollapsed;
+    /** 用户是否手动切换过折叠（切换后取消进入页面时的 3s 自动折叠）。 */
+    private boolean doneTouched;
+    private boolean autoCollapseScheduled;
+    private final android.os.Handler autoCollapseHandler =
+            new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable pendingAutoCollapse;
+
     /** 宿主回调:由 MainActivity 实现,提供主题状态、样式辅助与计划动作。 */
     public interface Host {
         boolean isLandscapeTablet();
@@ -274,7 +283,8 @@ public class PlanPageBuilder {
     }
 
     public void refreshList(Context context, List<StudyPlan> plans) {
-        if (planListContainer == null) {
+        lastPlans = plans == null ? Collections.emptyList() : plans;
+        if (planListContainer == null || context == null) {
             return;
         }
         planListContainer.removeAllViews();
@@ -304,13 +314,89 @@ public class PlanPageBuilder {
             planListContainer.addView(group);
         }
         if (!finished.isEmpty()) {
-            planListContainer.addView(host.sectionHeader(context.getString(R.string.plan_section_done)));
-            LinearLayout group = host.settingsGroup();
-            for (StudyPlan plan : finished) {
-                group.addView(planRow(context, plan));
+            planListContainer.addView(doneHeader(context, finished.size()));
+            if (!doneCollapsed) {
+                LinearLayout group = host.settingsGroup();
+                for (StudyPlan plan : finished) {
+                    group.addView(planRow(context, plan));
+                }
+                planListContainer.addView(group);
             }
-            planListContainer.addView(group);
         }
+    }
+
+    /**
+     * 已完成分组头：标题+数量+折叠箭头，点击切换展开/折叠（Builder 常驻态，
+     * 勾选/主题刷新重建列表时保持；手动切换后取消 3s 自动折叠）。
+     */
+    private View doneHeader(Context context, int count) {
+        LinearLayout header = new LinearLayout(context);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setMinimumHeight(dp(context, 40));
+        header.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 6));
+        TextView title = new TextView(context);
+        title.setText(context.getString(R.string.plan_done_count, count));
+        title.setTextColor(host.mutedColor());
+        title.setTextSize(13);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView arrow = new TextView(context);
+        arrow.setText(doneCollapsed ? "▸" : "▾");
+        arrow.setTextColor(host.mutedColor());
+        arrow.setTextSize(13);
+        arrow.setTypeface(Typeface.DEFAULT_BOLD);
+        arrow.setPadding(dp(context, 8), 0, 0, 0);
+        header.addView(arrow);
+        header.setContentDescription(context.getString(doneCollapsed
+                ? R.string.plan_done_cd_expand : R.string.plan_done_cd_collapse));
+        header.setOnClickListener(v -> {
+            doneTouched = true;
+            cancelAutoCollapse();
+            doneCollapsed = !doneCollapsed;
+            refreshList(context, currentPlans());
+        });
+        host.attachPressFeedback(header);
+        return header;
+    }
+
+    /** 最近一次刷新的计划列表（重建列表时复用，避免头部点击闭包持有旧数据）。 */
+    private List<StudyPlan> lastPlans = Collections.emptyList();
+
+    private List<StudyPlan> currentPlans() {
+        return lastPlans;
+    }
+
+    /** 进入计划页时武装 3s 自动折叠（用户手动切换过则不再自动）。 */
+    public void armDoneAutoCollapse() {
+        if (doneTouched || doneCollapsed) {
+            return;
+        }
+        cancelAutoCollapse();
+        autoCollapseScheduled = true;
+        pendingAutoCollapse = () -> {
+            pendingAutoCollapse = null;
+            autoCollapseScheduled = false;
+            if (!doneTouched && !doneCollapsed) {
+                doneCollapsed = true;
+                refreshList(currentContext(), lastPlans);
+            }
+        };
+        autoCollapseHandler.postDelayed(pendingAutoCollapse, 3000);
+    }
+
+    /** 离开计划页或销毁时取消自动折叠回调。 */
+    public void cancelAutoCollapse() {
+        if (pendingAutoCollapse != null) {
+            autoCollapseHandler.removeCallbacks(pendingAutoCollapse);
+            pendingAutoCollapse = null;
+        }
+        autoCollapseScheduled = false;
+    }
+
+    private Context currentContext() {
+        return planListContainer == null ? null : planListContainer.getContext();
     }
 
     /** 课表右侧计划面板头部：标题 + 「管理」入口。 */

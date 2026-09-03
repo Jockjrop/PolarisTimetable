@@ -191,6 +191,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private FrameLayout contentHost;
     FrameLayout rootView;
     private PolarisThemeBackgroundView themeBackgroundView;
+    /** 顶栏本周实践条（展开/折叠 + 多实践轮流展示）。 */
+    private LinearLayout practiceTopBar;
+    private TextView practiceTopSummary;
+    private Runnable practiceBarRotate;
+    private Runnable practiceBarCollapse;
+    private List<Course> practiceBarCourses = new ArrayList<>();
+    private int practiceBarIndex;
+    private boolean practiceBarCollapsed;
     private FrameLayout topPanelContainer;
     private LinearLayout topPanel;
     private View topPanelGlassLayer;
@@ -286,6 +294,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private View weekSwipeHintView;
     private View courseSaveUndoView;
     private final Handler todayOverviewHandler = new Handler(Looper.getMainLooper());
+    private final Handler practiceBarHandler = new Handler(Looper.getMainLooper());
     private final Runnable todayOverviewTicker = new Runnable() {
         @Override
         public void run() {
@@ -371,6 +380,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     protected void onDestroy() {
+        cancelPracticeBarTimers();
+        planPageBuilder.cancelAutoCollapse();
         scheduleExportExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -484,11 +495,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         topPanel.addView(headline);
 
+        practiceTopBar = buildPracticeTopBar();
+        topPanel.addView(practiceTopBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         scheduleBoard = new ScheduleBoardView(this);
         scheduleBoard.setOnCourseClickListener(this::showCourseDetail);
         scheduleBoard.setOnCourseLongClickListener(this::showCourseEditor);
         scheduleBoard.setOnCourseDragListener(this::handleCourseDragDrop);
-        scheduleBoard.setOnPracticeBannerClickListener(this::showPracticeCourses);
         scheduleBoard.setOnVerticalScrollListener(this::handleScheduleVerticalScroll);
         scheduleBoard.setOnSlotLongClickListener((day, section) ->
                 showCourseEditor(new Course(day, section, section, "", defaultWeeks(), "", "", "")));
@@ -503,10 +517,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleBoard.setCollapseLunchBreak(scheduleViewState.collapseLunchBreak);
         scheduleBoard.setVisualTheme(scheduleViewState.visualTheme);
         scheduleBoard.setDarkMode(isDarkModeActive());
-        scheduleBoard.setShowOutOfWeekCourses(scheduleViewState.showOutOfWeekCourses);
-        // 横屏平板右侧空间充足时，本周实践改由右侧面板展示，板内横幅关闭。
-        scheduleBoard.setShowPracticeBanner(
-                isLandscapeTablet() && hasPracticePanelSpace() ? false : scheduleViewState.showPracticeBanner);
         scheduleBoard.setCourseMetrics(scheduleViewState.courseCellHeight, scheduleViewState.courseCornerRadius);
         scheduleBoard.setCourseBlockOpacity(scheduleViewState.courseBlockOpacity);
         scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
@@ -654,6 +664,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         updateTodayOverviewPanel();
         updatePracticeSidePanel();
+        updatePracticeTopBar();
         updatePlanSidePanel();
         switchTab(activeTab);
         scheduleBoard.post(this::renderSchedule);
@@ -865,9 +876,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             scheduleBoard.setVisualTheme(scheduleViewState.visualTheme);
             scheduleBoard.setDarkMode(isDarkModeActive());
             scheduleBoard.setShowOutOfWeekCourses(scheduleViewState.showOutOfWeekCourses);
-            // 横屏平板右侧空间充足时，本周实践改由右侧面板展示，板内横幅关闭。
-            scheduleBoard.setShowPracticeBanner(
-                    isLandscapeTablet() && hasPracticePanelSpace() ? false : scheduleViewState.showPracticeBanner);
             scheduleBoard.setCourseMetrics(scheduleViewState.courseCellHeight, scheduleViewState.courseCornerRadius);
             scheduleBoard.setCourseBlockOpacity(scheduleViewState.courseBlockOpacity);
             scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
@@ -893,6 +901,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         updateTodayOverviewPanel();
         updatePracticeSidePanel();
+        updatePracticeTopBar();
         updatePlanSidePanel();
     }
 
@@ -2404,18 +2413,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 .start();
     }
 
-    /** 空闲时段速查：按当前查看的周过滤课程后交给对话框按天计算。 */
-    private void showFreeSlotDialog() {
-        List<Course> weekCourses = new ArrayList<>();
-        for (Course course : courses) {
-            if (CourseTimeResolver.isActiveInWeek(course, currentWeek)) {
-                weekCourses.add(course);
-            }
-        }
-        scheduleDialogs.showFreeSlotDialog(currentWeek, weekCourses, courseTimeSettings(),
-                scheduleViewState.courseSectionCount,
-                scheduleViewState.showSaturday, scheduleViewState.showSunday);
-    }
 
     /**
      * 新学期向导执行流：以模板课表配置为基础创建新课表（改名称与开学日期），
@@ -2467,10 +2464,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         panel.addView(popupMenuAction(getString(R.string.export_dialog_title), v -> {
             popup.dismiss();
             scheduleDialogs.showWeekExportDialog();
-        }));
-        panel.addView(popupMenuAction(getString(R.string.action_free_slots), v -> {
-            popup.dismiss();
-            showFreeSlotDialog();
         }));
         panel.addView(popupMenuAction(getString(R.string.action_academic_events), v -> {
             popup.dismiss();
@@ -3081,6 +3074,168 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             return getString(R.string.delete_done_meeting);
         }
         return getString(R.string.delete_done_all);
+    }
+
+    /** 顶栏实践条背景（与原板内横幅同款视觉，MINIMAL 与通用主题两套）。 */
+    private GradientDrawable practiceTopBarBg() {
+        GradientDrawable drawable = new GradientDrawable();
+        if (PolarisVisualTheme.MINIMAL.equals(scheduleViewState.visualTheme)) {
+            boolean dark = isDarkModeActive();
+            drawable.setColor(dark ? color("#E620504D") : color("#F2DDF4F0"));
+            drawable.setStroke(dp(1), dark ? color("#5B58CFC0") : color("#8044AFA2"));
+            drawable.setCornerRadius(dp(14));
+            return drawable;
+        }
+        drawable.setColor(PolarisVisualTheme.accentSurfaceColor(scheduleViewState.visualTheme, isDarkModeActive()));
+        drawable.setStroke(dp(1), PolarisVisualTheme.outlineColor(scheduleViewState.visualTheme, isDarkModeActive()));
+        drawable.setCornerRadius(dp(18));
+        return drawable;
+    }
+
+    /** 顶栏实践条：标题行（本周实践 + n项·查看）+ 名称行；3s 后折叠为单行轮播。 */
+    private LinearLayout buildPracticeTopBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.VERTICAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(14), dp(7), dp(14), dp(7));
+        bar.setBackground(practiceTopBarBg());
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView label = new TextView(this);
+        label.setText(getString(R.string.board_practice_title));
+        label.setTextColor(PolarisVisualTheme.MINIMAL.equals(scheduleViewState.visualTheme)
+                ? (isDarkModeActive() ? color("#9CE9DF") : color("#075E56"))
+                : PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive()));
+        label.setTextSize(14);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.addView(label, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView count = new TextView(this);
+        count.setText(getString(R.string.board_practice_view_count, 0));
+        count.setTextColor(mutedColor());
+        count.setTextSize(11);
+        heading.addView(count);
+        bar.addView(heading, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        practiceTopSummary = new TextView(this);
+        practiceTopSummary.setTextColor(inkColor());
+        practiceTopSummary.setTextSize(14);
+        practiceTopSummary.setTypeface(Typeface.DEFAULT_BOLD);
+        practiceTopSummary.setSingleLine(true);
+        practiceTopSummary.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        summaryParams.topMargin = dp(2);
+        bar.addView(practiceTopSummary, summaryParams);
+        bar.setOnClickListener(v -> {
+            if (!practiceBarCourses.isEmpty()) {
+                showPracticeCourses(practiceBarCourses);
+            }
+        });
+        bar.setContentDescription(getString(R.string.board_cd_practice, 0));
+        return bar;
+    }
+
+    /** 刷新顶栏实践条：无实践隐藏；展开态 3s 后折叠；折叠态多实践每 3s 轮流展示。 */
+    private void updatePracticeTopBar() {
+        if (practiceTopBar == null || practiceBarHandler == null) {
+            return;
+        }
+        boolean bannerEnabled = scheduleViewState.showPracticeBanner;
+        practiceBarCourses = practiceCoursesForCurrentWeek();
+        boolean show = bannerEnabled && activeTab == 0 && !practiceBarCourses.isEmpty();
+        if (!show) {
+            cancelPracticeBarTimers();
+            practiceTopBar.setVisibility(View.GONE);
+            return;
+        }
+        boolean wasHidden = practiceTopBar.getVisibility() != View.VISIBLE;
+        if (wasHidden) {
+            // 顶栏从隐藏到显示：清旧计时，重置为展开态，准备 3s 折叠。
+            cancelPracticeBarTimers();
+            practiceBarCollapsed = false;
+            practiceBarIndex = 0;
+        }
+        practiceTopBar.setVisibility(View.VISIBLE);
+        int count = practiceBarCourses.size();
+        practiceTopBar.setBackground(practiceTopBarBg());
+        LinearLayout heading = (LinearLayout) practiceTopBar.getChildAt(0);
+        TextView countView = (TextView) heading.getChildAt(1);
+        countView.setText(getString(R.string.board_practice_view_count, count));
+        if (!practiceBarCollapsed) {
+            practiceTopBar.setContentDescription(getString(R.string.board_cd_practice, count));
+            practiceTopBar.getChildAt(0).setVisibility(View.VISIBLE);
+            practiceTopSummary.setText(practiceTopSummaryText(practiceBarCourses));
+            practiceTopBar.getChildAt(1).setVisibility(View.VISIBLE);
+            // 关键修复：已在计时中则不要重复武装，避免 layout/render 反复进入把 3s 折叠无限推迟。
+            if (practiceBarCollapse == null) {
+                practiceBarCollapse = () -> {
+                    practiceBarCollapse = null;
+                    practiceBarCollapsed = true;
+                    practiceBarIndex = 0;
+                    updatePracticeTopBar();
+                };
+                practiceBarHandler.postDelayed(practiceBarCollapse, 3000);
+            }
+        } else {
+            Course current = practiceBarCourses.get(practiceBarIndex % count);
+            String name = current.name == null || current.name.trim().isEmpty()
+                    ? getString(R.string.board_practice_unnamed) : current.name.trim();
+            practiceTopBar.setContentDescription(getString(R.string.board_cd_practice_single, name));
+            // 折叠态：只显示单行实践名称，隐藏“本周实践 + 数量”标题行。
+            practiceTopBar.getChildAt(0).setVisibility(View.GONE);
+            practiceTopSummary.setText(name);
+            practiceTopBar.getChildAt(1).setVisibility(View.VISIBLE);
+            if (count > 1 && practiceBarRotate == null) {
+                practiceBarRotate = () -> {
+                    practiceBarRotate = null;
+                    practiceBarIndex = (practiceBarIndex + 1) % practiceBarCourses.size();
+                    updatePracticeTopBar();
+                };
+                practiceBarHandler.postDelayed(practiceBarRotate, 3000);
+            }
+        }
+    }
+
+    private void cancelPracticeBarTimers() {
+        if (practiceBarCollapse != null) {
+            practiceBarHandler.removeCallbacks(practiceBarCollapse);
+            practiceBarCollapse = null;
+        }
+        if (practiceBarRotate != null) {
+            practiceBarHandler.removeCallbacks(practiceBarRotate);
+            practiceBarRotate = null;
+        }
+    }
+
+    /** 展开态摘要：最多3个名称+时长，与原板内横幅文案一致。 */
+    private String practiceTopSummaryText(List<Course> practiceCourses) {
+        StringBuilder summary = new StringBuilder();
+        int visibleCount = Math.min(3, practiceCourses.size());
+        for (int index = 0; index < visibleCount; index++) {
+            Course course = practiceCourses.get(index);
+            if (summary.length() > 0) {
+                summary.append(" · ");
+            }
+            summary.append(course.name == null || course.name.trim().isEmpty()
+                    ? getString(R.string.board_practice_unnamed) : course.name.trim());
+        }
+        if (practiceCourses.size() == 1) {
+            summary.append(" · ").append(practiceTimeInline(practiceCourses.get(0)));
+        } else if (practiceCourses.size() > visibleCount) {
+            summary.append(getString(R.string.board_practice_more, practiceCourses.size()));
+        }
+        return summary.toString();
+    }
+
+    private String practiceTimeInline(Course course) {
+        if (course.isBannerOnlyCourse()) {
+            return getString(R.string.board_practice_concentrated);
+        }
+        if (course.day >= 0 && course.day < 7 && course.hasScheduledTime()) {
+            return WeekdayLabels.label(this, course.day) + " " + courseTimeInlineText(course);
+        }
+        return getString(R.string.board_time_pending);
     }
 
     private void showPracticeCourses(List<Course> practiceCourses) {
@@ -3724,9 +3879,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         if (plan) {
             refreshPlanList();
+            planPageBuilder.armDoneAutoCollapse();
+        } else {
+            planPageBuilder.cancelAutoCollapse();
         }
         updateTodayOverviewPanel();
         updatePracticeSidePanel();
+        updatePracticeTopBar();
         updatePlanSidePanel();
     }
 
@@ -4345,6 +4504,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         saveGlobalAppearance();
         renderSchedule();
         updatePracticeSidePanel();
+        updatePracticeTopBar();
     }
 
     @Override
@@ -6410,6 +6570,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         updateConflictSummary();
         updateWeekSelector();
         updatePracticeSidePanel();
+        updatePracticeTopBar();
         updatePlanSidePanel();
     }
 
@@ -6438,6 +6599,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         updateConflictSummary();
         updateWeekSelector();
         updatePracticeSidePanel();
+        updatePracticeTopBar();
         updatePlanSidePanel();
     }
 
@@ -6984,6 +7146,7 @@ private void updateGlassLayer(View layer, GradientDrawable background, int radiu
         // 顶栏高度变化后，同步右侧面板的垂直位置（今日概览在上、实践与计划在下）。
         updateTodayOverviewPanel();
         updatePracticeSidePanel();
+        updatePracticeTopBar();
         updatePlanSidePanel();
     }
 

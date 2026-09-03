@@ -34,11 +34,11 @@ Polaris课程表是一个原生 Android Java 课程表 App，面向学生使用�
 - **每次改动代码并构建 APK 交付时，必须同时更新版本号**（`app/build.gradle`）。
 - 版本号遵循语义化版本 `major.minor.patch`，`versionCode` 按 `major×10000 + minor×100 + patch` 映射，只能递增不能回退。
 - 示例：`1.0.0 → versionCode 10000`；下一次交付 `1.0.1 → versionCode 10001`；功能增强 `1.1.0 → versionCode 10100`。
-- 当前基准：`versionName "1.23.0"`，`versionCode 12300`。改版本时以 `app/build.gradle` 中的实际值为准。
+- 当前基准：`versionName "1.24.0"`，`versionCode 12400`。改版本时以 `app/build.gradle` 中的实际值为准。
 - 构建命令：`.\gradlew.bat :app:assembleDebug`，产物位于 `app/build/outputs/apk/debug/`，文件名自带版本号（如 `Polaris-1.0.0-debug.apk`）。
 - 未构建 APK 的纯代码改动（如仅改测试、文档）不强制升版本。
 
-## 当前状态（2026-09-03 核对，版本 1.23.0）
+## 当前状态（2026-09-03 核对，版本 1.24.0）
 
 以下各项已基本完成，不要再作为待办启动：
 
@@ -54,6 +54,6 @@ Polaris课程表是一个原生 Android Java 课程表 App，面向学生使用�
 
 旧五项全部完成，勿再启动：① 文档对齐（2026-08-31）② MainActivity 第二轮瘦身（1.15.3–1.15.9 收官，8846→6309 行；1.16.x 回升至 6899 行属正常增长）③ CI 可信度（2026-09-01 闭环：continue-on-error 已摘、UTP 开关已清；2026-09-03 起仪器测试 PR 跑 smoke、push main 跑全量，失败均阻塞合并）④ 兼容性与本地化（getIdentifier/Gravity 均已清零）⑤ 依赖升级（AndroidX 已升 1.16.0；pdfbox 评估结论为无版本可升，三校 PDF 回归护栏已入库）。
 
-当前工作主线见 `docs/autonomous-iteration-2026-09.md`（自主迭代路线与进度台账）。截至 2026-09-03：台账内 P0–P11（测试护栏、指示线、时段高亮、空闲速查、日期对齐、widget 高亮、质量基线、多课表 Widget、新学期向导、考试/DDL 时间线、本地诊断包）全部收官。剩余候选：学校模板扩展（P5，一校一迭代，先匿名样例）。考试/DDL 余项（绝对日期提醒调度、今日概览联动、课表网格标注）与多课表 Widget 余项（今日/明日独立模式、紧凑布局）可选。长期结构债：MainActivity 约 6400 行，继续按"用例"维度渐进拆分，勿一次性重构。
+当前工作主线见 `docs/autonomous-iteration-2026-09.md`（自主迭代路线与进度台账）。截至 2026-09-03：台账内 P0–P12（测试护栏、指示线、时段高亮、日期对齐、widget 高亮、质量基线、多课表 Widget、新学期向导、考试/DDL 时间线、本地诊断包、日程体验整合——空闲速查已随 1.24.0 回撤）全部收官。剩余候选：学校模板扩展（P5，一校一迭代，先匿名样例）。考试/DDL 余项（绝对日期提醒调度、今日概览联动、课表网格标注）与多课表 Widget 余项（今日/明日独立模式、紧凑布局）可选。长期结构债：MainActivity 约 6400 行，继续按"用例"维度渐进拆分，勿一次性重构。
 
 > 注意：字号已 sp 化（`spToPx` + `TypedValue.COMPLEX_UNIT_SP`）。`docs/ui-refactor-plan.md` 中"字号大量 dp 绝对值导致 fontScale 失效"的描述已失效，不要据此改代码。
