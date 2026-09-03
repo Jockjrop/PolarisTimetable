@@ -2408,6 +2408,22 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 scheduleViewState.showSaturday, scheduleViewState.showSunday);
     }
 
+    /**
+     * 新学期向导执行流：以模板课表配置为基础创建新课表（改名称与开学日期），
+     * 复用 switchSchedule 走完整切换链路（旧表自动保留在列表），随后进入 PDF 导入。
+     */
+    void performNewSemesterCreate(String templateId, String name, String firstWeekDay) {
+        ScheduleRepository.ScheduleEntry created = scheduleRepository.createSchedule(name);
+        ScheduleRepository.Config config = scheduleRepository.loadConfig(templateId);
+        config.scheduleName = name;
+        config.firstWeekDay = firstWeekDay;
+        scheduleRepository.saveConfig(created.id, config);
+        switchSchedule(created.id);
+        Toast.makeText(this, getString(R.string.semester_wizard_created_toast, name),
+                Toast.LENGTH_LONG).show();
+        openPdfPicker();
+    }
+
     private void showActionPanel(View anchor) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -2426,6 +2442,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         panel.addView(popupMenuAction(getString(R.string.action_import_file), v -> {
             popup.dismiss();
             openSharedScheduleFilePicker();
+        }));
+        panel.addView(popupMenuAction(getString(R.string.action_new_semester), v -> {
+            popup.dismiss();
+            scheduleDialogs.showNewSemesterWizardDialog();
         }));
         panel.addView(popupMenuAction(getString(R.string.action_add_course), v -> {
             popup.dismiss();

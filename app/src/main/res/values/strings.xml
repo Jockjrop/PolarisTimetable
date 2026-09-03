@@ -407,6 +407,16 @@
     <string name="action_import_file">导入课表文件</string>
     <string name="action_add_course">手动添加课程</string>
     <string name="action_free_slots">空闲时段</string>
+    <string name="action_new_semester">新学期向导</string>
+    <string name="semester_wizard_title">新学期向导</string>
+    <string name="semester_wizard_hint">以所选课表为模板复制上课时间、显示与提醒设置；旧课表保留在列表中，随时可切回。创建后将进入课表导入。</string>
+    <string name="semester_wizard_template">模板课表：%1$s（点击切换）</string>
+    <string name="semester_wizard_name_label">新课表名称</string>
+    <string name="semester_wizard_name_hint">例如：大二下</string>
+    <string name="semester_wizard_date_label">新学期第一周的任意一天（周次按周一锚定）</string>
+    <string name="semester_wizard_create">创建并导入课表</string>
+    <string name="semester_wizard_created_toast">已创建 %1$s，请选择课表 PDF 导入</string>
+    <string name="semester_wizard_name_empty">请填写新课表名称</string>
     <string name="free_slot_title">空闲时段 · 第%1$d周</string>
     <string name="free_slot_range">第%1$d–%2$d节</string>
     <string name="free_slot_single">第%1$d节</string>

@@ -224,6 +224,94 @@ public class CourseScheduleDialogs extends DialogKit {
         transparentDialog(dialog);
     }
 
+    /**
+     * 新学期向导：选模板课表 → 命名新课表 → 选新学期日期（周次按周一锚定）。
+     * 创建动作在宿主 performNewSemesterCreate 中执行（复制作息/显示/提醒配置、
+     * 切换激活课表），完成后宿主自动进入 PDF 导入。
+     */
+    public void showNewSemesterWizardDialog() {
+        Dialog dialog = new Dialog(host);
+        LinearLayout panel = dialogPanel(host.getString(R.string.semester_wizard_title));
+
+        TextView hint = new TextView(host);
+        hint.setText(host.getString(R.string.semester_wizard_hint));
+        hint.setTextColor(host.mutedColor());
+        hint.setTextSize(13);
+        hint.setLineSpacing(host.dp(3), 1f);
+        panel.addView(hint, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        List<ScheduleRepository.ScheduleEntry> schedules = host.scheduleRepository.loadSchedules();
+        final List<ScheduleRepository.ScheduleEntry> templates = schedules;
+        int activeIndex = 0;
+        for (int i = 0; i < templates.size(); i++) {
+            if (templates.get(i).id.equals(host.activeScheduleId)) {
+                activeIndex = i;
+                break;
+            }
+        }
+        final int[] templateIndex = {activeIndex};
+        TextView templateRow = new TextView(host);
+        templateRow.setTextSize(14);
+        templateRow.setPadding(0, host.dp(12), 0, 0);
+        panel.addView(templateRow);
+        Runnable updateTemplateRow = () -> templateRow.setText(
+                host.getString(R.string.semester_wizard_template, templates.get(templateIndex[0]).name));
+        updateTemplateRow.run();
+        templateRow.setTextColor(host.inkColor());
+        templateRow.setOnClickListener(v -> {
+            templateIndex[0] = (templateIndex[0] + 1) % templates.size();
+            updateTemplateRow.run();
+        });
+
+        TextView nameLabel = new TextView(host);
+        nameLabel.setText(host.getString(R.string.semester_wizard_name_label));
+        nameLabel.setTextColor(host.mutedColor());
+        nameLabel.setTextSize(13);
+        nameLabel.setPadding(0, host.dp(12), 0, host.dp(4));
+        panel.addView(nameLabel);
+
+        EditText nameInput = new EditText(host);
+        nameInput.setHint(host.getString(R.string.semester_wizard_name_hint));
+        nameInput.setTextColor(host.inkColor());
+        nameInput.setHintTextColor(host.mutedColor());
+        nameInput.setTextSize(15);
+        nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        nameInput.setBackground(host.roundedBg(host.cardColorHex(), DesignTokens.RADIUS_CHIP));
+        nameInput.setPadding(host.dp(12), host.dp(10), host.dp(12), host.dp(10));
+        panel.addView(nameInput, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView dateLabel = new TextView(host);
+        dateLabel.setText(host.getString(R.string.semester_wizard_date_label));
+        dateLabel.setTextColor(host.mutedColor());
+        dateLabel.setTextSize(13);
+        dateLabel.setPadding(0, host.dp(12), 0, host.dp(4));
+        panel.addView(dateLabel);
+
+        Calendar defaultDate = host.calendarFromText(
+                SemesterStartDateDefaults.resolve(Calendar.getInstance()));
+        DatePicker picker = new DatePicker(themedControlContext());
+        picker.init(defaultDate.get(Calendar.YEAR), defaultDate.get(Calendar.MONTH),
+                defaultDate.get(Calendar.DAY_OF_MONTH), null);
+        panel.addView(picker);
+
+        panel.addView(dialogAction(host.getString(R.string.semester_wizard_create), v -> {
+            String name = nameInput.getText().toString().trim();
+            if (name.length() == 0) {
+                Toast.makeText(host, host.getString(R.string.semester_wizard_name_empty),
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String firstWeekDay = picker.getYear() + "/" + (picker.getMonth() + 1) + "/" + picker.getDayOfMonth();
+            dialog.dismiss();
+            host.performNewSemesterCreate(templates.get(templateIndex[0]).id, name, firstWeekDay);
+        }));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        dialog.show();
+        transparentDialog(dialog);
+    }
+
     public void showBackupRestoreConfirmDialog(ScheduleBackupManager.BackupBundle bundle) {
         Dialog dialog = new Dialog(host);
         LinearLayout panel = dialogPanel(host.getString(R.string.settings_row_restore_backup));
