@@ -32,8 +32,10 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
+        # lint 以 error 为失败阈值（当前基线 0 error / 3 条依赖内部警告）；
+        # 新增 lint error 会阻塞合并，勿随意抬高警告基线。
+      - name: Run unit tests and lint
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon --console=plain
 
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug --no-daemon --console=plain

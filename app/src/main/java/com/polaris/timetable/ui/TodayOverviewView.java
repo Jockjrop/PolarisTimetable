@@ -273,7 +273,9 @@ public final class TodayOverviewView extends LinearLayout {
         TypedValue value = new TypedValue();
         getContext().getTheme().resolveAttribute(
                 android.R.attr.selectableItemBackground, value, true);
-        return value.resourceId == 0 ? null : getContext().getDrawable(value.resourceId);
+        return value.resourceId == 0
+                ? null : androidx.appcompat.content.res.AppCompatResources.getDrawable(
+                        getContext(), value.resourceId);
     }
 
     private String safe(String value) {

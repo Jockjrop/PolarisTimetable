@@ -185,8 +185,7 @@ public final class CourseReminderScheduler {
     }
 
     public static boolean hasOverlayPermission(Context context) {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                && android.provider.Settings.canDrawOverlays(context);
+        return android.provider.Settings.canDrawOverlays(context);
     }
 
     public static boolean canScheduleExactAlarms(Context context) {

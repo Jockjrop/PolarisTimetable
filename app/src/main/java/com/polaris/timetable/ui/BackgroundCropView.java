@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
@@ -18,6 +19,7 @@ public class BackgroundCropView extends View {
     private final Paint shadePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint framePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF drawDestination = new RectF();
     private final RectF cropWindow = new RectF();
     private final Path shadePath = new Path();
     private final Path circlePath = new Path();
@@ -35,6 +37,15 @@ public class BackgroundCropView extends View {
 
     public BackgroundCropView(Context context, Bitmap bitmap, float targetAspect) {
         this(context, bitmap, targetAspect, false);
+    }
+
+    /** 供布局预览/反射实例化使用：无图占位。 */
+    public BackgroundCropView(Context context) {
+        this(context, null, 0f);
+    }
+
+    public BackgroundCropView(Context context, AttributeSet attrs) {
+        this(context, null, 0f);
     }
 
     public BackgroundCropView(
@@ -115,10 +126,11 @@ public class BackgroundCropView extends View {
         super.onDraw(canvas);
         canvas.drawColor(Color.rgb(16, 24, 39));
         if (bitmap != null && positioned) {
-            RectF destination = new RectF(imageLeft, imageTop,
+            // onDraw 内复用字段，避免每帧分配（DrawAllocation）
+            drawDestination.set(imageLeft, imageTop,
                     imageLeft + bitmap.getWidth() * imageScale,
                     imageTop + bitmap.getHeight() * imageScale);
-            canvas.drawBitmap(bitmap, null, destination, bitmapPaint);
+            canvas.drawBitmap(bitmap, null, drawDestination, bitmapPaint);
         }
         if (circularWindow) {
             shadePath.reset();

@@ -6,7 +6,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.net.Uri;
-import android.os.Build;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -56,10 +55,10 @@ public final class BackgroundImageLoader {
     }
 
     private static Bitmap applyExifOrientation(ContentResolver resolver, Uri uri, Bitmap bitmap) {
-        if (bitmap == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+        if (bitmap == null) {
             return bitmap;
         }
-        int orientation = Api24ExifReader.readOrientation(resolver, uri);
+        int orientation = StreamExifReader.readOrientation(resolver, uri);
         Matrix matrix = new Matrix();
         switch (orientation) {
             case ORIENTATION_FLIP_HORIZONTAL:
@@ -100,15 +99,16 @@ public final class BackgroundImageLoader {
         }
     }
 
-    @android.annotation.TargetApi(Build.VERSION_CODES.N)
-    private static final class Api24ExifReader {
+    /** androidx ExifInterface 自带流式解析实现，无最低 API 限制。 */
+    private static final class StreamExifReader {
         static int readOrientation(ContentResolver resolver, Uri uri) {
             try (InputStream stream = resolver.openInputStream(uri)) {
                 if (stream == null) {
                     return ORIENTATION_NORMAL;
                 }
-                return new android.media.ExifInterface(stream).getAttributeInt(
-                        android.media.ExifInterface.TAG_ORIENTATION, ORIENTATION_NORMAL);
+                return new androidx.exifinterface.media.ExifInterface(stream).getAttributeInt(
+                        androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                        ORIENTATION_NORMAL);
             } catch (IOException | RuntimeException exception) {
                 return ORIENTATION_NORMAL;
             }

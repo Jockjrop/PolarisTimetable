@@ -1,5 +1,6 @@
 package com.polaris.timetable.ui.page;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -225,6 +226,8 @@ public class SettingsPageBuilder {
         return view;
     }
 
+    // 纯按压反馈装饰（不消费触摸），点击由 OnClickListener 承接。
+    @SuppressLint("ClickableViewAccessibility")
     private void attachRowPressFeedback(Context context, View view) {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {

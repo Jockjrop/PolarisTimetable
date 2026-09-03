@@ -1,5 +1,6 @@
 package com.polaris.timetable.ui;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -674,6 +675,9 @@ public class ScheduleBoardView extends FrameLayout {
         }
     }
 
+    // 板体触摸仅记录坐标供 OnLongClickListener 判定长按落点（返回 false 不消费），
+    // 点击/长按语义分别由 OnClickListener/OnLongClickListener 承接，无障碍路径不受影响。
+    @SuppressLint("ClickableViewAccessibility")
     private FrameLayout buildBoard(int week, boolean interactive) {
         int width = Math.max(getAvailableBoardWidth(), timeWidth + dayWidth * visibleDayCount);
         int height = boardHeight(week);
@@ -1258,6 +1262,9 @@ public class ScheduleBoardView extends FrameLayout {
      * long-press without movement opens the editor, long-press followed by a
      * drag moves the course to another day/section via the drag listener.
      */
+    // 课程块自实现 点击/长按/拖拽 复合手势（消费触摸是设计行为），无障碍经
+    // contentDescription + 自定义点击承接，不适用 View#performClick 默认路径。
+    @SuppressLint("ClickableViewAccessibility")
     private void attachCourseBlockGestures(TextView view, Course course,
                                            FrameLayout board, int week) {
         final float[] downX = {0f};

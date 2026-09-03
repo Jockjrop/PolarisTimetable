@@ -12,6 +12,8 @@ import com.polaris.timetable.model.WeekRule;
 import com.polaris.timetable.parser.ParseDiagnostics;
 import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.parser.SemesterTextExtractor;
+
+import java.util.Locale;
 import com.polaris.timetable.parser.WeekRuleParser;
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
 import com.tom_roush.pdfbox.pdmodel.PDDocument;
@@ -1198,7 +1200,7 @@ public class ScheduleParser {
                 .replace("４", "4").replace("５", "5").replace("６", "6").replace("７", "7")
                 .replace("８", "8").replace("９", "9")
                 .replaceAll("\\s+", "")
-                .toUpperCase();
+                .toUpperCase(Locale.ROOT);
     }
 
     private String trimBefore(String text, String token) {

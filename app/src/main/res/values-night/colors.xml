@@ -1,21 +1,9 @@
 <resources>
-    <color name="brand">#63A4FF</color>
-    <color name="brand_dark">#3E8BFF</color>
     <color name="page_bg">#0D1422</color>
-    <color name="panel">#182235</color>
-    <color name="line">#465B7A</color>
-    <color name="text_main">#EEF4FF</color>
-    <color name="text_muted">#9AA8BE</color>
-    <color name="course_1">#274E78</color>
-    <color name="course_2">#235846</color>
-    <color name="course_3">#6B5120</color>
-    <color name="course_4">#4F3A70</color>
-    <color name="course_5">#713B43</color>
     <color name="widget_surface">#FF000000</color>
     <color name="widget_surface_border">#33465B7A</color>
-    <color name="widget_item_surface">#00000000</color>
-    <color name="widget_item_ongoing_surface">#1AFFFFFF</color>
     <color name="widget_text_main">#F4F7FB</color>
     <color name="widget_text_muted">#AEB8C7</color>
     <color name="widget_divider">#46505E</color>
+    <color name="widget_item_ongoing_surface">#1AFFFFFF</color>
 </resources>

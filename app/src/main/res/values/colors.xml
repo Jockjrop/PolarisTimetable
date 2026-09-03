@@ -1,21 +1,12 @@
 <resources>
-    <color name="brand">#2563EB</color>
-    <!-- 自适应图标背景：只定义在 values，不进 values-night，保证图标不随系统深色模式变色 -->
-    <color name="ic_launcher_background">#2563EB</color>
-    <color name="brand_dark">#1D4ED8</color>
+    <!-- 镜像 token 层：仅保留被 widget 布局 / 窗口主题 / 图标实际引用的颜色；
+         主 UI 颜色真源是 ui/PolarisVisualTheme.java（勿在此堆未用 token）。
+         自适应图标背景只定义在 values，不进 values-night，保证图标不随系统深色变色。 -->
     <color name="page_bg">#F6F7FB</color>
-    <color name="panel">#FFFFFF</color>
-    <color name="line">#D9DFEA</color>
-    <color name="text_main">#172033</color>
-    <color name="text_muted">#667085</color>
     <color name="course_1">#EAF2FF</color>
-    <color name="course_2">#EAF8F1</color>
-    <color name="course_3">#FFF3D9</color>
-    <color name="course_4">#F1EAFE</color>
-    <color name="course_5">#FFEDEE</color>
+    <color name="ic_launcher_background">#2563EB</color>
     <color name="widget_surface">#FFFFFFFF</color>
     <color name="widget_surface_border">#1A172033</color>
-    <color name="widget_item_surface">#00000000</color>
     <color name="widget_item_ongoing_surface">#0F172033</color>
     <color name="widget_text_main">#172033</color>
     <color name="widget_text_muted">#667085</color>

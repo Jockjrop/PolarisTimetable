@@ -34,11 +34,11 @@ Polaris课程表是一个原生 Android Java 课程表 App，面向学生使用�
 - **每次改动代码并构建 APK 交付时，必须同时更新版本号**（`app/build.gradle`）。
 - 版本号遵循语义化版本 `major.minor.patch`，`versionCode` 按 `major×10000 + minor×100 + patch` 映射，只能递增不能回退。
 - 示例：`1.0.0 → versionCode 10000`；下一次交付 `1.0.1 → versionCode 10001`；功能增强 `1.1.0 → versionCode 10100`。
-- 当前基准：`versionName "1.16.7"`，`versionCode 11607`。改版本时以 `app/build.gradle` 中的实际值为准。
+- 当前基准：`versionName "1.19.1"`，`versionCode 11901`。改版本时以 `app/build.gradle` 中的实际值为准。
 - 构建命令：`.\gradlew.bat :app:assembleDebug`，产物位于 `app/build/outputs/apk/debug/`，文件名自带版本号（如 `Polaris-1.0.0-debug.apk`）。
 - 未构建 APK 的纯代码改动（如仅改测试、文档）不强制升版本。
 
-## 当前状态（2026-09-02 核对，版本 1.16.7）
+## 当前状态（2026-09-03 核对，版本 1.19.1）
 
 以下五项已基本完成，不要再作为待办启动：
 
@@ -46,7 +46,8 @@ Polaris课程表是一个原生 Android Java 课程表 App，面向学生使用�
 - **数据模型已结构化**：`model/` 下已有 `StructuredCourse`、`CourseMeeting`、`WeekRule`、`CourseTimeMode`、`StableCourseId`/`StableMeetingId`，支持多上课时间、单双周、项目周，并具备迁移测试。
 - **解析诊断已具备**：`parser/` 下有 `ParseDiagnostics`、`ParseDiagnosticsReport`、`WeekRuleParser`、`SemesterTextExtractor`。
 - **UI 重构阶段 0–6 已竣工**（1.13.18 → 1.15.1）：设计令牌、edge-to-edge、字符串资源化、`MainActivity` 页面级 Builder 拆分、设置页/我的页 XML + ViewBinding + Fragment 迁移、边界与可访问性验收。详见 `docs/ui-refactor-plan.md`（已归档）。
-- **颜色/形状 token 架构已确立（2026-09-02 M3 审计后落地，1.16.6/1.16.7）**：主 UI 颜色 token 源是 `ui/PolarisVisualTheme.java`（4 风格 × 明暗），`res/values/colors.xml` 仅作 widget 与窗口主题的镜像层，Java UI 不引用 `R.color` 是既定形态；组件专属色（如开关）用类内命名常量；`reminder/CourseReminderPopup` 固定浅色卡片是覆盖窗的设计意图，勿"修"成主题化；警示文案色统一走 `PolarisVisualTheme.warningColor(dark)`。形状角半径与课表网格断点尺寸在 `values/dimens.xml`（平板覆盖 `values-sw600dp/dimens.xml`），新视图勿写魔法数。
+- **颜色/形状 token 架构已确立（2026-09-02 M3 审计后落地，1.16.6/1.16.7）**：主 UI 颜色 token 源是 `ui/PolarisVisualTheme.java`（4 风格 × 明暗），`res/values/colors.xml` 仅保留 widget/主题/图标实际引用的镜像 token，Java UI 不引用 `R.color` 是既定形态；组件专属色（如开关）用类内命名常量；`reminder/CourseReminderPopup` 固定浅色卡片是覆盖窗的设计意图，勿"修"成主题化；警示文案色统一走 `PolarisVisualTheme.warningColor(dark)`。形状角半径与课表网格断点尺寸在 `values/dimens.xml`（平板覆盖 `values-sw600dp/dimens.xml`），新视图勿写魔法数。
+- **Lint 基线已入 CI（2026-09-03，1.19.1）**：`lintDebug` 0 error 即门槛，新增 error 阻塞合并。警告基线 3 条（bouncycastle 依赖内部 TrustAllX509TrustManager，随依赖升级线处理）；代码内 `@SuppressLint`/`tools:ignore` 必须带理由注释（按压反馈装饰、格式示例文案、有意贴边等），勿无说明压制。
 
 ## 当前优先级（2026-09-03 核对，iteration-plan 阶段 0–5 已全部收官）
 

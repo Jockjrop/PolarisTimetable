@@ -365,9 +365,7 @@ public class AiImportFlow extends DialogKit {
                 ? host.getString(R.string.import_confirm_overwrite)
                 : host.getString(R.string.import_confirm_short);
         TextView confirm = dialogAction(confirmText, v -> {
-            if (host.isFinishing()
-                    || (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1
-                    && host.isDestroyed())) {
+            if (host.isFinishing() || host.isDestroyed()) {
                 confirmation.cancel();
                 dialog.dismiss();
                 return;

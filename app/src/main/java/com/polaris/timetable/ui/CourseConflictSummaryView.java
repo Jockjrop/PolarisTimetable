@@ -8,10 +8,12 @@ import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.TextView;
+
+import androidx.appcompat.content.res.AppCompatResources;
+import androidx.appcompat.widget.AppCompatTextView;
 
 /** Non-blocking, accessible summary shown only when the displayed week has conflicts. */
-public final class CourseConflictSummaryView extends TextView {
+public final class CourseConflictSummaryView extends AppCompatTextView {
     private boolean compact;
     private boolean lastDarkMode;
 
@@ -79,7 +81,8 @@ public final class CourseConflictSummaryView extends TextView {
         TypedValue value = new TypedValue();
         getContext().getTheme().resolveAttribute(
                 android.R.attr.selectableItemBackground, value, true);
-        return value.resourceId == 0 ? null : getContext().getDrawable(value.resourceId);
+        return value.resourceId == 0
+                ? null : AppCompatResources.getDrawable(getContext(), value.resourceId);
     }
 
     private int dp(int value) {

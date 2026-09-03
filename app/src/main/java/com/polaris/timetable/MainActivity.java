@@ -1,5 +1,6 @@
 package com.polaris.timetable;
 
+import android.annotation.SuppressLint;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
@@ -778,7 +779,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     public TextView importReviewLine(String label, String value, boolean needsAttention) {
         TextView line = new TextView(this);
-        line.setText(label + "：" + value);
+        line.setText(getString(R.string.review_line_colon, label, value));
         line.setTextColor(needsAttention
                 ? PolarisVisualTheme.warningColor(isDarkModeActive())
                 : mutedColor());
@@ -2150,6 +2151,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         Toast.makeText(this, getString(R.string.profile_saved), Toast.LENGTH_SHORT).show();
     }
 
+    // 触摸仅做按压反馈装饰（返回 false 不消费），点击语义由 OnClickListener 承接，
+    // 无障碍路径不受影响；若在 ACTION_UP 里手动 performClick 会双触发点击。
+    @SuppressLint("ClickableViewAccessibility")
     private Button transparentTopButton(String text, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(text);
@@ -4356,6 +4360,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return Math.round(sp * getResources().getDisplayMetrics().scaledDensity);
     }
 
+    // 纯按压反馈装饰（不消费触摸），点击由 OnClickListener 承接。
+    @SuppressLint("ClickableViewAccessibility")
     public void attachPressFeedback(View view) {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
@@ -4381,6 +4387,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
+    // 纯按压反馈装饰（不消费触摸），点击由 OnClickListener 承接。
+    @SuppressLint("ClickableViewAccessibility")
     public void attachCardPressFeedback(View view, int radius) {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
@@ -4395,6 +4403,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         });
     }
 
+    // 同 transparentTopButton：纯按压反馈装饰，不消费触摸。
+    @SuppressLint("ClickableViewAccessibility")
     private void attachRowPressFeedback(View view) {
         view.setOnTouchListener((target, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
@@ -5090,10 +5100,12 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     private View toggleRow(String label, boolean initial, BooleanSetter setter) {
         final boolean[] value = {initial};
-        TextView row = settingCard(label, initial ? "开" : "关", v -> {
+        TextView row = settingCard(label, initial
+                ? getString(R.string.toggle_on) : getString(R.string.toggle_off), v -> {
             value[0] = !value[0];
             setter.set(value[0]);
-            ((TextView) v).setText(label + "\n" + (value[0] ? "开" : "关"));
+            ((TextView) v).setText(getString(R.string.setting_toggle_value, label,
+                    getString(value[0] ? R.string.toggle_on : R.string.toggle_off)));
         });
         return row;
     }
@@ -6356,6 +6368,9 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
     }
 
+    // ACTION_CHANNEL_NOTIFICATION_SETTINGS / EXTRA_APP_PACKAGE 为 API 26 常量，
+    // 仅在 SDK_INT >= O 分支内联引用，运行时安全。
+    @SuppressLint("InlinedApi")
     private void openNotificationSettings() {
         try {
             CourseReminderScheduler.createNotificationChannel(this);

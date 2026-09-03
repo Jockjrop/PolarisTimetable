@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Polaris课程表</string>
     <string name="schedule_widget_name">Polaris 今日课表</string>
     <string name="schedule_widget_description">显示当前课表的今日与明日课程</string>
@@ -356,7 +356,7 @@
     <string name="import_start_parse">开始解析并检查</string>
     <string name="import_error_name_empty">课表名称不能为空</string>
     <string name="import_parsing_busy">课表正在解析，请稍候</string>
-    <string name="import_parsing_header">正在解析课表...</string>
+    <string name="import_parsing_header">正在解析课表…</string>
     <string name="import_reason_unknown">未知原因</string>
     <string name="import_diag_failed">解析失败</string>
     <string name="import_diag_failure">解析状态：失败\n原因：%1$s</string>
@@ -402,8 +402,6 @@
     <string name="action_import_ai">AI 识别导入</string>
     <string name="action_import_file">导入课表文件</string>
     <string name="action_add_course">手动添加课程</string>
-    <string name="action_share_file">分享课表文件</string>
-    <string name="action_export">导出课表</string>
     <string name="action_free_slots">空闲时段</string>
     <string name="free_slot_title">空闲时段 · 第%1$d周</string>
     <string name="free_slot_range">第%1$d–%2$d节</string>
@@ -532,12 +530,8 @@
     <string name="reminder_perm_denied">未获得通知权限，课程提醒没有开启</string>
     <string name="review_needs_check_line">需要检查，%1$s，%2$s</string>
     <string name="review_line">%1$s，%2$s</string>
+    <string name="review_line_colon">%1$s：%2$s</string>
     <string name="structured_data_missing">结构化课程数据不可用，已取消写入以保护当前课表</string>
-    <string name="parse_no_courses_hint">未识别到课程，请确认PDF是教务系统课表</string>
-    <string name="parse_ok_summary">已导入 %1$d 门课程 · %2$d 页</string>
-    <string name="parse_ok_summary_warnings">已导入 %1$d 门课程 · 有 %2$d 条提示</string>
-    <string name="parse_failed_hint">解析失败，请确认PDF是文字型教务课表</string>
-    <string name="parse_partial_hint">部分字段未识别完整，可继续查看课表</string>
     <string name="drag_not_allowed">这门课程无法拖动调整</string>
     <string name="drag_stale_retry">课程数据已变化，请重试</string>
     <string name="drag_move_failed">移动课程失败，请重试</string>
@@ -567,10 +561,11 @@
     <string name="classtime_add_row">＋ 添加一节</string>
     <string name="classtime_saved_toast">上课时间已保存并应用</string>
     <string name="classtime_paste_title">粘贴作息文本</string>
-    <string name="classtime_paste_hint">每行一个节次，格式：节次 开始-结束。例如：\n1 08:00-08:50\n2 08:55-09:45</string>
+    <!-- 时间范围示例必须用半角连字符（用户照此输入，解析器按 hyphen 匹配） -->
+    <string name="classtime_paste_hint" tools:ignore="TypographyDashes">每行一个节次，格式：节次 开始-结束。例如：\n1 08:00-08:50\n2 08:55-09:45</string>
     <string name="classtime_paste_input_hint">粘贴学校作息表…</string>
     <string name="classtime_parse_apply">解析并填入</string>
-    <string name="classtime_paste_no_rows">没有识别到节次时间行；每行格式如 1 08:00-08:50</string>
+    <string name="classtime_paste_no_rows" tools:ignore="TypographyDashes">没有识别到节次时间行；每行格式如 1 08:00-08:50</string>
     <string name="classtime_paste_done">已填入 %1$d 节课，可继续逐节修改</string>
     <string name="classtime_section_ordinal">第%1$d节</string>
     <string name="classtime_section_start_title">第%1$d节开始</string>
@@ -600,7 +595,6 @@
     <string name="schedule_action_add">新增课表</string>
     <string name="schedule_action_delete">删除此课表</string>
     <string name="schedule_rename_title">修改课表名称</string>
-    <string name="schedule_create_title">新增课表</string>
     <string name="schedule_create_name_hint">课表名称，例如 大二下</string>
     <string name="schedule_error_last_one">至少保留一个课表</string>
     <string name="schedule_delete_confirm_title">删除此课表？</string>
@@ -608,7 +602,7 @@
     <string name="schedule_confirm_delete">确认删除</string>
     <string name="schedule_deleted_toast">已删除课表</string>
     <string name="semester_edit_title">修改学期</string>
-    <string name="semester_edit_hint">例如 2025-2026学年第2学期</string>
+    <string name="semester_edit_hint" tools:ignore="TypographyDashes">例如 2025-2026学年第2学期</string>
     <string name="semester_error_empty">学期不能为空</string>
     <string name="week_selector_value">第 %1$d 周 ▾</string>
     <string name="diagnostics_title">最近一次解析诊断</string>
@@ -626,6 +620,7 @@
     <string name="weekday_unknown_short">未知</string>
     <string name="toggle_on">开</string>
     <string name="toggle_off">关</string>
+    <string name="setting_toggle_value">%1$s\n%2$s</string>
     <string name="profile_save_apply">保存并应用</string>
     <string name="appearance_applied_toast">已应用“%1$s”外观</string>
     <string name="theme_switched_toast">已切换为“%1$s”</string>

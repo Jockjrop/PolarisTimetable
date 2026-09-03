@@ -25,7 +25,11 @@ import com.polaris.timetable.MainActivity;
 public final class CourseReminderPopup {
     private static final long AUTO_DISMISS_MILLIS = 15_000L;
 
+    // 单例悬浮窗的存活引用：同一时刻至多一个提醒窗，dismiss() 会清空两个字段；
+    // 若不持有引用则无法在任意入口关闭悬浮窗，属刻意的单例生命周期设计。
+    @android.annotation.SuppressLint("StaticFieldLeak")
     private static View activeView;
+    @android.annotation.SuppressLint("StaticFieldLeak")
     private static WindowManager activeWindowManager;
     private static final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -44,8 +48,7 @@ public final class CourseReminderPopup {
     public static void show(Context context, Intent source) {
         Context appContext = context.getApplicationContext();
         dismiss();
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M
-                || !android.provider.Settings.canDrawOverlays(appContext)) {
+        if (!android.provider.Settings.canDrawOverlays(appContext)) {
             return;
         }
         String courseName = source == null ? null
