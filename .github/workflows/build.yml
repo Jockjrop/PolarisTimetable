@@ -106,11 +106,13 @@ jobs:
           disable-animations: true
           # PR 只跑 smoke（主界面启动/课表渲染路径，分钟级）；main 全量。
           script: |
+            # POSIX sh（runner 为 dash）：不得使用 [[ ]] 等 bash 语法。
+            REF="${{ github.ref }}"
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               ./gradlew :app:connectedDebugAndroidTest \
                 -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.ui.MainActivitySmokeTest \
                 --no-daemon --console=plain
-            elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            elif [ "${REF#refs/tags/}" != "$REF" ]; then
               # U-P1-17：标签发布前必须通过更新入口与安装构件的仪器冒烟。
               ./gradlew :app:connectedDebugAndroidTest \
                 -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.update.UpdateEntryTest \
