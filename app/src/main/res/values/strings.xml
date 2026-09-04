@@ -244,6 +244,66 @@
     <string name="settings_row_github">GitHub 项目地址</string>
     <string name="settings_toast_github_copied">GitHub 地址已复制：%1$s</string>
 
+    <!-- 应用内更新系统（docs/app-self-update-plan.md）：入口行、状态、弹窗与错误文案。
+         错误文案不得包含异常堆栈、缓存路径或内部类名。 -->
+    <string name="settings_row_check_update">检查更新</string>
+    <string name="update_check_value_current">当前版本 %1$s</string>
+    <string name="update_check_checking">正在检查…</string>
+    <string name="update_check_up_to_date_value">已是最新版 · %1$s</string>
+    <string name="update_check_available_value">发现 %1$s</string>
+    <string name="update_check_failed_value">检查失败，点击重试</string>
+    <string name="update_check_ready_value">已下载，点击安装</string>
+    <string name="update_time_just_now">刚刚</string>
+    <string name="update_time_minutes_ago">%1$d 分钟前</string>
+    <string name="update_time_hours_ago">%1$d 小时前</string>
+    <string name="settings_row_auto_check_update">自动检查更新</string>
+    <string name="update_auto_check_explain_title">开启自动检查更新</string>
+    <string name="update_auto_check_explain_message">开启后，Polaris 每天最多访问一次官方更新地址，仅获取版本信息，不会上传课表或其他个人数据。\n\n可随时在本页关闭。</string>
+    <string name="update_auto_check_confirm">开启</string>
+    <string name="update_dialog_title_new">发现新版本 %1$s</string>
+    <string name="update_dialog_title_required">发现重要安全更新</string>
+    <string name="update_dialog_version_line">%1$s → %2$s</string>
+    <string name="update_dialog_published">发布日期：%1$s</string>
+    <string name="update_dialog_size">安装包大小：%1$s</string>
+    <string name="update_dialog_required_note">这是重要安全更新，建议尽快安装。</string>
+    <string name="update_dialog_notes_header">更新说明</string>
+    <string name="update_dialog_view_full_notes">查看完整说明</string>
+    <string name="update_dialog_open_failed">无法打开链接</string>
+    <string name="update_dialog_later">稍后</string>
+    <string name="update_dialog_ignore">忽略此版本</string>
+    <string name="update_dialog_download">下载并安装</string>
+    <string name="update_toast_ignored">已忽略此版本，手动检查时仍可重新查看</string>
+    <string name="update_size_mb">%1$s MB</string>
+    <string name="update_download_title">正在更新 Polaris课程表</string>
+    <string name="update_download_percent_value">%1$d%%</string>
+    <string name="update_download_progress_value">%1$s / %2$s</string>
+    <string name="update_download_stage_downloading">下载中</string>
+    <string name="update_download_stage_verify_hash">校验完整性</string>
+    <string name="update_download_stage_verify_apk">校验安装包</string>
+    <string name="update_download_stage_ready">准备安装</string>
+    <string name="update_download_cancel">取消</string>
+    <string name="update_download_install">安装</string>
+    <string name="update_install_success">更新安装完成</string>
+    <string name="update_install_failed">安装失败</string>
+    <string name="update_install_failed_prefix">安装失败：%1$s</string>
+    <string name="update_install_blocked">安装被系统阻止</string>
+    <string name="update_error_network">网络不可用，请检查网络后重试</string>
+    <string name="update_error_timeout">连接超时，请稍后重试</string>
+    <string name="update_error_http">更新服务暂时不可用，请稍后重试</string>
+    <string name="update_error_invalid_metadata">更新信息格式错误</string>
+    <string name="update_error_unsupported_schema">更新协议版本过新，请到项目页面获取更新</string>
+    <string name="update_error_device_unsupported">该更新不支持当前系统版本</string>
+    <string name="update_error_insufficient_storage">存储空间不足，无法下载更新</string>
+    <string name="update_error_cancelled">下载已取消</string>
+    <string name="update_error_file_size">下载文件大小不符</string>
+    <string name="update_error_hash">文件校验失败，已删除下载内容</string>
+    <string name="update_error_apk_unreadable">安装包无法读取</string>
+    <string name="update_error_package_mismatch">安装包不正确（包名不符）</string>
+    <string name="update_error_apk_version_mismatch">安装包版本不正确</string>
+    <string name="update_error_signature_mismatch">安装包签名与当前应用不一致，已拒绝安装</string>
+    <string name="update_error_no_installer">系统没有可用的安装器</string>
+    <string name="update_error_storage_write">更新文件写入失败</string>
+
     <!-- 我的页与账户/背景/头像弹窗。
          注意:设置入口卡片标题(课表设置等)复用页面路由标识;"管理员"是持久化默认账户名,均保持字面量。 -->
     <string name="my_card_schedule">课表设置</string>
@@ -277,8 +337,17 @@
 
     <!-- 计划页。
          注意:"不关联"是关联课程选择对话框的比较值,保持字面量。 -->
-    <string name="plan_action_new">＋ 新建计划</string>
-    <string name="plan_empty_hint">还没有计划，点击上方「＋ 新建计划」</string>
+    <string name="plan_empty_hint">还没有计划，点击右下角＋添加第一项</string>
+    <!-- 悬浮新增菜单（1.26.0）：整宽「＋ 新建计划」按钮已由右下角悬浮菜单取代，
+         文案随入口变化同步更新，不再引用已移除的整宽按钮。 -->
+    <string name="plan_fab_cd_collapsed">添加内容</string>
+    <string name="plan_fab_cd_expanded">收起添加菜单</string>
+    <string name="plan_add_action_plan">新建计划</string>
+    <string name="plan_add_action_deadline">添加DDL</string>
+    <string name="plan_add_action_exam">添加考试</string>
+    <string name="plan_add_menu_scrim_cd">关闭添加菜单</string>
+    <string name="plan_add_menu_expanded_announce">添加菜单已展开，共3项</string>
+    <string name="plan_add_menu_collapsed_announce">添加菜单已收起</string>
     <string name="plan_section_pending">待完成</string>
     <string name="plan_section_done">已完成</string>
     <string name="plan_done_count">已完成（%1$d）</string>
@@ -383,6 +452,9 @@
     <string name="import_overwrite_message">先解析 PDF 并检查课程、缺失字段和冲突；只有在检查页再次确认后，才会覆盖当前课表。请先选择学校解析模型。</string>
     <string name="import_pick_model">选择学校解析模型</string>
     <string name="import_school_value">学校：%1$s</string>
+    <string name="import_chooser_title">选择导入方式</string>
+    <string name="school_chooser_ai_action">使用AI导入</string>
+    <string name="school_chooser_existing_action">选择已有模型</string>
     <string name="import_school_chooser_title">选择学校</string>
     <string name="import_parse_and_check">解析并检查</string>
     <string name="import_error_pick_model">请先选择学校解析模型</string>

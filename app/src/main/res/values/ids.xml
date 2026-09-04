@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 动态构建视图内部子控件的稳定 id：用于主题刷新时按 id 回查子视图，
+         以及设置无障碍遍历顺序。 -->
+    <item name="plan_add_menu_icon" type="id" />
+    <item name="plan_add_menu_label" type="id" />
+</resources>

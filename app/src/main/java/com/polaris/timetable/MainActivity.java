@@ -64,6 +64,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.Space;
 import android.widget.TextView;
@@ -127,6 +128,11 @@ import com.polaris.timetable.ui.TodayOverviewView;
 import com.polaris.timetable.ui.page.MyPageBuilder;
 import com.polaris.timetable.ui.page.PlanPageBuilder;
 import com.polaris.timetable.ui.page.SettingsPageBuilder;
+import com.polaris.timetable.update.UpdateCoordinator;
+import com.polaris.timetable.update.UpdateDownloadState;
+import com.polaris.timetable.update.UpdateInfo;
+import com.polaris.timetable.update.UpdateInstaller;
+import com.polaris.timetable.update.UpdateJsonParser;
 import com.polaris.timetable.ui.shell.BottomNavView;
 import com.polaris.timetable.ui.WeekdayLabels;
 import com.polaris.timetable.state.ScheduleViewState;
@@ -151,7 +157,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host, PdfImportReviewFlow.Host {
+public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host, PdfImportReviewFlow.Host, UpdateCoordinator.Host {
     private static final String TAG = "MainActivity";
 
     private static final int PICK_PDF = 1001;
@@ -173,6 +179,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final int SETTINGS_PAGE_EXIT_DURATION_MS = 170;
     private static final int SETTINGS_PAGE_REVEAL_OFFSET_DP = 16;
     private static final int RETURN_WEEK_CARD_WIDTH_DP = 64;
+    private static final long AUTO_UPDATE_CHECK_DELAY_MS = 5000L;
     private static final int RETURN_WEEK_CARD_GAP_DP = 8;
     private static final long TODAY_OVERVIEW_COLLAPSE_DELAY_MS = 3_000L;
     /** 仅存于进程内：系统杀掉应用后，下次冷启动重新展示 3 秒展开态。 */
@@ -212,7 +219,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private View topPanelGlassLayer;
     private BottomNavView bottomNavView;
     private View myPage;
-    private ScrollView planPage;
+    /** 计划页：滚动内容 + 固定层悬浮新增菜单（1.26.0 起不再是纯 ScrollView）。 */
+    private View planPage;
     private FrameLayout settingsPage;
     private View emptyScheduleView;
     private TextView title;
@@ -242,6 +250,16 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     int currentWeek = 18;
     int visibleDayCount = 7;
     private final CourseScheduleDialogs scheduleDialogs = new CourseScheduleDialogs(this);
+    // 应用内更新（docs/app-self-update-plan.md）：协调器为进程级单例，Activity 只持有 UI 引用。
+    private UpdateCoordinator updateCoordinator;
+    private View updateCheckRow;
+    private Dialog updateAvailableDialog;
+    private Dialog updateDownloadDialog;
+    private TextView updateDownloadPercentText;
+    private TextView updateDownloadProgressText;
+    private TextView updateDownloadStageText;
+    private ProgressBar updateDownloadProgressBar;
+    private TextView updateDownloadInstallAction;
     private final AppearanceDialogs appearanceDialogs = new AppearanceDialogs(this);
     private final ReminderDialogs reminderDialogs = new ReminderDialogs(this);
     final ScheduleViewState scheduleViewState = new ScheduleViewState();
@@ -342,6 +360,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         reloadAcademicEvents();
         buildLayout();
         renderSchedule();
+        // onCreate 中初始化：Activity attach 后才有可用的 base context，字段初始化器阶段不可用。
+        updateCoordinator = UpdateCoordinator.acquire(this, this);
+        updateCoordinator.onHostCreated();
+        if (rootView != null) {
+            // 自动检查：冷启动稳定显示主页面约 5 秒后触发（协议 9.5）。
+            rootView.postDelayed(this::maybeAutoUpdateCheck, AUTO_UPDATE_CHECK_DELAY_MS);
+        }
         Intent launchIntent = getIntent();
         Uri launchUri = launchIntent == null ? null : launchIntent.getData();
         if (ScheduleShareCodec.isImportLink(launchUri)) {
@@ -370,6 +395,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updatePracticeTopBar();
         refreshActiveSettingsPage();
         scheduleWeekSwipeHintIfNeeded();
+        updateCoordinator.onHostResumed();
     }
 
     @Override
@@ -395,6 +421,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     protected void onPause() {
         aiImportFlow.onHostPaused();
+        if (updateCoordinator != null) {
+            updateCoordinator.onHostPaused();
+        }
         todayOverviewHandler.removeCallbacks(todayOverviewTicker);
         cancelPracticeBarTimers();
         super.onPause();
@@ -406,11 +435,18 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         cancelPracticeBarTimers();
         planPageBuilder.cancelAutoCollapse();
         scheduleExportExecutor.shutdownNow();
+        dismissDialogSafe(updateAvailableDialog);
+        dismissDialogSafe(updateDownloadDialog);
+        updateCoordinator.onHostDestroyed();
         super.onDestroy();
     }
 
     @Override
     public void onBackPressed() {
+        if (planPageBuilder.isAddMenuExpanded()) {
+            planPageBuilder.collapseAddMenus();
+            return;
+        }
         if (planPageBuilder.isManagePanelOpen()) {
             planPageBuilder.closeManagePanel(this);
             return;
@@ -698,6 +734,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         launchPdfPicker();
     }
 
+    /** 供对话框组转发 AI 识别导入入口（aiImportFlow 为私有字段）。 */
+    void openAiImportDialog() {
+        aiImportFlow.showImportDialog();
+    }
+
     private void launchPdfPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -883,7 +924,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     void renderSchedule() {
         if (scheduleBoard != null) {
-            boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
             scheduleBoard.setWeekBounds(1, scheduleViewState.semesterWeeks);
             scheduleBoard.setCurrentWeek(currentWeek);
             scheduleBoard.setVisibleDays(scheduleViewState.showSaturday, scheduleViewState.showSunday);
@@ -897,7 +937,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             scheduleBoard.setShowOutOfWeekCourses(scheduleViewState.showOutOfWeekCourses);
             scheduleBoard.setCourseMetrics(scheduleViewState.courseCellHeight, scheduleViewState.courseCornerRadius);
             scheduleBoard.setCourseBlockOpacity(scheduleViewState.courseBlockOpacity);
-            scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
+            syncScheduleOverlayInsets();
             scheduleBoard.setBackgroundImage(scheduleViewState.backgroundImageUri, scheduleViewState.backgroundImageCrop);
             scheduleBoard.setCourses(courses);
         }
@@ -1516,11 +1556,24 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private int scheduleOverlayTopInset(boolean tablet) {
-        if (topPanelContainer != null && topPanelContainer.getHeight() > 0
-                && topPanelContainer.getVisibility() == View.VISIBLE) {
+        // 不要求面板处于 VISIBLE：切到我的/设置等页签后面板被 GONE，
+        // 但视图仍冻结着上一次布局的真实高度，用它远比魔数兜底准确。
+        // 否则切课程表（此时面板不可见）会把魔数兜底写进课表顶部留白，
+        // 回到课表后若面板高度恰好未变，布局回调不再触发，残留偏大的留白。
+        // 兜底仅保留给「从未布局过」的情况（高度为 0，如旋转重建首帧）。
+        if (topPanelContainer != null && topPanelContainer.getHeight() > 0) {
             return topPanelContainer.getTop() + topPanelContainer.getHeight() + dp(8);
         }
         return statusBarHeight() + dp(tablet ? 172 : 160);
+    }
+
+    /** 把顶栏当前实际高度同步给课表，消除切页签/切换课程表期间残留的顶部 inset。 */
+    private void syncScheduleOverlayInsets() {
+        if (scheduleBoard == null) {
+            return;
+        }
+        boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
+        scheduleBoard.setOverlayInsets(scheduleOverlayTopInset(tablet), bottomContentInset());
     }
 
     private View buildEmptyScheduleView() {
@@ -3581,6 +3634,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     public void showPlanEditor(StudyPlan existing) {
+        // 打开编辑器前收起悬浮菜单，避免返回后残留遮罩或展开态。
+        planPageBuilder.collapseAddMenus();
         Dialog dialog = new Dialog(this);
         LinearLayout panel = dialogPanel(existing == null ? getString(R.string.plan_editor_new) : getString(R.string.plan_edit));
 
@@ -4045,6 +4100,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateReturnCurrentWeekAction();
         if (schedule) {
             updateHeader();
+            // 从我的/设置等页签回到课表时，顶栏刚由 GONE 恢复：
+            // 主动同步一次顶部 inset（值未变化时 setOverlayInsets 直接返回，代价为零）。
+            syncScheduleOverlayInsets();
             scheduleWeekSwipeHintIfNeeded();
         }
         if (plan) {
@@ -4077,6 +4135,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             returnCurrentWeekButton.setLayoutParams(returnCurrentWeekLayoutParams());
             returnCurrentWeekButton.bringToFront();
         }
+        // 底栏高度可在设置中调整，悬浮新增菜单的定位与列表末端留白必须同步重算。
+        planPageBuilder.relayoutAddMenus(this);
     }
 
     private View buildMyPage() {
@@ -4333,6 +4393,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
+    public int onAccentColor() {
+        return PolarisVisualTheme.onAccentColor(scheduleViewState.visualTheme, isDarkModeActive());
+    }
+
+    @Override
     public void openPlanPage() {
         showPlanPage();
     }
@@ -4340,6 +4405,28 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public void openAcademicTimeline() {
         showAcademicTimelineDialog();
+    }
+
+    @Override
+    public void showAcademicEventEditor(com.polaris.timetable.model.AcademicEvent.Type presetType) {
+        // 悬浮菜单直达入口：先收起菜单，再打开预选类型的事件编辑器。
+        planPageBuilder.collapseAddMenus();
+        academicEventDialogs.showEditorDialog(null, presetType);
+    }
+
+    @Override
+    public int navVisualHeightPx() {
+        return dp(navVisualHeight());
+    }
+
+    @Override
+    public int systemBottomInsetPx() {
+        return Math.max(systemBottomInset, 0);
+    }
+
+    @Override
+    public int systemRightInsetPx() {
+        return Math.max(systemRightInset, 0);
     }
 
     // ===== AiImportFlow.Host 实现:既有课表判断、落库提交与相册/主线程动作 =====
@@ -4830,6 +4917,393 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         copyTextToClipboard(PROJECT_HOME_URL);
         android.widget.Toast.makeText(this, getString(R.string.settings_toast_github_copied, PROJECT_HOME_URL),
                 android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    // ===== 应用内更新（UpdateCoordinator.Host + 更新对话框） =====
+
+    @Override
+    public String updateCheckStatusText() {
+        return updateCoordinator.statusLineText();
+    }
+
+    @Override
+    public boolean autoCheckUpdateEnabled() {
+        return updateCoordinator.isAutoCheckEnabled();
+    }
+
+    @Override
+    public void onCheckUpdateClicked() {
+        updateCoordinator.onManualCheckClicked();
+    }
+
+    @Override
+    public void onAutoCheckUpdateChanged(boolean value) {
+        if (!value) {
+            updateCoordinator.setAutoCheckEnabled(false);
+            return;
+        }
+        // 首次开启展示一次说明（与隐私政策一致），确认后才真正开启。
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(getString(R.string.update_auto_check_explain_title));
+        panel.addView(updateDialogInfoText(getString(R.string.update_auto_check_explain_message),
+                mutedColor(), 14f, false));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(compactDialogAction(getString(R.string.update_dialog_later), v -> {
+            dialog.dismiss();
+            revertAutoCheckSwitch();
+        }));
+        actions.addView(compactDialogAction(getString(R.string.update_auto_check_confirm), v -> {
+            dialog.dismiss();
+            updateCoordinator.setAutoCheckEnabled(true);
+        }));
+        panel.addView(actions);
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        transparentDialog(dialog);
+        dialog.show();
+    }
+
+    private void revertAutoCheckSwitch() {
+        boolean moreVisible = settingsPage != null && settingsPage.getVisibility() == View.VISIBLE
+                && getString(R.string.settings_title_more).equals(activeSettingsTitle);
+        if (!moreVisible) {
+            return;
+        }
+        suppressSettingsPageAnimation = true;
+        try {
+            showMoreSettings();
+        } finally {
+            suppressSettingsPageAnimation = false;
+        }
+    }
+
+    private void maybeAutoUpdateCheck() {
+        updateCoordinator.maybeAutoCheck();
+    }
+
+    @Override
+    public void onUpdateCheckRowTextChanged(String text) {
+        if (updateCheckRow != null && updateCheckRow.isAttachedToWindow()) {
+            SettingsPageBuilder.updateSettingValueRow(updateCheckRow, text);
+        }
+    }
+
+    @Override
+    public void onShowUpdateAvailableDialog(UpdateInfo info) {
+        showUpdateAvailableDialog(info);
+    }
+
+    @Override
+    public void onShowDownloadDialog() {
+        showUpdateDownloadDialog();
+    }
+
+    @Override
+    public void onDownloadProgress(UpdateDownloadState state, long downloaded, long total) {
+        applyUpdateDownloadState(state, downloaded, total);
+    }
+
+    @Override
+    public void onDownloadReady() {
+        applyUpdateDownloadState(UpdateDownloadState.READY_TO_INSTALL,
+                updateCoordinator.currentTotal(), updateCoordinator.currentTotal());
+    }
+
+    @Override
+    public void onDownloadCancelled() {
+        dismissDialogSafe(updateDownloadDialog);
+        if (updateCheckRow != null && updateCheckRow.isAttachedToWindow()) {
+            SettingsPageBuilder.updateSettingValueRow(updateCheckRow, updateCoordinator.statusLineText());
+        }
+    }
+
+    @Override
+    public void onDownloadFailed(String message) {
+        if (updateDownloadDialog != null && updateDownloadDialog.isShowing()
+                && updateDownloadStageText != null) {
+            updateDownloadStageText.setText(message);
+            updateDownloadStageText.setTextColor(PolarisVisualTheme.warningColor(isDarkModeActive()));
+            if (updateDownloadInstallAction != null) {
+                updateDownloadInstallAction.setVisibility(View.GONE);
+            }
+        } else {
+            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+            if (updateCheckRow != null && updateCheckRow.isAttachedToWindow()) {
+                SettingsPageBuilder.updateSettingValueRow(updateCheckRow, updateCoordinator.statusLineText());
+            }
+        }
+    }
+
+    @Override
+    public void onInstallStatusMessage(String message) {
+        // PackageInstaller 会话回执（成功/取消/被阻止等）：无弹窗承载时用 Toast 呈现。
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+    }
+
+    @Override
+    public boolean isAutoDialogBlocked() {
+        // 主窗口失焦意味着存在对话框/系统选择器等关键交互（U-P1-06），一律延后弹窗。
+        return !hasWindowFocus()
+                || (settingsPage != null && settingsPage.getVisibility() == View.VISIBLE)
+                || planPageBuilder.isAddMenuExpanded()
+                || planPageBuilder.isManagePanelOpen();
+    }
+
+    private void showUpdateAvailableDialog(UpdateInfo info) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        dismissDialogSafe(updateAvailableDialog);
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(getString(info.required()
+                ? R.string.update_dialog_title_required
+                : R.string.update_dialog_title_new, info.versionName()));
+        panel.addView(updateDialogInfoText(getString(R.string.update_dialog_version_line,
+                        rawUpdateVersionName(), info.versionName()),
+                inkColor(), 15f, true));
+        panel.addView(updateDialogInfoText(getString(R.string.update_dialog_published,
+                        UpdateJsonParser.publishedDatePart(info.publishedAt())),
+                mutedColor(), 13f, false));
+        panel.addView(updateDialogInfoText(getString(R.string.update_dialog_size,
+                        formatApkSize(info.apkSize())),
+                mutedColor(), 13f, false));
+        if (info.required()) {
+            panel.addView(updateDialogInfoText(getString(R.string.update_dialog_required_note),
+                    PolarisVisualTheme.warningColor(isDarkModeActive()), 13f, false));
+        }
+        panel.addView(updateDialogInfoText(getString(R.string.update_dialog_notes_header),
+                mutedColor(), 13f, true));
+        ScrollView notesScroll = new ScrollView(this);
+        TextView notes = new TextView(this);
+        StringBuilder notesBuilder = new StringBuilder();
+        for (String note : info.releaseNotes()) {
+            if (notesBuilder.length() > 0) {
+                notesBuilder.append('\n');
+            }
+            notesBuilder.append("· ").append(note);
+        }
+        notes.setText(notesBuilder.toString());
+        notes.setTextColor(inkColor());
+        notes.setTextSize(13f);
+        notesScroll.addView(notes);
+        LinearLayout.LayoutParams notesParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(140));
+        notesParams.setMargins(0, dp(4), 0, dp(4));
+        notesScroll.setLayoutParams(notesParams);
+        panel.addView(notesScroll);
+        panel.addView(updateDialogLinkText(getString(R.string.update_dialog_view_full_notes),
+                () -> openReleaseNotesUrl(info.releaseNotesUrl())));
+        if (!info.required()) {
+            panel.addView(dialogAction(getString(R.string.update_dialog_ignore), v -> {
+                dialog.dismiss();
+                updateCoordinator.ignoreVersion(info.versionCode());
+                android.widget.Toast.makeText(this, getString(R.string.update_toast_ignored),
+                        android.widget.Toast.LENGTH_SHORT).show();
+            }));
+        }
+        panel.addView(dialogAction(getString(R.string.update_dialog_download), v -> {
+            dialog.dismiss();
+            updateCoordinator.startDownload();
+            showUpdateDownloadDialog();
+        }));
+        panel.addView(dialogAction(getString(R.string.update_dialog_later), v -> dialog.dismiss()));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        transparentDialog(dialog);
+        dialog.setOnDismissListener(d -> {
+            if (updateAvailableDialog == dialog) {
+                updateAvailableDialog = null;
+            }
+        });
+        updateAvailableDialog = dialog;
+        dialog.show();
+    }
+
+    private void showUpdateDownloadDialog() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        dismissDialogSafe(updateDownloadDialog);
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(getString(R.string.update_download_title));
+        updateDownloadPercentText = new TextView(this);
+        updateDownloadPercentText.setGravity(Gravity.CENTER);
+        updateDownloadPercentText.setTextColor(inkColor());
+        updateDownloadPercentText.setTextSize(30f);
+        updateDownloadPercentText.setTypeface(Typeface.DEFAULT_BOLD);
+        panel.addView(updateDownloadPercentText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        updateDownloadProgressBar = new ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
+        panel.addView(updateDownloadProgressBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        updateDownloadProgressText = new TextView(this);
+        updateDownloadProgressText.setGravity(Gravity.CENTER);
+        updateDownloadProgressText.setTextColor(mutedColor());
+        updateDownloadProgressText.setTextSize(13f);
+        panel.addView(updateDownloadProgressText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        updateDownloadStageText = new TextView(this);
+        updateDownloadStageText.setGravity(Gravity.CENTER);
+        updateDownloadStageText.setTextColor(mutedColor());
+        updateDownloadStageText.setTextSize(13f);
+        panel.addView(updateDownloadStageText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(compactDialogAction(getString(R.string.update_download_cancel), v -> {
+            updateCoordinator.cancelDownload();
+            dismissDialogSafe(updateDownloadDialog);
+        }));
+        updateDownloadInstallAction = compactDialogAction(getString(R.string.update_download_install),
+                v -> handleUpdateInstallClicked());
+        updateDownloadInstallAction.setVisibility(View.GONE);
+        actions.addView(updateDownloadInstallAction);
+        panel.addView(actions);
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        transparentDialog(dialog);
+        dialog.setOnDismissListener(d -> {
+            if (updateDownloadDialog == dialog) {
+                updateDownloadDialog = null;
+                updateDownloadPercentText = null;
+                updateDownloadProgressText = null;
+                updateDownloadStageText = null;
+                updateDownloadProgressBar = null;
+                updateDownloadInstallAction = null;
+            }
+        });
+        updateDownloadDialog = dialog;
+        dialog.show();
+        if (updateCoordinator.readyApkFile() != null) {
+            applyUpdateDownloadState(UpdateDownloadState.READY_TO_INSTALL,
+                    updateCoordinator.currentTotal(), updateCoordinator.currentTotal());
+        } else {
+            applyUpdateDownloadState(updateCoordinator.currentDownloadState(),
+                    updateCoordinator.currentDownloaded(), updateCoordinator.currentTotal());
+        }
+    }
+
+    private void applyUpdateDownloadState(UpdateDownloadState state, long downloaded, long total) {
+        if (updateDownloadDialog == null || !updateDownloadDialog.isShowing()
+                || updateDownloadProgressBar == null || updateDownloadStageText == null) {
+            return;
+        }
+        if (state == UpdateDownloadState.READY_TO_INSTALL) {
+            updateDownloadPercentText.setText(getString(R.string.update_download_percent_value, 100));
+            updateDownloadProgressBar.setProgress(100);
+            updateDownloadStageText.setTextColor(mutedColor());
+            updateDownloadStageText.setText(getString(R.string.update_download_stage_ready));
+            if (updateDownloadInstallAction != null) {
+                updateDownloadInstallAction.setVisibility(View.VISIBLE);
+                updateDownloadInstallAction.setText(getString(R.string.update_download_install));
+            }
+            return;
+        }
+        if (updateDownloadInstallAction != null) {
+            updateDownloadInstallAction.setVisibility(View.GONE);
+        }
+        int percent = total > 0 ? (int) Math.min(100L, 100L * downloaded / total) : 0;
+        updateDownloadPercentText.setText(getString(R.string.update_download_percent_value, percent));
+        updateDownloadProgressBar.setProgress(percent);
+        updateDownloadProgressText.setText(total > 0
+                ? getString(R.string.update_download_progress_value,
+                        formatApkSize(downloaded), formatApkSize(total))
+                : "");
+        updateDownloadStageText.setTextColor(mutedColor());
+        switch (state) {
+            case VERIFYING_HASH:
+                updateDownloadStageText.setText(getString(R.string.update_download_stage_verify_hash));
+                break;
+            case VERIFYING_APK:
+                updateDownloadStageText.setText(getString(R.string.update_download_stage_verify_apk));
+                break;
+            case CANCELLED:
+                updateDownloadStageText.setText(getString(R.string.update_error_cancelled));
+                break;
+            case FAILED:
+                // 具体文案由 onDownloadFailed 覆盖，这里保持上一阶段文本。
+                break;
+            case PREPARING:
+            case DOWNLOADING:
+            default:
+                updateDownloadStageText.setText(getString(R.string.update_download_stage_downloading));
+                break;
+        }
+    }
+
+    private void handleUpdateInstallClicked() {
+        UpdateCoordinator.InstallAction action = updateCoordinator.installReadyApk();
+        switch (action) {
+            case LAUNCHED:
+                // PackageInstaller 会话已提交，系统将展示用户确认界面。
+                dismissDialogSafe(updateDownloadDialog);
+                break;
+            case NO_INSTALLER:
+                android.widget.Toast.makeText(this, getString(R.string.update_error_no_installer),
+                        android.widget.Toast.LENGTH_LONG).show();
+                break;
+            case NOT_READY:
+            default:
+                // 失败原因已由协调器经 onInstallStatusMessage 回报。
+                break;
+        }
+    }
+
+    private void openReleaseNotesUrl(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (RuntimeException exception) {
+            android.widget.Toast.makeText(this, getString(R.string.update_dialog_open_failed),
+                    android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String rawUpdateVersionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException exception) {
+            return "";
+        }
+    }
+
+    private String formatApkSize(long bytes) {
+        double mb = bytes / (1024.0 * 1024.0);
+        return getString(R.string.update_size_mb, String.format(java.util.Locale.US, "%.1f", mb));
+    }
+
+    private TextView updateDialogInfoText(String text, int color, float sizeSp, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(color);
+        view.setTextSize(sizeSp);
+        if (bold) {
+            view.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        view.setPadding(0, dp(2), 0, dp(2));
+        return view;
+    }
+
+    private TextView updateDialogLinkText(String text, Runnable action) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(inkColor());
+        view.setTextSize(13f);
+        view.setPaintFlags(view.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        view.setPadding(0, dp(4), 0, 0);
+        view.setOnClickListener(v -> action.run());
+        return view;
+    }
+
+    private void dismissDialogSafe(Dialog dialog) {
+        if (dialog != null && dialog.isShowing()) {
+            try {
+                dialog.dismiss();
+            } catch (RuntimeException ignored) {
+                // 窗口已失效时忽略。
+            }
+        }
     }
 
 
@@ -6640,6 +7114,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     private void showMoreSettings() {
         LinearLayout panel = new SettingsPageBuilder(this).createMoreSettingsPanel(this);
+        updateCheckRow = panel.findViewWithTag("update_check_row");
         showSettingsPage(getString(R.string.settings_title_more), panel);
     }
 

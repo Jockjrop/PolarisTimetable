@@ -72,8 +72,9 @@ public class BottomNavNavigationTest {
         launch();
         onView(withNavLabel("计划")).perform(click());
         Espresso.onIdle();
-        // 计划页呈现「新建计划」按钮(空状态时提示文字也可见)
-        onView(withText("＋ 新建计划")).check(matches(isDisplayed()));
+        // 1.26.0 起整宽「＋ 新建计划」按钮由右下角悬浮加号取代，
+        // 计划页以悬浮按钮的可见性作为页面呈现的判据。
+        onView(withContentDescription("添加内容")).check(matches(isDisplayed()));
     }
 
     @Test

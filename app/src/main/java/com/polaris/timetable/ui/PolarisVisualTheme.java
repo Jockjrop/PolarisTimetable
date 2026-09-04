@@ -150,6 +150,17 @@ public final class PolarisVisualTheme {
         return dark ? color("#78AEE8") : color("#2F6CAB");
     }
 
+    /**
+     * 强调色之上的前景色：按强调色相对亮度选择深色或白色。
+     * 悬浮按钮等强调色填充控件必须使用它，不能写死白色——极简/云境等主题在
+     * 浅色强调下白字对比度不足。
+     */
+    public static int onAccentColor(String value, boolean dark) {
+        double luminance = androidx.core.graphics.ColorUtils.calculateLuminance(
+                accentColor(value, dark));
+        return luminance > 0.35d ? color("#FF101828") : Color.WHITE;
+    }
+
     public static int accentSurfaceColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {

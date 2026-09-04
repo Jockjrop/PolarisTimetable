@@ -41,7 +41,28 @@ public class CourseScheduleDialogs extends DialogKit {
         showParserModelDialog(null);
     }
 
+    /**
+     * 解析模型选择入口：仅展示「使用AI导入」（顶部）与「选择已有模型」两项。
+     * 「选择已有模型」进入 {@link #showExistingParserModelDialog(Runnable)}。
+     */
     public void showParserModelDialog(Runnable onSelected) {
+        Dialog dialog = new Dialog(host);
+        LinearLayout panel = dialogPanel(host.getString(R.string.import_chooser_title));
+        panel.addView(dialogAction(host.getString(R.string.school_chooser_ai_action), v -> {
+            dialog.dismiss();
+            host.openAiImportDialog();
+        }));
+        panel.addView(dialogAction(host.getString(R.string.school_chooser_existing_action), v -> {
+            dialog.dismiss();
+            showExistingParserModelDialog(onSelected);
+        }));
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        dialog.show();
+        transparentDialog(dialog);
+    }
+
+    /** 已有学校解析模型列表（原解析模型选择对话框内容，含自定义学校）。 */
+    public void showExistingParserModelDialog(Runnable onSelected) {
         Dialog dialog = new Dialog(host);
         LinearLayout panel = dialogPanel(host.getString(R.string.import_school_chooser_title));
         TextView message = new TextView(host);

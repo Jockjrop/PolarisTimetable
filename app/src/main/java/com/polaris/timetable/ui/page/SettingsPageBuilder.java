@@ -110,6 +110,9 @@ public class SettingsPageBuilder {
         String versionText();
         String contactEmail();
         String githubDisplay();
+        // 应用内更新（docs/app-self-update-plan.md）：检查行副标题与自动检查开关状态
+        String updateCheckStatusText();
+        boolean autoCheckUpdateEnabled();
 
         // 安全/更多动作
         void onSemesterNameClicked();
@@ -119,6 +122,8 @@ public class SettingsPageBuilder {
         void onVersionClicked();
         void onContactClicked();
         void onGithubClicked();
+        void onCheckUpdateClicked();
+        void onAutoCheckUpdateChanged(boolean value);
     }
 
     private final Host host;
@@ -408,6 +413,13 @@ public class SettingsPageBuilder {
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_about)));
         LinearLayout aboutCard = settingsGroup(context);
         aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_version), host.versionText(), v -> host.onVersionClicked()));
+        // 检查更新行：副标题由 Host 按检查状态提供；tag 供宿主定位并局部刷新该行。
+        View checkUpdateRow = settingValueRow(context, context.getString(R.string.settings_row_check_update),
+                host.updateCheckStatusText(), v -> host.onCheckUpdateClicked());
+        checkUpdateRow.setTag("update_check_row");
+        aboutCard.addView(checkUpdateRow);
+        aboutCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_auto_check_update),
+                host.autoCheckUpdateEnabled(), host::onAutoCheckUpdateChanged));
         aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_contact), host.contactEmail(), v -> host.onContactClicked()));
         aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_github),
                 host.githubDisplay(), v -> host.onGithubClicked()));

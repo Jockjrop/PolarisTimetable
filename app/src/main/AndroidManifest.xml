@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 应用内更新（docs/app-self-update-plan.md + 改进计划 U-P1-13）：仅访问官方更新地址获取
+         版本信息与安装包，请求不携带课表、账户或设备数据。REQUEST_INSTALL_PACKAGES 允许发起
+         PackageInstaller 会话并由系统确认，不授予静默安装能力。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -11,7 +16,8 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/AppTheme">
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize"
@@ -101,6 +107,11 @@
             android:authorities="${applicationId}.exports"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <!-- 更新安装状态接收器：显式包内广播（U-P0-02），不导出。 -->
+        <receiver
+            android:name=".update.UpdateInstallStatusReceiver"
+            android:exported="false" />
 
         <service
             android:name=".widget.ScheduleWidgetService"

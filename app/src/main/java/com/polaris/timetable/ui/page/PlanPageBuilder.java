@@ -1,7 +1,6 @@
 package com.polaris.timetable.ui.page;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
@@ -13,7 +12,11 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.polaris.timetable.R;
+import com.polaris.timetable.model.AcademicEvent;
 import com.polaris.timetable.model.StudyPlan;
+import com.polaris.timetable.ui.DesignTokens;
+import com.polaris.timetable.ui.WindowSizeClass;
+import com.polaris.timetable.ui.shell.BottomNavView;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,10 +26,14 @@ import java.util.List;
  * 计划页构建器：手机/竖屏平板的计划 tab 页、平板横屏的计划管理浮层、
  * 课表右侧计划面板的头部与列表行，以及计划相关界面的主题刷新。
  * 纯搬代码自 MainActivity，视觉零变化；状态与外观全部经 {@link Host}
- * 按需读取。Builder 持有自己构建的视图引用（浮层、面板、新建按钮、
- * 列表容器），Activity 侧不再镜像这些字段。
+ * 按需读取。Builder 持有自己构建的视图引用（浮层、面板、列表容器、
+ * 两套悬浮新增菜单），Activity 侧不再镜像这些字段。
+ *
+ * <p>新增入口自 1.26.0 起统一收敛到右下角悬浮加号：手机计划页与横屏平板
+ * 计划管理浮层各持一个 {@link PlanAddMenuView} 实例，只共享动作路由与定位
+ * 规则，不共享视图引用。
  */
-public class PlanPageBuilder {
+public class PlanPageBuilder implements PlanAddMenuView.Host {
 
     /** 已完成分组折叠态：Builder 常驻，勾选/主题刷新重建列表时保持。 */
     private boolean doneCollapsed;
@@ -57,6 +64,9 @@ public class PlanPageBuilder {
 
         int accentColor();
 
+        /** 强调色填充之上的前景色：由实际填充色亮度决定，不写死白色。 */
+        int onAccentColor();
+
         String cardColorHex();
 
         GradientDrawable roundedBg(String hex, int radius);
@@ -81,30 +91,54 @@ public class PlanPageBuilder {
 
         /** 打开考试/DDL 时间线对话框（P4）。 */
         void openAcademicTimeline();
+
+        /** 直接打开学业事件编辑器并预选类型（1.26.0 悬浮新增入口）。 */
+        void showAcademicEventEditor(AcademicEvent.Type presetType);
+
+        /** 底部导航的视觉高度（px，56–120dp 可配置），用于悬浮按钮避让。 */
+        int navVisualHeightPx();
+
+        /** 系统底部安全区（px，手势区/导航栏）。 */
+        int systemBottomInsetPx();
+
+        /** 系统右侧安全区（px，横屏侧边导航栏/挖孔）。 */
+        int systemRightInsetPx();
     }
 
     private final Host host;
 
-    // Builder 构建的共享视图：手机计划页与平板浮层共用同一组按钮与列表容器。
-    private TextView planAddButton;
+    // Builder 构建的共享视图：计划列表容器同时服务于手机计划页与平板浮层，
+    // 由最后构建的页面持有（沿用既有行为）。
     private LinearLayout planListContainer;
     private FrameLayout planManageOverlay;
     private LinearLayout planManagePanel;
+    private FrameLayout planManageFrame;
+    private LinearLayout planManageContent;
     private LinearLayout planManageHeader;
     private TextView academicEntryButton;
+
+    // 悬浮新增菜单：手机计划页与横屏平板管理浮层各一个实例，不共享视图引用。
+    private PlanAddMenuView planPageMenu;
+    private PlanAddMenuView planManageMenu;
+    /** 计划页滚动内容（用于按悬浮按钮占用高度动态留白）。 */
+    private LinearLayout planPageContent;
 
     public PlanPageBuilder(Host host) {
         this.host = host;
     }
 
-    /** 手机/竖屏平板：底部导航「计划」tab 的独立页面。 */
-    public ScrollView buildPlanPage(Context context) {
+    /**
+     * 手机/竖屏平板：底部导航「计划」tab 的独立页面。
+     * 结构为「滚动内容 + 固定悬浮新增菜单」两层，悬浮层不得进入 ScrollView，
+     * 否则会跟随列表滚动。
+     */
+    public View buildPlanPage(Context context) {
+        FrameLayout root = new FrameLayout(context);
         ScrollView scrollView = new ScrollView(context);
         scrollView.setBackgroundColor(host.pageSurfaceColor());
         LinearLayout page = new LinearLayout(context);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(0, host.statusBarInsetPx() + dp(context, 34), 0,
-                host.bottomContentInsetPx() + dp(context, 48));
+        page.setPadding(0, host.statusBarInsetPx() + dp(context, 34), 0, 0);
         if (!host.isLandscapeTablet()) {
             int columnWidth = host.contentColumnWidthPx();
             if (columnWidth < context.getResources().getDisplayMetrics().widthPixels) {
@@ -113,8 +147,12 @@ public class PlanPageBuilder {
             }
         }
         scrollView.addView(page);
+        root.addView(scrollView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        planPageContent = page;
 
-        // 考试/DDL 时间线入口（P4）
+        // 考试/DDL 时间线入口（P4）：只负责浏览与管理，新增统一走悬浮菜单。
         TextView eventEntry = new TextView(context);
         eventEntry.setText(context.getString(R.string.academic_entry));
         eventEntry.setTextColor(host.accentColor());
@@ -132,30 +170,16 @@ public class PlanPageBuilder {
         entryParams.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, 10));
         page.addView(eventEntry, entryParams);
 
-        TextView addButton = new TextView(context);
-        addButton.setText(context.getString(R.string.plan_action_new));
-        addButton.setTextColor(Color.WHITE);
-        addButton.setTextSize(15);
-        addButton.setTypeface(Typeface.DEFAULT_BOLD);
-        addButton.setGravity(Gravity.CENTER);
-        addButton.setPadding(dp(context, 14), 0, dp(context, 14), 0);
-        addButton.setMinHeight(dp(context, 44));
-        GradientDrawable addBg = new GradientDrawable();
-        addBg.setColor(host.accentColor());
-        addBg.setCornerRadius(dp(context, 18));
-        addButton.setBackground(addBg);
-        addButton.setOnClickListener(v -> host.showPlanEditor(null));
-        host.attachPressFeedback(addButton);
-        planAddButton = addButton;
-        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44));
-        addParams.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, 6));
-        page.addView(addButton, addParams);
-
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
         page.addView(planListContainer);
-        return scrollView;
+
+        planPageMenu = new PlanAddMenuView(context, this);
+        root.addView(planPageMenu, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        relayoutAddMenus(context);
+        return root;
     }
 
     /** 平板横屏：全屏遮罩 + 右侧手机宽度计划管理浮层（内容与手机计划页一致）。 */
@@ -169,16 +193,23 @@ public class PlanPageBuilder {
 
         int panelWidth = Math.min(dp(context, 380),
                 context.getResources().getDisplayMetrics().widthPixels - dp(context, 24));
-        planManagePanel = new LinearLayout(context);
-        planManagePanel.setOrientation(LinearLayout.VERTICAL);
-        planManagePanel.setBackgroundColor(host.pageSurfaceColor());
-        planManagePanel.setOnClickListener(v -> {
+        // 浮层内容用 FrameLayout 承载，才能在面板之上叠加固定层悬浮菜单。
+        planManageFrame = new FrameLayout(context);
+        planManageFrame.setBackgroundColor(host.pageSurfaceColor());
+        planManageFrame.setOnClickListener(v -> {
             // 消费点击，阻止遮罩关闭。
         });
         FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
                 panelWidth, FrameLayout.LayoutParams.MATCH_PARENT,
                 Gravity.END | Gravity.CENTER_VERTICAL);
-        planManageOverlay.addView(planManagePanel, panelParams);
+        planManageOverlay.addView(planManageFrame, panelParams);
+
+        planManagePanel = new LinearLayout(context);
+        planManagePanel.setOrientation(LinearLayout.VERTICAL);
+        planManagePanel.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        planManageFrame.addView(planManagePanel);
 
         LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -209,31 +240,14 @@ public class PlanPageBuilder {
         scroll.setFillViewport(true);
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(context, 12), dp(context, 8), dp(context, 12),
-                host.bottomContentInsetPx() + dp(context, 48));
+        content.setPadding(dp(context, 12), dp(context, 8), dp(context, 12), 0);
         scroll.addView(content);
-        planManagePanel.addView(scroll, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        planManageContent = content;
+        planManagePanel.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT));
 
-        TextView addButton = new TextView(context);
-        addButton.setText(context.getString(R.string.plan_action_new));
-        addButton.setTextColor(Color.WHITE);
-        addButton.setTextSize(15);
-        addButton.setTypeface(Typeface.DEFAULT_BOLD);
-        addButton.setGravity(Gravity.CENTER);
-        addButton.setPadding(dp(context, 14), 0, dp(context, 14), 0);
-        addButton.setMinHeight(dp(context, 44));
-        GradientDrawable addBg = new GradientDrawable();
-        addBg.setColor(host.accentColor());
-        addBg.setCornerRadius(dp(context, 18));
-        addButton.setBackground(addBg);
-        addButton.setOnClickListener(v -> host.showPlanEditor(null));
-        host.attachPressFeedback(addButton);
-        planAddButton = addButton;
-        content.addView(addButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44)));
-
-        // 考试/DDL 时间线入口（P4，与手机计划页一致）
+        // 考试/DDL 时间线入口（P4，与手机计划页一致）：只负责浏览与管理。
         TextView eventEntry = new TextView(context);
         eventEntry.setText(context.getString(R.string.academic_entry));
         eventEntry.setTextColor(host.accentColor());
@@ -248,12 +262,93 @@ public class PlanPageBuilder {
         academicEntryButton = eventEntry;
         LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44));
-        entryParams.setMargins(0, dp(context, 10), 0, dp(context, 10));
+        entryParams.setMargins(0, 0, 0, dp(context, 10));
         content.addView(eventEntry, entryParams);
 
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
         content.addView(planListContainer);
+
+        // 浮层内独立悬浮菜单：遮罩只作用于浮层内容，不遮住整个课表。
+        planManageMenu = new PlanAddMenuView(context, this);
+        planManageFrame.addView(planManageMenu, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        relayoutAddMenus(context);
+    }
+
+    /**
+     * 按实时布局重算两套悬浮菜单的定位与滚动内容底部留白。
+     * 底栏高度可配置（56–120dp）、系统安全区随旋转/分屏变化，故不使用固定值。
+     */
+    public void relayoutAddMenus(Context context) {
+        if (planPageMenu != null) {
+            int bottomOffset = pageFabBottomOffsetPx(context);
+            planPageMenu.setPlacement(bottomOffset, pageFabRightOffsetPx(context),
+                    host.statusBarInsetPx());
+            if (planPageContent != null) {
+                planPageContent.setPadding(planPageContent.getPaddingLeft(),
+                        planPageContent.getPaddingTop(),
+                        planPageContent.getPaddingRight(),
+                        fabReserveHeightPx(context, bottomOffset));
+            }
+        }
+        if (planManageMenu != null) {
+            // 浮层自身盖住底部导航，故只避让系统底部安全区与悬浮边距。
+            int bottomOffset = host.systemBottomInsetPx()
+                    + dp(context, DesignTokens.NAV_FLOATING_MARGIN);
+            planManageMenu.setPlacement(bottomOffset,
+                    host.systemRightInsetPx()
+                            + dp(context, DesignTokens.MARGIN_PAGE_TABLET)
+                            + dp(context, BottomNavView.VISUAL_HORIZONTAL_INSET_DP),
+                    host.statusBarInsetPx());
+            if (planManageContent != null) {
+                planManageContent.setPadding(planManageContent.getPaddingLeft(),
+                        planManageContent.getPaddingTop(),
+                        planManageContent.getPaddingRight(),
+                        fabReserveHeightPx(context, bottomOffset));
+            }
+        }
+    }
+
+    /** 手机页 FAB 底边距：系统底部 inset + 导航悬浮边距 + 导航视觉高 + FAB 与导航间隙。 */
+    private int pageFabBottomOffsetPx(Context context) {
+        return host.systemBottomInsetPx()
+                + dp(context, DesignTokens.NAV_FLOATING_MARGIN)
+                + host.navVisualHeightPx()
+                + context.getResources().getDimensionPixelSize(R.dimen.plan_fab_nav_gap);
+    }
+
+    /** 手机/竖屏平板 FAB 右边距：系统右侧安全距 + 页面边距 + 底部导航视觉内缩。 */
+    private int pageFabRightOffsetPx(Context context) {
+        boolean tablet = WindowSizeClass.isTablet(context.getResources().getConfiguration());
+        return host.systemRightInsetPx()
+                + dp(context, tablet ? DesignTokens.MARGIN_PAGE_TABLET
+                        : DesignTokens.MARGIN_PAGE_PHONE)
+                + dp(context, BottomNavView.VISUAL_HORIZONTAL_INSET_DP);
+    }
+
+    /** 列表末端需预留的高度：FAB 底边距 + FAB 高度 + 列表末端安全间距。 */
+    private int fabReserveHeightPx(Context context, int bottomOffsetPx) {
+        return bottomOffsetPx
+                + context.getResources().getDimensionPixelSize(R.dimen.plan_fab_size)
+                + context.getResources().getDimensionPixelSize(R.dimen.plan_list_tail_gap);
+    }
+
+    /** 任一悬浮菜单处于展开态（返回键、切页等节点据此优先收起）。 */
+    public boolean isAddMenuExpanded() {
+        return (planPageMenu != null && planPageMenu.isExpanded())
+                || (planManageMenu != null && planManageMenu.isExpanded());
+    }
+
+    /** 收起所有悬浮菜单：单一收起入口，供切页、返回、旋转、打开编辑器等节点调用。 */
+    public void collapseAddMenus() {
+        if (planPageMenu != null) {
+            planPageMenu.collapse();
+        }
+        if (planManageMenu != null) {
+            planManageMenu.collapse();
+        }
     }
 
     public boolean isManagePanelOpen() {
@@ -264,21 +359,23 @@ public class PlanPageBuilder {
         if (planManageOverlay == null) {
             return;
         }
+        collapseAddMenus();
         planManageOverlay.setAlpha(0f);
-        planManagePanel.setTranslationX(dp(context, 380));
+        planManageFrame.setTranslationX(dp(context, 380));
         planManageOverlay.setVisibility(View.VISIBLE);
-        planManagePanel.setVisibility(View.VISIBLE);
+        planManageFrame.setVisibility(View.VISIBLE);
         refreshList(context, plans);
         planManageOverlay.animate().alpha(1f).setDuration(200).start();
-        planManagePanel.animate().translationX(0f).setDuration(200).start();
+        planManageFrame.animate().translationX(0f).setDuration(200).start();
     }
 
     public void closeManagePanel(Context context) {
         if (planManageOverlay == null || planManageOverlay.getVisibility() != View.VISIBLE) {
             return;
         }
+        collapseAddMenus();
         planManageOverlay.animate().alpha(0f).setDuration(180).start();
-        planManagePanel.animate().translationX(dp(context, 380)).setDuration(180)
+        planManageFrame.animate().translationX(dp(context, 380)).setDuration(180)
                 .withEndAction(() -> planManageOverlay.setVisibility(View.GONE)).start();
     }
 
@@ -510,23 +607,69 @@ public class PlanPageBuilder {
      * 计划 tab 页背景与右侧玻璃面板由 Activity 侧刷新链处理。
      */
     public void refreshTheme(Context context, List<StudyPlan> plans) {
-        if (planManagePanel != null) {
-            planManagePanel.setBackgroundColor(host.pageSurfaceColor());
+        if (planManageFrame != null) {
+            planManageFrame.setBackgroundColor(host.pageSurfaceColor());
         }
         if (planManageHeader != null) {
             planManageHeader.setBackgroundColor(host.settingsHeaderSurfaceColor());
-        }
-        if (planAddButton != null) {
-            GradientDrawable addBg = new GradientDrawable();
-            addBg.setColor(host.accentColor());
-            addBg.setCornerRadius(dp(context, 18));
-            planAddButton.setBackground(addBg);
         }
         if (academicEntryButton != null) {
             academicEntryButton.setBackground(host.roundedBg(host.cardColorHex(), 18));
             academicEntryButton.setTextColor(host.accentColor());
         }
+        if (planPageMenu != null) {
+            planPageMenu.refreshTheme(context);
+        }
+        if (planManageMenu != null) {
+            planManageMenu.refreshTheme(context);
+        }
+        // 底栏高度或安全区可能随设置/旋转变化，顺带重算悬浮定位与列表留白。
+        relayoutAddMenus(context);
         refreshList(context, plans);
+    }
+
+    // ===== PlanAddMenuView.Host：颜色与按压反馈直接复用页面宿主，动作在这里统一路由 =====
+
+    @Override
+    public int onAccentColor() {
+        return host.onAccentColor();
+    }
+
+    @Override
+    public void attachPressFeedback(View view) {
+        host.attachPressFeedback(view);
+    }
+
+    @Override
+    public void onPlanAddAction(PlanAddMenuView.Action action) {
+        if (action == PlanAddMenuView.Action.ADD_DDL) {
+            host.showAcademicEventEditor(AcademicEvent.Type.DEADLINE);
+        } else if (action == PlanAddMenuView.Action.ADD_EXAM) {
+            host.showAcademicEventEditor(AcademicEvent.Type.EXAM);
+        } else {
+            host.showPlanEditor(null);
+        }
+    }
+
+    // 以下四项与 PlanPageBuilder.Host 同名同义，直接委托宿主。
+    @Override
+    public int accentColor() {
+        return host.accentColor();
+    }
+
+    @Override
+    public int inkColor() {
+        return host.inkColor();
+    }
+
+    @Override
+    public String cardColorHex() {
+        return host.cardColorHex();
+    }
+
+    @Override
+    public GradientDrawable roundedBg(String hex, int radius) {
+        return host.roundedBg(hex, radius);
     }
 
     private static int weekDayValue(StudyPlan plan) {

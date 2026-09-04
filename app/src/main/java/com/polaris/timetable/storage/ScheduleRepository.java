@@ -632,14 +632,14 @@ public class ScheduleRepository {
         public String darkMode = "跟随系统";
         public int sectionCount = 11;
         public int semesterWeeks = 20;
-        public boolean remindersEnabled = false;
+        public boolean remindersEnabled = true;
         public int reminderMinutesBefore = 15;
         public boolean showSaturday = false;
         public boolean showSunday = false;
         public boolean showOutOfWeekCourses = true;
         public boolean showPracticeBanner = true;
-        public boolean collapseLunchBreak = false;
-        public boolean collapseXautMiddleSections = false;
+        public boolean collapseLunchBreak = true;
+        public boolean collapseXautMiddleSections = true;
         public int courseCellHeight = 76;
         public int courseCornerRadius = 9;
         public int courseBlockOpacity = 100;

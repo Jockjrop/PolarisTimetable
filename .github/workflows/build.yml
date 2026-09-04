@@ -48,9 +48,11 @@ jobs:
           if-no-files-found: error
 
   instrumented:
-    # PR 跑 smoke 快速拦截；push main 跑全量（周切换/旋转/字体缩放等）。
+    # PR 跑 smoke 快速拦截；push main 跑全量（周切换/旋转/字体缩放等）；
+    # tag push 跑更新入口/安装构件 smoke（U-P1-17：标签发布依赖仪器验证）。
     if: github.event_name == 'pull_request'
-        || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        || (github.event_name == 'push' && (github.ref == 'refs/heads/main'
+            || startsWith(github.ref, 'refs/tags/v')))
     runs-on: ubuntu-latest
     # 2026-09-01 教训：用例挂死时该 job 曾占用 runner 近 3 小时无输出。
     timeout-minutes: 20
@@ -108,19 +110,43 @@ jobs:
               ./gradlew :app:connectedDebugAndroidTest \
                 -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.ui.MainActivitySmokeTest \
                 --no-daemon --console=plain
+            elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+              # U-P1-17：标签发布前必须通过更新入口与安装构件的仪器冒烟。
+              ./gradlew :app:connectedDebugAndroidTest \
+                -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.update.UpdateEntryTest \
+                --no-daemon --console=plain
+              ./gradlew :app:connectedDebugAndroidTest \
+                -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.update.UpdateInstallerTest \
+                --no-daemon --console=plain
             else
               ./gradlew :app:connectedDebugAndroidTest --no-daemon --console=plain
             fi
-
   release:
+    # 稳定发布流水线（docs/app-self-update-plan.md 11 + 改进计划阶段 A）：
+    # 缺签名 Secret / 指纹不符 / 版本不一致 / 历史清单查询失败时必须失败；
+    # Debug/未签名 APK 永远不允许作为 Release 资产上传；
+    # 通过 Draft + 资产复验 + 正式发布的原子流程保证 latest 指向的稳定版三资产齐全（U-P0-04）。
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, instrumented]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       HAS_RELEASE_KEY: ${{ secrets.POLARIS_RELEASE_KEYSTORE_B64 != '' }}
+      EXPECTED_CERT_SHA256: ${{ secrets.POLARIS_RELEASE_CERT_SHA256 }}
     steps:
+      - name: Require release signing secrets
+        if: env.HAS_RELEASE_KEY != 'true'
+        run: |
+          echo "::error::缺少 POLARIS_RELEASE_KEYSTORE_B64，发布必须使用正式签名，禁止 Debug fallback"
+          exit 1
+
+      - name: Require expected certificate fingerprint
+        if: env.EXPECTED_CERT_SHA256 == ''
+        run: |
+          echo "::error::缺少 POLARIS_RELEASE_CERT_SHA256，无法核对发布证书指纹"
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -143,13 +169,101 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
+      - name: Run unit tests and lint
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon --console=plain
+
+      - name: Read version from gradle
+        id: version
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -1)
+          VERSION_CODE=$(grep -oP 'versionCode \K\d+' app/build.gradle | head -1)
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "版本：$VERSION_NAME ($VERSION_CODE)"
+
+      - name: Verify tag, version mapping and release notes
+        run: |
+          VERSION_NAME=${{ steps.version.outputs.name }}
+          VERSION_CODE=${{ steps.version.outputs.code }}
+          TAG="${{ github.ref_name }}"
+          if [ "$TAG" != "v$VERSION_NAME" ]; then
+            echo "::error::Git 标签 $TAG 与 versionName $VERSION_NAME 不一致"; exit 1
+          fi
+          MAJOR=$(echo "$VERSION_NAME" | cut -d. -f1)
+          MINOR=$(echo "$VERSION_NAME" | cut -d. -f2)
+          PATCH=$(echo "$VERSION_NAME" | cut -d. -f3)
+          # U-P1-09：minor/patch 限 0..99，防止 versionCode 映射碰撞（与客户端/脚本同规则）。
+          if [ "$MINOR" -gt 99 ] || [ "$PATCH" -gt 99 ]; then
+            echo "::error::minor/patch 必须在 0..99，否则 versionCode 映射碰撞"; exit 1
+          fi
+          EXPECTED=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          if [ "$VERSION_CODE" -ne "$EXPECTED" ]; then
+            echo "::error::versionCode $VERSION_CODE 与映射值 $EXPECTED 不一致"; exit 1
+          fi
+          if [ "$VERSION_CODE" -le 0 ] || [ "$VERSION_CODE" -gt 2100000000 ]; then
+            echo "::error::versionCode $VERSION_CODE 超出 (0, 2100000000]"; exit 1
+          fi
+          if [ ! -f "docs/releases/$VERSION_NAME.md" ]; then
+            echo "::error::缺少 docs/releases/$VERSION_NAME.md（发布说明同时作为 latest.json 来源）"; exit 1
+          fi
+
+      - name: Verify versionCode is monotonically increasing
+        id: monotonic
+        run: |
+          # U-P0-03：区分 HTTP 200 / 404 / 网络故障，任何故障不得把上一版本当作 0。
+          VERSION_CODE=${{ steps.version.outputs.code }}
+          set +e
+          HTTP_CODE=$(curl -sSL -o /tmp/prev-latest.json -w '%{http_code}' \
+            --connect-timeout 15 --max-time 60 \
+            "https://github.com/Jockjrop/PolarisTimetable/releases/latest/download/latest.json")
+          CURL_EXIT=$?
+          set -e
+          if [ $CURL_EXIT -ne 0 ] || [ -z "$HTTP_CODE" ]; then
+            echo "::error::查询上一稳定清单失败（curl 退出码 $CURL_EXIT），不得视为首次发布"; exit 1
+          fi
+          if [ "$HTTP_CODE" = "200" ]; then
+            PREVIOUS=$(python3 - <<'PY'
+          import json, sys
+          with open("/tmp/prev-latest.json", encoding="utf-8") as f:
+              d = json.load(f)
+          v = d["versionCode"]
+          if not isinstance(v, int) or v <= 0:
+              sys.exit("上一清单 versionCode 非法")
+          print(v)
+          PY
+          ) || { echo "::error::上一稳定清单解析失败（畸形 JSON 或 versionCode 非法）"; exit 1; }
+          SOURCE="previous-stable-manifest"
+          echo "$SOURCE：上一稳定版 versionCode=$PREVIOUS"
+          if [ "$VERSION_CODE" -le "$PREVIOUS" ]; then
+            echo "::error::versionCode $VERSION_CODE 未大于最近稳定清单值 $PREVIOUS"; exit 1
+          fi
+          MIN_SUPPORTED=$PREVIOUS
+          echo "MIN_SUPPORTED=$MIN_SUPPORTED" >> "$GITHUB_OUTPUT"
+          echo "PREVIOUS=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "SOURCE=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "MONOTONIC: source=$SOURCE previous=$PREVIOUS new=$VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$HTTP_CODE" = "404" ]; then
+          # 首次引导分支：仓库尚无 latest.json。基线 12601 为经审计的上一正式版本 1.26.1。
+          # 方案 B 首个稳定版发布后，此分支之外的任何查询故障都必须失败。
+          PREVIOUS=12601
+          SOURCE="bootstrap-baseline-1.26.1"
+          echo "$SOURCE：无稳定清单，按审计基线 previous=$PREVIOUS"
+          if [ "$VERSION_CODE" -le "$PREVIOUS" ]; then
+            echo "::error::versionCode $VERSION_CODE 未大于 bootstrap 基线 $PREVIOUS"; exit 1
+          fi
+          echo "MIN_SUPPORTED=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "PREVIOUS=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "SOURCE=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "MONOTONIC: source=$SOURCE previous=$PREVIOUS new=$VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::查询上一稳定清单返回 HTTP $HTTP_CODE（超时/DNS/TLS/5xx/429），阻止发布"; exit 1
+          fi
+
       - name: Decode release keystore
-        if: env.HAS_RELEASE_KEY == 'true'
         run: |
           echo "${{ secrets.POLARIS_RELEASE_KEYSTORE_B64 }}" | base64 -d > keystore.jks
 
       - name: Assemble release APK (signed)
-        if: env.HAS_RELEASE_KEY == 'true'
         env:
           POLARIS_RELEASE_STORE_FILE: keystore.jks
           POLARIS_RELEASE_STORE_PASSWORD: ${{ secrets.POLARIS_RELEASE_STORE_PASSWORD }}
@@ -157,12 +271,141 @@ jobs:
           POLARIS_RELEASE_KEY_PASSWORD: ${{ secrets.POLARIS_RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease --no-daemon --console=plain
 
-      - name: Assemble debug APK (unsigned fallback)
-        if: env.HAS_RELEASE_KEY != 'true'
-        run: ./gradlew :app:assembleDebug --no-daemon --console=plain
+      - name: Locate release APK
+        id: apk
+        run: |
+          APK_PATH="app/build/outputs/apk/release/Polaris-${{ steps.version.outputs.name }}-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::未生成正式签名 APK：$APK_PATH"; exit 1
+          fi
+          echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: app/build/outputs/apk/*/*.apk
-          generate_release_notes: true
+      - name: Verify APK signature against expected certificate
+        run: |
+          APK_PATH=${{ steps.apk.outputs.path }}
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" > /tmp/apksigner.txt
+          ACTUAL=$(grep -m1 -oP 'SHA-256 digest: \K[0-9a-fA-F]+' /tmp/apksigner.txt)
+          EXPECTED=$(echo "${{ secrets.POLARIS_RELEASE_CERT_SHA256 }}" | tr 'A-F' 'a-f')
+          echo "实际证书指纹：$ACTUAL"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::APK 签名指纹与配置的发布证书不符"; exit 1
+          fi
+
+      - name: Verify APK identity with apkanalyzer
+        run: |
+          APK_PATH=${{ steps.apk.outputs.path }}
+          APP_ID=$(apkanalyzer manifest application-id "$APK_PATH" | tail -1)
+          APK_CODE=$(apkanalyzer manifest version-code "$APK_PATH" | tail -1)
+          APK_NAME=$(apkanalyzer manifest version-name "$APK_PATH" | tail -1)
+          if [ "$APP_ID" != "com.polaris.timetable" ]; then
+            echo "::error::包名 $APP_ID 不是 com.polaris.timetable"; exit 1
+          fi
+          if [ "$APK_CODE" != "${{ steps.version.outputs.code }}" ]; then
+            echo "::error::APK versionCode $APK_CODE 与 gradle 不一致"; exit 1
+          fi
+          if [ "$APK_NAME" != "${{ steps.version.outputs.name }}" ]; then
+            echo "::error::APK versionName $APK_NAME 与 gradle 不一致"; exit 1
+          fi
+
+      - name: Generate latest.json and .sha256
+        run: |
+          pwsh -NoProfile -File tools/generate-update-manifest.ps1 \
+            -ApkPath '${{ steps.apk.outputs.path }}' \
+            -VersionCode ${{ steps.version.outputs.code }} \
+            -VersionName '${{ steps.version.outputs.name }}' \
+            -GitTag '${{ github.ref_name }}' \
+            -ReleaseNotesPath 'docs/releases/${{ steps.version.outputs.name }}.md' \
+            -OutputPath 'build/update-manifest' \
+            -MinSupportedVersionCode ${{ steps.monotonic.outputs.MIN_SUPPORTED }}
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --draft \
+            --title "${{ github.ref_name }}" \
+            --notes-file "docs/releases/${{ steps.version.outputs.name }}.md"
+
+      - name: Upload draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "${{ steps.apk.outputs.path }}" \
+            "build/update-manifest/latest.json" \
+            "build/update-manifest/Polaris-${{ steps.version.outputs.name }}-release.apk.sha256"
+
+      - name: Re-verify draft assets before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # U-P0-04：从 Draft 重新下载三资产并复验，全部通过才允许发布。
+          TAG="${{ github.ref_name }}"
+          VERSION_NAME=${{ steps.version.outputs.name }}
+          VERSION_CODE=${{ steps.version.outputs.code }}
+          EXPECTED_SHA256=$(echo "${{ secrets.POLARIS_RELEASE_CERT_SHA256 }}" | tr 'A-F' 'a-f')
+          rm -rf /tmp/verify && mkdir -p /tmp/verify && cd /tmp/verify
+          gh release download "$TAG" --clobber
+          COUNT=$(ls -1 | wc -l)
+          if [ "$COUNT" -ne 3 ]; then
+            echo "::error::Draft 资产数量 $COUNT != 3（APK/.sha256/latest.json）"; exit 1
+          fi
+          APK_FILE="Polaris-$VERSION_NAME-release.apk"
+          if [ ! -f "$APK_FILE" ] || [ ! -f "$APK_FILE.sha256" ] || [ ! -f "latest.json" ]; then
+            echo "::error::Draft 缺少必要资产"; ls -la; exit 1
+          fi
+          EXPECTED_SIZE=$(python3 -c "import json;print(json.load(open('latest.json'))['apk']['size'])")
+          ACTUAL_SIZE=$(stat -c%s "$APK_FILE")
+          if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ]; then
+            echo "::error::Draft APK 字节数 $ACTUAL_SIZE 与清单 $EXPECTED_SIZE 不一致"; exit 1
+          fi
+          echo "$EXPECTED_SIZE $APK_FILE" > /tmp/size.ref
+          RECORDED=$(cut -d' ' -f1 "$APK_FILE.sha256")
+          ACTUAL_SHA=$(sha256sum "$APK_FILE" | cut -d' ' -f1)
+          if [ "$RECORDED" != "$ACTUAL_SHA" ]; then
+            echo "::error::Draft APK SHA-256 与 .sha256 资产不符"; exit 1
+          fi
+          python3 - "$VERSION_CODE" "$VERSION_NAME" <<'PY' || exit 1
+          import json, sys
+          with open("latest.json", encoding="utf-8") as f:
+              d = json.load(f)
+          checks = [
+              ("schemaVersion", 1), ("channel", "stable"),
+              ("packageName", "com.polaris.timetable"),
+              ("versionCode", int(sys.argv[1])),
+              ("versionName", sys.argv[2]),
+              ("apk.fileName", f"Polaris-{sys.argv[2]}-release.apk"),
+          ]
+          for path, want in checks:
+              node = d
+              for key in path.split("."):
+                  node = node[key]
+              if node != want:
+                  sys.exit(f"latest.json 字段 {path} != {want}（实际 {node}）")
+          PY
+          # 清单内嵌 sha256 与 .sha256 资产、实际文件三方一致
+          EMBEDDED=$(python3 -c "import json;print(json.load(open('latest.json'))['apk']['sha256'])")
+          if [ "$EMBEDDED" != "$ACTUAL_SHA" ] || [ "$EMBEDDED" != "$RECORDED" ]; then
+            echo "::error::三方 SHA-256 不一致：清单=$EMBEDDED 记录=$RECORDED 实际=$ACTUAL_SHA"; exit 1
+          fi
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK_FILE" | grep -q "SHA-256 digest:" \
+            || { echo "::error::Draft APK 签名校验失败"; exit 1; }
+          APP_ID=$(apkanalyzer manifest application-id "$APK_FILE" | tail -1)
+          if [ "$APP_ID" != "com.polaris.timetable" ]; then
+            echo "::error::Draft APK 包名不符"; exit 1
+          fi
+          echo "Draft 三资产复验通过：$APK_FILE ($ACTUAL_SIZE bytes, sha256=$ACTUAL_SHA)"
+
+      - name: Publish draft as stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 原子切换：publish 后 latest 路径立即指向三资产齐全的正式版。
+          gh release edit "${{ github.ref_name }}" --draft=false --latest
+
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f keystore.jks

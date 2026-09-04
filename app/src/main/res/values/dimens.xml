@@ -19,4 +19,16 @@
     <dimen name="board_day_max_width">110dp</dimen>
     <dimen name="content_column_width_tablet">640dp</dimen>
     <dimen name="tablet_sidebar_width">320dp</dimen>
+
+    <!-- 计划页悬浮新增菜单（1.26.0）：尺寸与间距由 Java 经资源读取，新视图勿写魔法数。 -->
+    <dimen name="plan_fab_size">56dp</dimen>
+    <dimen name="plan_fab_icon_size">24dp</dimen>
+    <dimen name="plan_fab_nav_gap">12dp</dimen>
+    <dimen name="plan_fab_menu_gap">12dp</dimen>
+    <dimen name="plan_add_menu_row_min_height">48dp</dimen>
+    <dimen name="plan_add_menu_row_gap">8dp</dimen>
+    <dimen name="plan_add_menu_row_padding_h">14dp</dimen>
+    <dimen name="plan_add_menu_row_icon_gap">10dp</dimen>
+    <dimen name="plan_add_menu_row_radius">24dp</dimen>
+    <dimen name="plan_list_tail_gap">12dp</dimen>
 </resources>

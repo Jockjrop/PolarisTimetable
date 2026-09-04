@@ -239,6 +239,16 @@ public class AcademicEventDialogs extends DialogKit {
 
     /** 编辑器：标题/类型/关联课程/日期/时刻/地点/座位/备注 + 保存/删除/取消。 */
     public void showEditorDialog(AcademicEvent existing) {
+        showEditorDialog(existing, null);
+    }
+
+    /**
+     * 编辑器：可指定新建时的预选类型（悬浮菜单「添加考试 / 添加DDL」直达入口）。
+     *
+     * @param existing   非空表示编辑既有事件，此时 {@code presetType} 被忽略
+     * @param presetType 仅新建生效；为空时沿用默认「考试」，保持时间线「添加事件」旧流程不变
+     */
+    public void showEditorDialog(AcademicEvent existing, AcademicEvent.Type presetType) {
         Dialog dialog = new Dialog(host);
         LinearLayout panel = dialogPanel(existing == null
                 ? host.getString(R.string.academic_editor_new)
@@ -246,7 +256,8 @@ public class AcademicEventDialogs extends DialogKit {
 
         final String[] titleValue = {existing == null ? "" : existing.title};
         final AcademicEvent.Type[] typeValue = {
-                existing == null ? AcademicEvent.Type.EXAM : existing.type};
+                existing != null ? existing.type
+                        : (presetType == null ? AcademicEvent.Type.EXAM : presetType)};
         final String[] courseValue = {existing == null ? "" : existing.courseName};
         final long[] dateValue = {existing == null
                 ? AcademicEvent.normalizedDateMillis(Calendar.getInstance())
