@@ -110,8 +110,6 @@
     <!-- 课表看板(ScheduleBoardView)。注意:"项目"包含判断与周次正则解析的是课程数据格式,保持字面量。 -->
     <string name="board_time_column">时间</string>
     <string name="board_practice_title">本周实践</string>
-    <string name="board_practice_view_count">%1$d 项 · 查看</string>
-    <string name="board_practice_more"> 等%1$d项</string>
     <string name="board_practice_unnamed">未命名实践</string>
     <string name="board_practice_concentrated">集中实践</string>
     <string name="board_time_pending">时间待定</string>
@@ -121,6 +119,7 @@
     <string name="board_cd_dragging">正在拖动课程 %1$s</string>
     <string name="board_cd_drop_target">目标位置 第%1$d节</string>
     <string name="board_cd_conflict_prefix">时间冲突，</string>
+    <string name="board_cd_ongoing_prefix">上课中，</string>
     <string name="board_cd_location">，地点%1$s</string>
     <string name="board_cd_course_hint">，点击查看详情，长按编辑</string>
 
@@ -133,7 +132,7 @@
     <string name="today_title_finished">今天的课程已结束</string>
     <string name="today_title_outside">当前不在学期范围</string>
     <string name="today_title_no_courses">今天没有课程</string>
-    <string name="today_detail_ongoing_countdown"> · 距下课%1$s</string>
+    <string name="today_remaining_minutes">剩余%1$d分钟</string>
     <string name="today_detail_conflict"> · 时间冲突</string>
     <string name="today_detail_next_countdown"> · %1$s后开始</string>
     <string name="today_detail_finished">今天辛苦了，可以提前看看明天的安排</string>

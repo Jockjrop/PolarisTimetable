@@ -19,6 +19,9 @@ import com.polaris.timetable.ui.dialog.GlassDialogFactory;
  */
 public class BottomNavView extends LinearLayout {
 
+    /** BottomNavView 外框到实际玻璃导航卡片的水平距离。 */
+    public static final int VISUAL_HORIZONTAL_INSET_DP = 10;
+
     /** 宿主回调:由 MainActivity 实现,提供外观参数、状态与交互。 */
     public interface Host {
         boolean isLandscapeTablet();
@@ -77,7 +80,8 @@ public class BottomNavView extends LinearLayout {
     }
 
     private void buildPhoneBar() {
-        setPadding(dp(10), 0, dp(10), 0);
+        setPadding(dp(VISUAL_HORIZONTAL_INSET_DP), 0,
+                dp(VISUAL_HORIZONTAL_INSET_DP), 0);
         setBackground(null);
         scheduleNav = navItem(0);
         planNav = navItem(1);

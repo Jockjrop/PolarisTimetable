@@ -1,13 +1,24 @@
 package com.polaris.timetable.ui;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.text.TextUtils;
+import android.transition.ChangeBounds;
+import android.transition.Fade;
+import android.transition.TransitionManager;
+import android.transition.TransitionSet;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.TouchDelegate;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -24,10 +35,12 @@ public final class TodayOverviewView extends LinearLayout {
     private final TextView statusView;
     private final TextView titleView;
     private final TextView detailView;
+    private final TextView remainingView;
     private CourseTimeResolver.TodayOverview overview;
     private OnCourseClickListener courseClickListener;
     private boolean darkMode;
     private boolean large;
+    private boolean collapsed;
     private String visualTheme = PolarisVisualTheme.MINIMAL;
 
     public TodayOverviewView(Context context) {
@@ -67,6 +80,16 @@ public final class TodayOverviewView extends LinearLayout {
         detailParams.topMargin = dp(2);
         textGroup.addView(detailView, detailParams);
 
+        remainingView = new TextView(context);
+        remainingView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        remainingView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        remainingView.setTypeface(Typeface.DEFAULT_BOLD);
+        remainingView.setSingleLine(true);
+        LayoutParams remainingParams = new LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        remainingParams.leftMargin = dp(10);
+        addView(remainingView, remainingParams);
+
         setOnClickListener(v -> {
             if (overview != null && overview.course != null && courseClickListener != null) {
                 courseClickListener.onCourseClick(overview.course);
@@ -88,14 +111,45 @@ public final class TodayOverviewView extends LinearLayout {
             return;
         }
         this.large = large;
-        setMinimumHeight(dp(large ? 92 : 60));
-        setPadding(dp(2), dp(large ? 12 : 7), dp(2), dp(large ? 8 : 2));
+        applySizeMode();
+        requestLayout();
+    }
+
+    /**
+     * 折叠态只保留“状态 + 课程名”单行信息。详情不丢失，仍保留在无障碍描述中。
+     */
+    public void setCollapsed(boolean collapsed, boolean animate) {
+        if (this.collapsed == collapsed) {
+            return;
+        }
+        if (animate && isAttachedToWindow() && animationsEnabled()) {
+            ViewGroup transitionRoot = transitionRoot();
+            TransitionSet transition = new TransitionSet();
+            transition.setOrdering(TransitionSet.ORDERING_TOGETHER);
+            transition.addTransition(new ChangeBounds());
+            transition.addTransition(new Fade());
+            transition.setDuration(180);
+            transition.setInterpolator(new DecelerateInterpolator());
+            TransitionManager.beginDelayedTransition(transitionRoot, transition);
+        }
+        this.collapsed = collapsed;
+        applySizeMode();
+        updateTouchTarget();
+        requestLayout();
+    }
+
+    private void applySizeMode() {
+        setMinimumHeight(dp(collapsed ? (large ? 44 : 36) : (large ? 92 : 60)));
+        setPadding(dp(2), dp(collapsed ? 0 : (large ? 12 : 7)),
+                dp(2), dp(collapsed ? 0 : (large ? 8 : 2)));
         statusView.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 14 : 12);
-        LayoutParams statusParams = new LayoutParams(dp(large ? 76 : 60), dp(large ? 38 : 30));
+        LayoutParams statusParams = new LayoutParams(
+                dp(large ? 76 : 60), dp(collapsed ? (large ? 34 : 28) : (large ? 38 : 30)));
         statusParams.rightMargin = dp(10);
         statusView.setLayoutParams(statusParams);
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 21 : 16);
         detailView.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 16 : 13);
+        remainingView.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 14 : 12);
         if (large) {
             detailView.setSingleLine(false);
             detailView.setMaxLines(2);
@@ -104,7 +158,44 @@ public final class TodayOverviewView extends LinearLayout {
             detailView.setSingleLine(true);
             detailView.setMaxLines(1);
         }
-        requestLayout();
+        detailView.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+    }
+
+    /** 紧凑视觉行向上扩展命中区域，保持至少 48dp 的 Android 触控目标。 */
+    private void updateTouchTarget() {
+        post(() -> {
+            ViewParent parent = getParent();
+            if (!(parent instanceof View)) {
+                return;
+            }
+            View parentView = (View) parent;
+            if (!collapsed || !isClickable()) {
+                parentView.setTouchDelegate(null);
+                return;
+            }
+            Rect hitRect = new Rect();
+            getHitRect(hitRect);
+            hitRect.top -= Math.max(0, dp(48) - hitRect.height());
+            parentView.setTouchDelegate(new TouchDelegate(hitRect, this));
+        });
+    }
+
+    private ViewGroup transitionRoot() {
+        ViewParent parent = getParent();
+        if (!(parent instanceof ViewGroup)) {
+            return this;
+        }
+        ViewGroup root = (ViewGroup) parent;
+        ViewParent grandParent = root.getParent();
+        if (grandParent instanceof LinearLayout) {
+            root = (ViewGroup) grandParent;
+        }
+        return root;
+    }
+
+    private boolean animationsEnabled() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || ValueAnimator.areAnimatorsEnabled();
     }
 
     public void setVisualTheme(String theme) {
@@ -126,6 +217,12 @@ public final class TodayOverviewView extends LinearLayout {
         statusView.setText(statusText(status));
         titleView.setText(titleText(value, status));
         detailView.setText(detailText(value, status));
+        boolean ongoing = value != null
+                && status == CourseTimeResolver.TodayStatus.ONGOING;
+        remainingView.setText(ongoing
+                ? getContext().getString(R.string.today_remaining_minutes,
+                Math.max(0, value.minutesToBoundary)) : "");
+        remainingView.setVisibility(ongoing ? View.VISIBLE : View.GONE);
         applyColors(status);
 
         boolean actionable = value != null && value.hasCourse();
@@ -137,6 +234,7 @@ public final class TodayOverviewView extends LinearLayout {
             setForeground(null);
         }
         setContentDescription(accessibilityText(value, status));
+        updateTouchTarget();
     }
 
     private String statusText(CourseTimeResolver.TodayStatus status) {
@@ -180,12 +278,9 @@ public final class TodayOverviewView extends LinearLayout {
             if (location.length() > 0) {
                 detail.append(" · ").append(location);
             }
-            if (status == CourseTimeResolver.TodayStatus.ONGOING) {
-                detail.append(getContext().getString(R.string.today_detail_ongoing_countdown,
-                        CourseTimeResolver.countdownText(value.minutesToBoundary)));
-                if (value.simultaneousCourseCount > 1) {
-                    detail.append(getContext().getString(R.string.today_detail_conflict));
-                }
+            if (status == CourseTimeResolver.TodayStatus.ONGOING
+                    && value.simultaneousCourseCount > 1) {
+                detail.append(getContext().getString(R.string.today_detail_conflict));
             } else if (status == CourseTimeResolver.TodayStatus.NEXT) {
                 detail.append(getContext().getString(R.string.today_detail_next_countdown,
                         CourseTimeResolver.countdownText(value.minutesToBoundary)));
@@ -210,6 +305,11 @@ public final class TodayOverviewView extends LinearLayout {
         String detail = detailText(value, status);
         if (detail.length() > 0) {
             text.append("，").append(detail);
+        }
+        if (value != null && status == CourseTimeResolver.TodayStatus.ONGOING) {
+            text.append("，").append(getContext().getString(
+                    R.string.today_remaining_minutes,
+                    Math.max(0, value.minutesToBoundary)));
         }
         if (value != null && value.hasCourse()) {
             text.append(getContext().getString(R.string.today_cd_hint));
@@ -242,6 +342,7 @@ public final class TodayOverviewView extends LinearLayout {
         }
         titleView.setTextColor(title);
         detailView.setTextColor(detail);
+        remainingView.setTextColor(accent);
         statusView.setTextColor(accent);
         statusView.setBackground(pillBackground(accentSurface));
     }
@@ -258,6 +359,7 @@ public final class TodayOverviewView extends LinearLayout {
         }
         titleView.setTextColor(title);
         detailView.setTextColor(detail);
+        remainingView.setTextColor(accent);
         statusView.setTextColor(accent);
         statusView.setBackground(pillBackground(accentSurface));
     }

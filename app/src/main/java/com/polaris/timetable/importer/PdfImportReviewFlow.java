@@ -198,6 +198,7 @@ public class PdfImportReviewFlow extends DialogKit {
         editText.setBackground(host.roundedBg(host.cardColorHex(), DesignTokens.RADIUS_CHIP));
         editText.setTextSize(15);
         editText.setSingleLine(true);
+        editText.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, host.dp(50));
         params.topMargin = host.dp(8);

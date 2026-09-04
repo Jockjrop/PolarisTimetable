@@ -123,7 +123,7 @@ public class CourseScheduleDialogs extends DialogKit {
         textInput.setHintTextColor(host.mutedColor());
         textInput.setTextColor(host.inkColor());
         textInput.setTextSize(15);
-        textInput.setGravity(Gravity.TOP | Gravity.START);
+        textInput.setGravity(Gravity.CENTER);
         textInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         textInput.setBackground(host.roundedBg(host.cardColorHex(), DesignTokens.RADIUS_CHIP));
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
@@ -207,6 +207,7 @@ public class CourseScheduleDialogs extends DialogKit {
         nameInput.setHintTextColor(host.mutedColor());
         nameInput.setTextSize(15);
         nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        nameInput.setGravity(Gravity.CENTER);
         nameInput.setBackground(host.roundedBg(host.cardColorHex(), DesignTokens.RADIUS_CHIP));
         nameInput.setPadding(host.dp(12), host.dp(10), host.dp(12), host.dp(10));
         panel.addView(nameInput, new LinearLayout.LayoutParams(

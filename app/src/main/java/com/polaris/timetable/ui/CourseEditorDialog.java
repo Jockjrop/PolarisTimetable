@@ -3,6 +3,7 @@ package com.polaris.timetable.ui;
 import android.app.Activity;
 import android.app.Dialog;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
@@ -23,6 +24,9 @@ import android.widget.Space;
 import android.widget.TextView;
 import android.widget.TimePicker;
 import android.widget.Toast;
+
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.CourseDeletionScope;
@@ -146,6 +150,9 @@ public final class CourseEditorDialog {
         EditText name = input(activity.getString(R.string.editor_hint_name), original.name);
         EditText teacher = input(activity.getString(R.string.editor_hint_teacher), original.teacher);
         EditText location = input(activity.getString(R.string.editor_hint_location), original.location);
+        keepInputVisible(scrollView, name);
+        keepInputVisible(scrollView, teacher);
+        keepInputVisible(scrollView, location);
 
         final String[] selectedColor = {normalizeColor(original.color)};
         final CourseType[] selectedType = {original.courseType};
@@ -387,8 +394,10 @@ public final class CourseEditorDialog {
 
         dialog.setOnDismissListener(d -> listener.onEditorDismissed());
         dialog.setContentView(page);
+        installImeAvoidance(dialog, page, scrollView);
         dialog.show();
         configureFullScreenWindow(dialog.getWindow());
+        ViewCompat.requestApplyInsets(page);
     }
 
     private void showDeleteScopeDialog(Dialog editorDialog) {
@@ -485,11 +494,57 @@ public final class CourseEditorDialog {
         editText.setTextSize(16);
         editText.setSingleLine(true);
         editText.setEllipsize(TextUtils.TruncateAt.END);
-        editText.setGravity(Gravity.CENTER_VERTICAL);
+        editText.setGravity(Gravity.CENTER);
         editText.setIncludeFontPadding(false);
         editText.setPadding(0, 0, 0, 0);
         editText.setBackgroundColor(Color.TRANSPARENT);
         return editText;
+    }
+
+    /** 输入框获得焦点后，在键盘布局稳定时再次请求滚动到可见区域。 */
+    private void keepInputVisible(ScrollView scrollView, EditText input) {
+        input.setOnFocusChangeListener((view, hasFocus) -> {
+            if (hasFocus) {
+                requestInputVisible(scrollView, input, 220L);
+            }
+        });
+    }
+
+    private void requestInputVisible(ScrollView scrollView, View input, long delayMillis) {
+        scrollView.postDelayed(() -> {
+            if (!input.isFocused() || input.getWidth() <= 0 || input.getHeight() <= 0) {
+                return;
+            }
+            Rect target = new Rect(0, -dp(16), input.getWidth(), input.getHeight() + dp(24));
+            scrollView.requestChildRectangleOnScreen(input, target, false);
+        }, delayMillis);
+    }
+
+    /**
+     * 全屏课程编辑页在 edge-to-edge 与部分输入法组合下不会可靠触发系统 resize，
+     * 因此用 IME inset 扩大 ScrollView 的可滚动底部，并重新定位当前焦点。
+     */
+    private void installImeAvoidance(Dialog dialog, View page, ScrollView scrollView) {
+        scrollView.setClipToPadding(false);
+        ViewCompat.setOnApplyWindowInsetsListener(page, (view, insets) -> {
+            boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+            int navigationBottom = insets.getInsets(
+                    WindowInsetsCompat.Type.navigationBars()).bottom;
+            int bottomPadding = imeVisible
+                    ? Math.max(0, imeBottom - navigationBottom) + dp(16) : 0;
+            if (scrollView.getPaddingBottom() != bottomPadding) {
+                scrollView.setPadding(scrollView.getPaddingLeft(), scrollView.getPaddingTop(),
+                        scrollView.getPaddingRight(), bottomPadding);
+            }
+            if (imeVisible) {
+                View focused = dialog.getCurrentFocus();
+                if (focused instanceof EditText) {
+                    requestInputVisible(scrollView, focused, 40L);
+                }
+            }
+            return insets;
+        });
     }
 
     private LinearLayout group(View... children) {
@@ -1080,6 +1135,8 @@ public final class CourseEditorDialog {
         attributes.width = LinearLayout.LayoutParams.MATCH_PARENT;
         attributes.height = LinearLayout.LayoutParams.MATCH_PARENT;
         window.setAttributes(attributes);
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         disableWindowAnimations(window);
     }
 

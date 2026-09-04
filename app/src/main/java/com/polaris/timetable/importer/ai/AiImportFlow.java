@@ -136,7 +136,7 @@ public class AiImportFlow extends DialogKit {
         input.setTextColor(host.inkColor());
         input.setHintTextColor(host.mutedColor());
         input.setTextSize(15);
-        input.setGravity(Gravity.TOP | Gravity.START);
+        input.setGravity(Gravity.CENTER);
         input.setSingleLine(false);
         input.setHorizontallyScrolling(false);
         input.setInputType(InputType.TYPE_CLASS_TEXT

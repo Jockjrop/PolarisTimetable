@@ -1,19 +1,24 @@
 package com.polaris.timetable.ui;
 
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -25,11 +30,14 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.LinearInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.appcompat.widget.AppCompatTextView;
 import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
@@ -703,14 +711,10 @@ public class ScheduleBoardView extends FrameLayout {
             addCourseBlock(board, course, week, interactive, layouts.get(course),
                     containsIdentity(conflictingCourses, course));
         }
-        int todayColumn = todayColumn(week);
-        if (todayColumn >= 0) {
-            // 置于课程块之后：指示线浮在最上层，但不消费触摸（不可点击）。
-            FrameLayout.LayoutParams lineParams = new FrameLayout.LayoutParams(
-                    dayWidth, Math.max(1, boardHeight(week) - bodyTop(week)));
-            lineParams.leftMargin = boardContentOffset + timeWidth + dayWidth * todayColumn;
-            lineParams.topMargin = bodyTop(week);
-            board.addView(new NowLineView(getContext()), lineParams);
+        if (todayColumn(week) >= 0) {
+            // 不再绘制当前时间红线，仅保留轻量计时器更新“上课中”卡片进度。
+            board.addView(new OngoingCourseTickerView(getContext(), board, week),
+                    new FrameLayout.LayoutParams(1, 1));
         }
         board.setLayoutParams(new FrameLayout.LayoutParams(width, height));
         return board;
@@ -1022,22 +1026,23 @@ public class ScheduleBoardView extends FrameLayout {
         if (column < 0) {
             return;
         }
-        TextView view = new TextView(getContext());
+        CourseBlockView view = new CourseBlockView(getContext(), course, week);
         view.setText(courseText(course, conflict));
         int fill = courseColor(course);
+        int displayFill = displayCourseColor(fill);
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setGravity(Gravity.START | Gravity.TOP);
-        view.setBackground(cardBg(fill, conflict));
+        view.setBackground(cardBg(displayFill, conflict));
         if (!PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
             view.setElevation(dp(darkMode ? 1 : 2));
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 view.setOutlineAmbientShadowColor(Color.argb(darkMode ? 64 : 38,
-                        Color.red(fill), Color.green(fill), Color.blue(fill)));
+                        Color.red(displayFill), Color.green(displayFill), Color.blue(displayFill)));
                 view.setOutlineSpotShadowColor(Color.argb(darkMode ? 86 : 52,
-                        Color.red(fill), Color.green(fill), Color.blue(fill)));
+                        Color.red(displayFill), Color.green(displayFill), Color.blue(displayFill)));
             }
         }
-        view.setContentDescription(courseContentDescription(course, conflict));
+        view.setCourseContentDescription(courseContentDescription(course, conflict));
         if (showOutOfWeekCourses && !isCourseInWeek(course, week)) {
             view.setAlpha(0.52f);
         }
@@ -1071,7 +1076,7 @@ public class ScheduleBoardView extends FrameLayout {
             height = availableHeight;
             left += blockWidth * slotIndex;
         }
-        int courseTextColor = contrastingCourseTextColor(fill, left, top, width, height);
+        int courseTextColor = contrastingCourseTextColor(displayFill, left, top, width, height);
         view.setTextColor(courseTextColor);
         view.setShadowLayer(dp(1), 0f, dp(1), courseTextColor == Color.WHITE
                 ? color("#66000000") : color("#33FFFFFF"));
@@ -1080,6 +1085,7 @@ public class ScheduleBoardView extends FrameLayout {
         params.leftMargin = left;
         params.topMargin = top;
         board.addView(view, params);
+        view.setOngoingProgress(courseOngoingProgress(course, week, currentMinuteOfDay()));
     }
 
     /**
@@ -1557,6 +1563,32 @@ public class ScheduleBoardView extends FrameLayout {
         return drawable;
     }
 
+    /**
+     * 无背景图的深色模式统一使用亮色课程文字。用户自定义的高亮课程色会仅在
+     * 需要时压暗到可读范围，避免为了统一字色而牺牲对比度。
+     */
+    private int displayCourseColor(int fill) {
+        if (!darkMode || hasBackgroundImage) {
+            return fill;
+        }
+        int textColor = inkColor();
+        if (contrastRatio(relativeLuminance(fill), relativeLuminance(textColor)) >= 5.0d) {
+            return fill;
+        }
+        float low = 0f;
+        float high = 0.82f;
+        for (int index = 0; index < 8; index++) {
+            float amount = (low + high) / 2f;
+            int candidate = mixColor(fill, Color.BLACK, amount);
+            if (contrastRatio(relativeLuminance(candidate), relativeLuminance(textColor)) >= 5.0d) {
+                high = amount;
+            } else {
+                low = amount;
+            }
+        }
+        return mixColor(fill, Color.BLACK, high);
+    }
+
     private int courseFill(int value) {
         int alpha = Math.round(255f * courseBlockOpacity / 100f);
         return Color.argb(alpha, Color.red(value), Color.green(value), Color.blue(value));
@@ -1600,6 +1632,9 @@ public class ScheduleBoardView extends FrameLayout {
     private int contrastingCourseTextColor(int fill, int left, int top, int width, int height) {
         int lightText = Color.WHITE;
         int darkText = color("#101827");
+        if (darkMode && !hasBackgroundImage) {
+            return inkColor();
+        }
         double backgroundLuminance = effectiveCourseBackgroundLuminance(fill, left, top, width, height);
         return contrastRatio(backgroundLuminance, relativeLuminance(darkText))
                 >= contrastRatio(backgroundLuminance, relativeLuminance(lightText))
@@ -1635,6 +1670,45 @@ public class ScheduleBoardView extends FrameLayout {
         return value <= 0.04045d
                 ? value / 12.92d
                 : Math.pow((value + 0.055d) / 1.055d, 2.4d);
+    }
+
+    private int currentMinuteOfDay() {
+        Calendar now = Calendar.getInstance();
+        return now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+    }
+
+    /** 上课进度，返回 0..1；当前未上课返回 -1。 */
+    private float courseOngoingProgress(Course course, int week, int nowMinute) {
+        if (course == null || !isCourseInWeek(course, week) || !isToday(course.day, week)) {
+            return -1f;
+        }
+        CourseTimeResolver.TimeRange range =
+                CourseTimeResolver.timeRange(course, classTimeSettings);
+        if (range == null || nowMinute < range.startMinutes || nowMinute >= range.endMinutes) {
+            return -1f;
+        }
+        int duration = Math.max(1, range.endMinutes - range.startMinutes);
+        return Math.max(0f, Math.min(1f,
+                (nowMinute - range.startMinutes) / (float) duration));
+    }
+
+    private void updateOngoingCourseBlocks(FrameLayout board, int week, int nowMinute) {
+        for (int index = 0; index < board.getChildCount(); index++) {
+            View child = board.getChildAt(index);
+            if (child instanceof CourseBlockView) {
+                CourseBlockView courseBlock = (CourseBlockView) child;
+                courseBlock.setOngoingProgress(
+                        courseOngoingProgress(courseBlock.course, week, nowMinute));
+            }
+        }
+    }
+
+    private boolean animationsEnabled() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return ValueAnimator.areAnimatorsEnabled();
+        }
+        return Settings.Global.getFloat(getContext().getContentResolver(),
+                Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f;
     }
 
     private int tabletText(int tabletSize, int phoneSize) {
@@ -1873,6 +1947,208 @@ public class ScheduleBoardView extends FrameLayout {
         }
     }
 
+    /**
+     * 课程块的“上课中”状态：从上到下的填充高度对应真实已上课比例。
+     * 每分钟刷新时做一次短过渡，不循环；系统关闭动画时直接到达目标进度。
+     */
+    private class CourseBlockView extends AppCompatTextView {
+        private static final long PROGRESS_TRANSITION_MILLIS = 420L;
+        private final Course course;
+        private final int week;
+        private final Paint ongoingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint sheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Matrix sheenMatrix = new Matrix();
+        private ValueAnimator fillAnimator;
+        private ValueAnimator sheenAnimator;
+        private LinearGradient sheenShader;
+        private CharSequence baseContentDescription;
+        private boolean ongoing;
+        private float fillProgress;
+        private float sheenPhase;
+        private int sheenShaderWidth;
+        private boolean sheenShaderDarkMode;
+
+        CourseBlockView(Context context, Course course, int week) {
+            super(context);
+            this.course = course;
+            this.week = week;
+        }
+
+        void setCourseContentDescription(CharSequence description) {
+            baseContentDescription = description;
+            updateOngoingContentDescription();
+        }
+
+        void setOngoingProgress(float progress) {
+            boolean nextOngoing = progress >= 0f;
+            float target = nextOngoing ? Math.max(0f, Math.min(1f, progress)) : 0f;
+            if (ongoing != nextOngoing) {
+                ongoing = nextOngoing;
+                updateOngoingContentDescription();
+            }
+            if (!ongoing) {
+                cancelFillAnimation();
+                cancelSheenAnimation();
+                fillProgress = 0f;
+                invalidate();
+                return;
+            }
+            animateFillTo(target);
+            startSheenIfNeeded();
+        }
+
+        private void updateOngoingContentDescription() {
+            if (baseContentDescription == null) {
+                return;
+            }
+            setContentDescription(ongoing
+                    ? getContext().getString(R.string.board_cd_ongoing_prefix)
+                    + baseContentDescription
+                    : baseContentDescription);
+        }
+
+        private void animateFillTo(float target) {
+            if (Math.abs(target - fillProgress) < 0.001f) {
+                return;
+            }
+            cancelFillAnimation();
+            if (!isAttachedToWindow() || getWindowVisibility() != View.VISIBLE
+                    || !animationsEnabled()) {
+                fillProgress = target;
+                invalidate();
+                return;
+            }
+            fillAnimator = ValueAnimator.ofFloat(fillProgress, target);
+            fillAnimator.setDuration(PROGRESS_TRANSITION_MILLIS);
+            fillAnimator.setInterpolator(new DecelerateInterpolator());
+            fillAnimator.addUpdateListener(animation -> {
+                fillProgress = (float) animation.getAnimatedValue();
+                invalidate();
+            });
+            fillAnimator.start();
+        }
+
+        private void cancelFillAnimation() {
+            if (fillAnimator != null) {
+                fillAnimator.cancel();
+                fillAnimator = null;
+            }
+        }
+
+        private void startSheenIfNeeded() {
+            if (!ongoing || !isAttachedToWindow()
+                    || getWindowVisibility() != View.VISIBLE
+                    || !animationsEnabled() || sheenAnimator != null) {
+                return;
+            }
+            sheenAnimator = ValueAnimator.ofFloat(0f, 1f);
+            sheenAnimator.setDuration(2_600L);
+            sheenAnimator.setRepeatCount(ValueAnimator.INFINITE);
+            sheenAnimator.setRepeatMode(ValueAnimator.RESTART);
+            sheenAnimator.setInterpolator(new LinearInterpolator());
+            sheenAnimator.addUpdateListener(animation -> {
+                sheenPhase = (float) animation.getAnimatedValue();
+                invalidate();
+            });
+            sheenAnimator.start();
+        }
+
+        private void cancelSheenAnimation() {
+            if (sheenAnimator != null) {
+                sheenAnimator.cancel();
+                sheenAnimator = null;
+            }
+            sheenPhase = 0f;
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            setOngoingProgress(courseOngoingProgress(course, week, currentMinuteOfDay()));
+            startSheenIfNeeded();
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            cancelFillAnimation();
+            cancelSheenAnimation();
+            super.onDetachedFromWindow();
+        }
+
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(visibility);
+            if (visibility == View.VISIBLE) {
+                setOngoingProgress(courseOngoingProgress(course, week, currentMinuteOfDay()));
+            } else {
+                cancelFillAnimation();
+                cancelSheenAnimation();
+            }
+        }
+
+        private void prepareSheenShader() {
+            int width = getWidth();
+            if (width <= 0 || sheenShader != null && sheenShaderWidth == width
+                    && sheenShaderDarkMode == darkMode) {
+                return;
+            }
+            int[] colors = darkMode
+                    ? new int[]{0x08FFFFFF, 0x16FFFFFF, 0x70FFFFFF,
+                    0x16FFFFFF, 0x08FFFFFF}
+                    : new int[]{0x18000000, 0x26000000, 0xA8FFFFFF,
+                    0x26000000, 0x18000000};
+            sheenShader = new LinearGradient(0f, 0f, width, 0f,
+                    colors, new float[]{0f, 0.24f, 0.5f, 0.76f, 1f},
+                    Shader.TileMode.REPEAT);
+            sheenPaint.setShader(sheenShader);
+            sheenShaderWidth = width;
+            sheenShaderDarkMode = darkMode;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            if (ongoing && fillProgress > 0f) {
+                ongoingPaint.setColor(darkMode
+                        ? Color.argb(34, 255, 255, 255)
+                        : Color.argb(24, 16, 24, 39));
+                ongoingPaint.setStyle(Paint.Style.FILL);
+                float radius = dp(courseCornerRadius);
+                float fillBottom = getHeight() * fillProgress;
+                int checkpoint = canvas.save();
+                canvas.clipRect(0f, 0f, getWidth(), fillBottom);
+                canvas.drawRoundRect(0f, 0f, getWidth(), getHeight(),
+                        radius, radius, ongoingPaint);
+
+                if (animationsEnabled()) {
+                    prepareSheenShader();
+                    if (sheenShader != null) {
+                        sheenMatrix.setSkew(-0.18f, 0f);
+                        sheenMatrix.postTranslate(getWidth() * sheenPhase, 0f);
+                        sheenShader.setLocalMatrix(sheenMatrix);
+                        canvas.drawRoundRect(0f, 0f, getWidth(), getHeight(),
+                                radius, radius, sheenPaint);
+                    }
+                }
+                canvas.restoreToCount(checkpoint);
+
+                float edgeInset = dp(4);
+                if (fillBottom > dp(2) && fillBottom < getHeight() - dp(2)) {
+                    ongoingPaint.setStyle(Paint.Style.STROKE);
+                    ongoingPaint.setStrokeCap(Paint.Cap.ROUND);
+                    ongoingPaint.setStrokeWidth(dp(2));
+                    ongoingPaint.setColor(darkMode ? 0x24000000 : 0x42000000);
+                    canvas.drawLine(edgeInset, fillBottom,
+                            getWidth() - edgeInset, fillBottom, ongoingPaint);
+                    ongoingPaint.setStrokeWidth(getResources().getDisplayMetrics().density);
+                    ongoingPaint.setColor(darkMode ? 0xB8FFFFFF : 0xE0FFFFFF);
+                    canvas.drawLine(edgeInset, fillBottom,
+                            getWidth() - edgeInset, fillBottom, ongoingPaint);
+                }
+            }
+            super.onDraw(canvas);
+        }
+    }
+
     private static class CoverBitmapDrawable extends Drawable {
         private final Bitmap bitmap;
         private final BackgroundImageCrop crop;
@@ -1930,19 +2206,18 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     /** Maps pager positions to week boards, reusing the interactive board cache. */
-    /**
-     * 今天的列内绘制的"当前时间"指示线（2dp 圆帽线 + 左端描边圆点）。
-     * 仅上课时段绘制；附着期间每 30 秒自刷新（有界间隔，非零延迟轮询）。
-     * 不可点击、不参与无障碍树——触摸事件穿透给下层课程块。
-     */
-    private class NowLineView extends View {
+    /** 不绘制任何内容，仅在今天的课表页每 30 秒更新一次上课进度。 */
+    private class OngoingCourseTickerView extends View {
         private static final long REFRESH_INTERVAL_MILLIS = 30_000L;
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final FrameLayout board;
+        private final int week;
         private boolean ticking;
-        private float lastLineY = -1f;
 
-        NowLineView(Context context) {
+        OngoingCourseTickerView(Context context, FrameLayout board, int week) {
             super(context);
+            this.board = board;
+            this.week = week;
+            setWillNotDraw(true);
             setClickable(false);
             setFocusable(false);
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -1954,11 +2229,8 @@ public class ScheduleBoardView extends FrameLayout {
                 if (!ticking) {
                     return;
                 }
-                float y = lineY();
-                if (Math.abs(y - lastLineY) >= 0.5f) {
-                    lastLineY = y;
-                    invalidate();
-                }
+                int nowMinute = currentMinuteOfDay();
+                updateOngoingCourseBlocks(board, week, nowMinute);
                 postDelayed(this, REFRESH_INTERVAL_MILLIS);
             }
         };
@@ -1977,91 +2249,6 @@ public class ScheduleBoardView extends FrameLayout {
             super.onDetachedFromWindow();
         }
 
-        /** 指示线 y（相对板体顶部）；非上课时段返回 -1。 */
-        private float lineY() {
-            if (timeAxis == null) {
-                return -1f;
-            }
-            int nowMinute = nowMinuteOfDay();
-            if (nowMinute < timeAxis.startMinute || nowMinute >= timeAxis.endMinute) {
-                return -1f;
-            }
-            return timeAxis.yForMinute(nowMinute);
-        }
-
-        private int nowMinuteOfDay() {
-            Calendar now = Calendar.getInstance();
-            return now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            if (timeAxis == null) {
-                return;
-            }
-            int nowMinute = nowMinuteOfDay();
-            if (nowMinute < timeAxis.startMinute || nowMinute >= timeAxis.endMinute) {
-                return;
-            }
-            drawOngoingSlotHighlight(canvas, nowMinute);
-            drawLine(canvas, timeAxis.yForMinute(nowMinute));
-        }
-
-        /** 当前节格的圆角描边环：标记"正在进行"的时间段（有无课程都标，锚定当下位置）。 */
-        private void drawOngoingSlotHighlight(Canvas canvas, int nowMinute) {
-            for (int section = 1; section <= sectionCount; section++) {
-                CourseTimeResolver.TimeRange range = CourseTimeResolver.sectionTimeRange(
-                        classTimeSettings, section);
-                if (range == null || nowMinute < range.startMinutes
-                        || nowMinute >= range.endMinutes || sectionRowHeight(section) <= 0) {
-                    continue;
-                }
-                float inset = dp(1);
-                float radius = dp(10);
-                float haloWidth = getResources().getDisplayMetrics().density * 3.5f;
-                // 白色半透明衬底晕：环压在同色系课程块上仍有分界。
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(haloWidth);
-                paint.setColor(0x59FFFFFF);
-                paint.setAntiAlias(true);
-                canvas.drawRoundRect(inset, timeAxis.yForMinute(range.startMinutes) + inset,
-                        getWidth() - inset, timeAxis.yForMinute(range.endMinutes) - inset,
-                        radius, radius, paint);
-                paint.setStrokeWidth(dp(2));
-                paint.setColor(PolarisVisualTheme.nowIndicatorColor(darkMode));
-                paint.setAlpha(235);
-                canvas.drawRoundRect(inset, timeAxis.yForMinute(range.startMinutes) + inset,
-                        getWidth() - inset, timeAxis.yForMinute(range.endMinutes) - inset,
-                        radius, radius, paint);
-                paint.setAlpha(255);
-                break;
-            }
-        }
-
-        private void drawLine(Canvas canvas, float y) {
-            int color = PolarisVisualTheme.nowIndicatorColor(darkMode);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            float inset = dp(3);
-            paint.setStrokeWidth(getResources().getDisplayMetrics().density * 3.5f);
-            paint.setColor(0x59FFFFFF);
-            canvas.drawLine(inset, y, getWidth() - inset, y, paint);
-            paint.setStrokeWidth(dp(2));
-            paint.setColor(color);
-            canvas.drawLine(inset, y, getWidth() - inset, y, paint);
-            float dotX = dp(4);
-            float dotRadius = dp(3);
-            paint.setStyle(Paint.Style.FILL);
-            paint.setStrokeWidth(0);
-            paint.setColor(color);
-            canvas.drawCircle(dotX, y, dotRadius, paint);
-            // 半透明亮色外环：压在任意课程块颜色上仍可辨识。
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(getResources().getDisplayMetrics().density * 1.2f);
-            paint.setColor(0x99FFFFFF);
-            canvas.drawCircle(dotX, y, dotRadius + dp(1), paint);
-        }
     }
 
     private class WeekPagerAdapter extends PagerAdapter {
