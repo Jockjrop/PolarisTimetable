@@ -261,6 +261,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private TextView updateDownloadStageText;
     private ProgressBar updateDownloadProgressBar;
     private TextView updateDownloadInstallAction;
+    private TextView updateDownloadCancelAction;
+    private TextView updateDownloadBackgroundAction;
     private final AppearanceDialogs appearanceDialogs = new AppearanceDialogs(this);
     private final ReminderDialogs reminderDialogs = new ReminderDialogs(this);
     final ScheduleViewState scheduleViewState = new ScheduleViewState();
@@ -5029,17 +5031,29 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public void onDownloadProgress(UpdateDownloadState state, long downloaded, long total) {
         applyUpdateDownloadState(state, downloaded, total);
+        // 后台下载（弹窗已关闭）时把进度同步到“检查更新”行副标题。
+        applyUpdateCheckRowForProgress(state, downloaded, total);
     }
 
     @Override
     public void onDownloadReady() {
         applyUpdateDownloadState(UpdateDownloadState.READY_TO_INSTALL,
                 updateCoordinator.currentTotal(), updateCoordinator.currentTotal());
+        if (updateCheckRow != null && updateCheckRow.isAttachedToWindow()) {
+            SettingsPageBuilder.updateSettingValueRow(updateCheckRow, updateCoordinator.statusLineText());
+        }
+        // 后台下载完成：不打断当前操作，用 Toast 提醒可安装。
+        if (updateDownloadDialog == null || !updateDownloadDialog.isShowing()) {
+            android.widget.Toast.makeText(this, getString(R.string.update_toast_ready_install),
+                    android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
     public void onDownloadCancelled() {
         dismissDialogSafe(updateDownloadDialog);
+        android.widget.Toast.makeText(this, getString(R.string.update_error_cancelled),
+                android.widget.Toast.LENGTH_SHORT).show();
         if (updateCheckRow != null && updateCheckRow.isAttachedToWindow()) {
             SettingsPageBuilder.updateSettingValueRow(updateCheckRow, updateCoordinator.statusLineText());
         }
@@ -5132,7 +5146,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         panel.addView(dialogAction(getString(R.string.update_dialog_download), v -> {
             dialog.dismiss();
             updateCoordinator.startDownload();
-            showUpdateDownloadDialog();
+            // 后台下载：不弹模态进度框，进度显示在“检查更新”行，完成后 Toast 提醒，
+            // 用户可继续正常使用课表与设置。
+            android.widget.Toast.makeText(this, getString(R.string.update_toast_background_download),
+                    android.widget.Toast.LENGTH_SHORT).show();
         }));
         panel.addView(dialogAction(getString(R.string.update_dialog_later), v -> dialog.dismiss()));
         dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
@@ -5178,10 +5195,15 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.addView(compactDialogAction(getString(R.string.update_download_cancel), v -> {
+        // 后台下载：仅收起弹窗，不取消下载；进度与完成提醒仍在“检查更新”行呈现。
+        updateDownloadBackgroundAction = compactDialogAction(getString(R.string.update_download_background),
+                v -> dismissDialogSafe(updateDownloadDialog));
+        actions.addView(updateDownloadBackgroundAction);
+        updateDownloadCancelAction = compactDialogAction(getString(R.string.update_download_cancel), v -> {
             updateCoordinator.cancelDownload();
             dismissDialogSafe(updateDownloadDialog);
-        }));
+        });
+        actions.addView(updateDownloadCancelAction);
         updateDownloadInstallAction = compactDialogAction(getString(R.string.update_download_install),
                 v -> handleUpdateInstallClicked());
         updateDownloadInstallAction.setVisibility(View.GONE);
@@ -5197,6 +5219,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 updateDownloadStageText = null;
                 updateDownloadProgressBar = null;
                 updateDownloadInstallAction = null;
+                updateDownloadCancelAction = null;
+                updateDownloadBackgroundAction = null;
             }
         });
         updateDownloadDialog = dialog;
@@ -5207,6 +5231,31 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         } else {
             applyUpdateDownloadState(updateCoordinator.currentDownloadState(),
                     updateCoordinator.currentDownloaded(), updateCoordinator.currentTotal());
+        }
+    }
+
+    /** 后台下载时（进度弹窗未显示）把下载阶段同步到“检查更新”行副标题。 */
+    private void applyUpdateCheckRowForProgress(UpdateDownloadState state, long downloaded, long total) {
+        if (updateDownloadDialog != null && updateDownloadDialog.isShowing()) {
+            return;
+        }
+        if (updateCheckRow == null || !updateCheckRow.isAttachedToWindow()) {
+            return;
+        }
+        switch (state) {
+            case PREPARING:
+            case DOWNLOADING:
+                int percent = total > 0 ? (int) Math.min(100L, 100L * downloaded / total) : 0;
+                SettingsPageBuilder.updateSettingValueRow(updateCheckRow,
+                        getString(R.string.update_check_row_downloading, percent));
+                break;
+            case VERIFYING_HASH:
+            case VERIFYING_APK:
+                SettingsPageBuilder.updateSettingValueRow(updateCheckRow,
+                        getString(R.string.update_check_row_verifying));
+                break;
+            default:
+                break;
         }
     }
 
@@ -5224,10 +5273,17 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 updateDownloadInstallAction.setVisibility(View.VISIBLE);
                 updateDownloadInstallAction.setText(getString(R.string.update_download_install));
             }
+            // 已就绪无需取消下载：隐藏“取消”，保留“后台下载/安装”。
+            if (updateDownloadCancelAction != null) {
+                updateDownloadCancelAction.setVisibility(View.GONE);
+            }
             return;
         }
         if (updateDownloadInstallAction != null) {
             updateDownloadInstallAction.setVisibility(View.GONE);
+        }
+        if (updateDownloadCancelAction != null) {
+            updateDownloadCancelAction.setVisibility(View.VISIBLE);
         }
         int percent = total > 0 ? (int) Math.min(100L, 100L * downloaded / total) : 0;
         updateDownloadPercentText.setText(getString(R.string.update_download_percent_value, percent));

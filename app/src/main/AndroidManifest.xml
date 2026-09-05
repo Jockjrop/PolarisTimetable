@@ -108,10 +108,16 @@
             android:exported="false"
             android:grantUriPermissions="true" />
 
-        <!-- 更新安装状态接收器使用显式包内广播，不导出。 -->
+        <!-- 更新安装状态接收器：PackageInstaller 经 PendingIntent 回传包内隐式广播
+             （仅 action + 包名，无显式组件），必须声明 action 过滤器才能被系统解析投递；
+             不导出，仅本应用与系统安装器可触发。 -->
         <receiver
             android:name=".update.UpdateInstallStatusReceiver"
-            android:exported="false" />
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.polaris.timetable.action.INSTALL_STATUS" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".widget.ScheduleWidgetService"

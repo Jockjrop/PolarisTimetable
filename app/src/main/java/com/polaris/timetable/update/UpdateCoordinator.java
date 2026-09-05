@@ -316,9 +316,20 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
         prefs.clearPendingConfirmIntent();
         try {
             Intent confirm = Intent.parseUri(confirmUri, Intent.URI_INTENT_SCHEME);
+            ensureNewTaskFlag(confirm);
             appContext.startActivity(confirm);
         } catch (Exception exception) {
             h.onInstallStatusMessage(getString(R.string.update_install_failed));
+        }
+    }
+
+    /**
+     * 系统确认页从应用上下文启动时必须带 FLAG_ACTIVITY_NEW_TASK，
+     * 否则 ContextImpl 直接抛 AndroidRuntimeException，确认界面永远弹不出来。
+     */
+    private static void ensureNewTaskFlag(Intent intent) {
+        if ((intent.getFlags() & Intent.FLAG_ACTIVITY_NEW_TASK) == 0) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
     }
 
@@ -545,6 +556,11 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
     public InstallAction installReadyApk() {
         final File file = readyApkFile;
         if (file == null || !file.isFile()) {
+            // 文件缺失的静默早退也必须给用户可感知的反馈，否则表现为“点了没反应”。
+            Host h = currentHost();
+            if (h != null) {
+                h.onInstallStatusMessage(getString(R.string.update_toast_apk_missing));
+            }
             return InstallAction.NOT_READY;
         }
         try {
@@ -605,6 +621,7 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
             if (confirmIntent != null) {
                 if (activityForeground && h != null) {
                     try {
+                        ensureNewTaskFlag(confirmIntent);
                         appContext.startActivity(confirmIntent);
                     } catch (RuntimeException exception) {
                         h.onInstallStatusMessage(getString(R.string.update_install_failed));

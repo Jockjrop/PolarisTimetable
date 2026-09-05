@@ -285,6 +285,12 @@
     <string name="update_download_stage_ready">准备安装</string>
     <string name="update_download_cancel">取消</string>
     <string name="update_download_install">安装</string>
+    <string name="update_download_background">后台下载</string>
+    <string name="update_toast_background_download">已在后台下载，完成后会提醒你安装</string>
+    <string name="update_toast_ready_install">更新下载完成，可在设置中安装</string>
+    <string name="update_toast_apk_missing">安装包不可用，请重新下载更新</string>
+    <string name="update_check_row_downloading">下载中 %1$d%%</string>
+    <string name="update_check_row_verifying">校验安装包…</string>
     <string name="update_install_success">更新安装完成</string>
     <string name="update_install_failed">安装失败</string>
     <string name="update_install_failed_prefix">安装失败：%1$s</string>

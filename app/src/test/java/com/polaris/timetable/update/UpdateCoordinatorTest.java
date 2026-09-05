@@ -456,6 +456,14 @@ public class UpdateCoordinatorTest {
     }
 
     @Test
+    public void installWithoutReadyFileReportsMissingApkToUser() {
+        // 文件缺失的静默早退路径也必须回报提示，否则 UI 表现为“点了没反应”。
+        assertEquals(UpdateCoordinator.InstallAction.NOT_READY, coordinator.installReadyApk());
+        assertEquals(1, host.installMessages.size());
+        assertTrue(gateway.committed.isEmpty());
+    }
+
+    @Test
     public void installReadyFileCommitsSessionAndClearsApkState() throws Exception {
         File apk = File.createTempFile("Polaris-1.27.0-release", ".apk");
         coordinator.onReady(apk, 12700);
