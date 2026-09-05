@@ -114,10 +114,44 @@ function Assert-MatchingAsset {
     }
 }
 
+function Test-GiteeBrowserDownloadUrl([object]$Url) {
+    if ($Url -isnot [string]) { return $false }
+    $uri = $null
+    if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -ne 'https') {
+        return $false
+    }
+    return $uri.Host -in @('gitee.com', 'foruda.gitee.com')
+}
+
 function Get-GiteeReleaseAction([int]$MatchingReleaseCount) {
     if ($MatchingReleaseCount -eq 0) { return 'Create' }
     if ($MatchingReleaseCount -eq 1) { return 'Reuse' }
     throw '同一 tag 存在多个 Gitee Release，拒绝继续'
+}
+
+function Assert-GiteeReleaseForReuse {
+    param(
+        [Parameter(Mandatory = $true)][object]$Release,
+        [Parameter(Mandatory = $true)][string]$Tag,
+        [Parameter(Mandatory = $true)][string]$ExpectedCommitSha
+    )
+
+    $id = $Release.id
+    if ($null -eq $id -or $id -isnot [int] -and $id -isnot [long] -or [long]$id -le 0) {
+        throw 'Gitee 已有 Release 的 id 非法'
+    }
+    if ($Release.tag_name -isnot [string] -or $Release.tag_name -cne $Tag) {
+        throw 'Gitee 已有 Release 的 tag_name 与当前 tag 不一致'
+    }
+    if ($Release.prerelease -eq $true) {
+        throw 'Gitee 已有 Release 是 prerelease，拒绝作为正式发布复用'
+    }
+    $targetCommitish = $Release.target_commitish
+    if ($targetCommitish -is [string] -and $targetCommitish.Trim() -match '^[0-9a-fA-F]{40}$') {
+        Assert-TagCommitMatch -GitHubCommit $ExpectedCommitSha -GiteeCommit $targetCommitish
+        return $true
+    }
+    return $false
 }
 
 function Resolve-GiteeApiTagCommit {
@@ -126,7 +160,7 @@ function Resolve-GiteeApiTagCommit {
         [AllowEmptyCollection()][object[]]$Tags
     )
 
-    $tagEntries = @($Tags | ForEach-Object { $_ | Write-Output })
+    $tagEntries = @($Tags | ForEach-Object { foreach ($entry in $_) { $entry } })
     $matchingTags = @($tagEntries | Where-Object { $_.name -ceq $Tag })
     if ($matchingTags.Count -eq 0) { throw "Gitee API 中不存在 tag：$Tag" }
     if ($matchingTags.Count -ne 1) { throw "Gitee API 中 tag 不唯一：$Tag（$($matchingTags.Count) 项）" }
@@ -164,7 +198,23 @@ function Get-GiteeApiErrorInfo([Management.Automation.ErrorRecord]$ErrorRecord) 
         StatusCode = $statusCode
         RetryAfter = if ($retryAfter -gt 0) { $retryAfter } else { $null }
         Message = $ErrorRecord.Exception.Message
+        Detail = if ($null -ne $ErrorRecord.ErrorDetails) { $ErrorRecord.ErrorDetails.Message } else { $null }
     }
+}
+
+function Get-SafeGiteeDiagnostic([string]$Message, [hashtable]$Headers) {
+    $safe = if ([string]::IsNullOrWhiteSpace($Message)) { '' } else { $Message }
+    if ($null -ne $Headers) {
+        foreach ($key in @('Authorization', 'Cookie', 'X-Auth-Token')) {
+            if ($Headers.ContainsKey($key) -and $null -ne $Headers[$key]) {
+                $safe = $safe.Replace([string]$Headers[$key], '[redacted]')
+            }
+        }
+    }
+    $safe = $safe -replace '(?i)(access_token|token|authorization|cookie|credential)\s*[=:]\s*[^\s,;"}]+', '$1=[redacted]'
+    $safe = $safe -replace '(?i)bearer\s+[^\s,;"}]+', 'Bearer [redacted]'
+    if ($safe.Length -gt 500) { $safe = $safe.Substring(0, 500) + '…' }
+    return $safe.Trim()
 }
 
 function Invoke-GiteeApiRequest {
@@ -228,7 +278,11 @@ function Invoke-GiteeApiRequest {
             if ($message -match '(?i)connect|connection|timed out|timeout') {
                 throw "Gitee API 连接失败：$Method $Uri"
             }
-            throw "Gitee API 请求失败：$Method $Uri"
+            $detail = Get-SafeGiteeDiagnostic -Message $(if ([string]::IsNullOrWhiteSpace($info.Detail)) { $info.Message } else { $info.Detail }) -Headers $Headers
+            if ($null -ne $info.StatusCode) {
+                throw "Gitee API 请求失败（HTTP $($info.StatusCode)）：$Method $Uri；Gitee: $detail"
+            }
+            throw "Gitee API 请求失败：$Method $Uri；Gitee: $detail"
         }
     }
 }
@@ -250,5 +304,5 @@ function Assert-TagCommitMatch([string]$GitHubCommit, [string]$GiteeCommit) {
 }
 
 Export-ModuleMember -Function Assert-ReleaseVersionGate, Assert-MatchingAsset, `
-    Get-GiteeReleaseAction, Resolve-GiteeApiTagCommit, Invoke-GiteeApiRequest, `
-    Assert-TagCommitMatch, ConvertTo-UtcPublishedAt
+    Get-GiteeReleaseAction, Assert-GiteeReleaseForReuse, Resolve-GiteeApiTagCommit, Invoke-GiteeApiRequest, `
+    Assert-TagCommitMatch, ConvertTo-UtcPublishedAt, Test-GiteeBrowserDownloadUrl

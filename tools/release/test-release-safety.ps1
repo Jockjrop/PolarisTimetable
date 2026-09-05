@@ -34,8 +34,8 @@ try {
             if ($_.Exception.Message -notmatch $Pattern) { throw "失败信息不明确：$Name" }
         }
     }
-    function New-TestHttpError([int]$StatusCode, [int]$RetryAfter = -1) {
-        $exception = [Exception]::new("test HTTP $StatusCode")
+    function New-TestHttpError([int]$StatusCode, [int]$RetryAfter = -1, [string]$Message = "test HTTP $StatusCode") {
+        $exception = [Exception]::new($Message)
         $exception.Data['StatusCode'] = $StatusCode
         if ($RetryAfter -ge 0) { $exception.Data['RetryAfter'] = $RetryAfter }
         return $exception
@@ -88,12 +88,24 @@ try {
 
     if ((Get-GiteeReleaseAction 0) -ne 'Create') { throw 'Gitee Release 创建分支失败' }
     if ((Get-GiteeReleaseAction 1) -ne 'Reuse') { throw 'Gitee Release 复用分支失败' }
+    $expectedTagCommit = '45be3fe662eda26d1fb77ab872bd3864c1224488'
+    $reusableRelease = [pscustomobject]@{ id = [long]42; tag_name = 'v1.27.2'; prerelease = $false; target_commitish = $expectedTagCommit }
+    if (-not (Assert-GiteeReleaseForReuse -Release $reusableRelease -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit)) {
+        throw 'Gitee Release 完整 target_commitish 未验证'
+    }
+    Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = 0; tag_name = 'v1.27.2'; prerelease = $false }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee Release 非法 id'
+    Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = 42; tag_name = 'v1.27.1'; prerelease = $false }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee Release tag 不一致'
+    Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = 42; tag_name = 'v1.27.2'; prerelease = $true }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee prerelease 不可复用'
+    if (-not (Test-GiteeBrowserDownloadUrl 'https://gitee.com/Jockjrop/repo/releases/download/v1.27.2/a.apk') -or
+            -not (Test-GiteeBrowserDownloadUrl 'https://foruda.gitee.com/attachment/a.apk') -or
+            (Test-GiteeBrowserDownloadUrl 'https://example.test/a.apk')) {
+        throw 'Gitee 附件 URL 白名单错误'
+    }
     $copy = Join-Path $root 'copy.apk'
     Copy-Item -LiteralPath $apk -Destination $copy
     Assert-MatchingAsset -ExpectedPath $apk -ExistingPath $copy -Label APK
     [IO.File]::WriteAllBytes($copy, [byte[]](4, 3, 2, 1))
     Expect-Failure { Assert-MatchingAsset -ExpectedPath $apk -ExistingPath $copy -Label APK } 'Gitee APK hash 冲突'
-    $expectedTagCommit = '45be3fe662eda26d1fb77ab872bd3864c1224488'
     $apiTags = @(1..9 | ForEach-Object {
         $name = if ($_ -eq 7) { 'v1.27.2' } elseif ($_ -eq 5) { 'v1.27.0' } `
             elseif ($_ -eq 6) { 'v1.27.1' } else { "v1.26.$_" }
@@ -174,6 +186,95 @@ try {
         throw 'HTTP 5xx 有限重试错误'
     }
 
+    foreach ($status in @(400, 415, 422)) {
+        Expect-FailureMatch {
+            Invoke-GiteeApiRequest -Method Post -Uri 'https://gitee.test/releases' -Headers @{ Authorization = 'Bearer secret-token' } `
+                -Request { throw (New-TestHttpError $status -Message "Gitee says token=secret-token status $status") }
+        } "HTTP $status.*Gitee:.*token=\[redacted\]" "HTTP $status 安全诊断"
+    }
+
+    # 完整恢复模拟：已有 Release + 已有 APK，只补齐 .sha256/latest.json。
+    $recoveryRoot = Join-Path $root 'recovery'
+    $recoveryOutput = Join-Path $recoveryRoot 'output'
+    New-Item -ItemType Directory -Force -Path $recoveryOutput | Out-Null
+    $recoveryApk = Join-Path $recoveryRoot 'Polaris-1.27.2-release.apk'
+    [IO.File]::WriteAllBytes($recoveryApk, [byte[]](9, 8, 7, 6, 5))
+    $recoveryApkItem = Get-Item -LiteralPath $recoveryApk
+    $recoverySha = (Get-FileHash -LiteralPath $recoveryApk -Algorithm SHA256).Hash.ToLowerInvariant()
+    $notesPath = Join-Path $recoveryRoot 'notes.md'
+    '- Recovery test note' | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+    $githubManifestPath = Join-Path $recoveryRoot 'github-latest.json'
+    [ordered]@{
+        schemaVersion = 1; channel = 'stable'; packageName = 'com.polaris.timetable'; versionCode = 12702
+        versionName = '1.27.2'; minSdk = 23; minSupportedVersionCode = 12701
+        publishedAt = '2026-09-05T05:10:27Z'; required = $false
+        apk = [ordered]@{ fileName = $recoveryApkItem.Name; url = 'https://github.com/Jockjrop/PolarisTimetable/releases/download/v1.27.2/Polaris-1.27.2-release.apk'; size = $recoveryApkItem.Length; sha256 = $recoverySha }
+        releaseNotes = @('Recovery test note'); releaseNotesUrl = 'https://github.com/Jockjrop/PolarisTimetable/releases/tag/v1.27.2'
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $githubManifestPath -Encoding utf8NoBOM
+    $existingApkUrl = 'https://gitee.com/Jockjrop/polaris-course-schedule/releases/download/v1.27.2/Polaris-1.27.2-release.apk'
+    $mockState = [pscustomobject]@{
+        Calls = [Collections.Generic.List[object]]::new()
+        Assets = [Collections.Generic.List[object]]::new()
+    }
+    $mockState.Assets.Add([pscustomobject]@{ name = $recoveryApkItem.Name; size = $recoveryApkItem.Length; browser_download_url = $existingApkUrl; source = $recoveryApk })
+    $mockApi = {
+        param($request)
+        $mockState.Calls.Add($request)
+        if ($request.Method -eq 'Get' -and $request.Path -like '/tags*') {
+            return [pscustomobject]@{ name = 'v1.27.2'; commit = [pscustomobject]@{ sha = $expectedTagCommit } }
+        }
+        if ($request.Method -eq 'Get' -and $request.Path -match '^/releases\?') {
+            return [pscustomobject]@{ id = [long]42; tag_name = 'v1.27.2'; name = 'v1.27.2'; body = '- Recovery test note'; prerelease = $false; target_commitish = $expectedTagCommit }
+        }
+        if ($request.Method -eq 'Get' -and $request.Path -like '/releases/42/attach_files?*') { return $mockState.Assets.ToArray() }
+        if ($request.Method -eq 'Post' -and $request.Path -eq '/releases') { throw '已有 Release 场景不应创建 Release' }
+        if ($request.Method -eq 'Post' -and $request.Path -eq '/releases/42/attach_files') {
+            $file = $request.Form.file
+            $url = "https://gitee.com/Jockjrop/polaris-course-schedule/releases/download/v1.27.2/$($file.Name)"
+            $asset = [pscustomobject]@{ name = $file.Name; size = $file.Length; browser_download_url = $url; source = $file.FullName }
+            $mockState.Assets.Add($asset)
+            return $asset
+        }
+        throw "未预期的模拟 API 调用：$($request.Method) $($request.Path)"
+    }.GetNewClosure()
+    $mockDownload = { param($url, $destination)
+        $asset = @($mockState.Assets | Where-Object { $_.browser_download_url -eq $url })
+        if ($asset.Count -ne 1) { throw "模拟下载资产不唯一：$url" }
+        Copy-Item -LiteralPath $asset[0].source -Destination $destination
+    }.GetNewClosure()
+    $oldToken = $env:GITEE_TOKEN
+    $oldOutput = $env:GITHUB_OUTPUT
+    try {
+        $env:GITEE_TOKEN = 'test-token-not-logged'
+        $env:GITHUB_OUTPUT = Join-Path $recoveryRoot 'github-output.txt'
+        try {
+            & (Join-Path $PSScriptRoot 'publish-gitee-release.ps1') -Owner Jockjrop -Repo polaris-course-schedule `
+                -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit -ApkPath $recoveryApk `
+                -GitHubManifestPath $githubManifestPath -ReleaseNotesPath $notesPath -OutputPath $recoveryOutput `
+                -ApiRequest $mockApi -DownloadAsset $mockDownload
+        } catch { throw "$($_.ScriptStackTrace): $($_.Exception.Message)" }
+        if ($LASTEXITCODE -ne 0) { throw '已有 Release recovery 模拟失败' }
+        & (Join-Path $PSScriptRoot 'publish-gitee-release.ps1') -Owner Jockjrop -Repo polaris-course-schedule `
+            -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit -ApkPath $recoveryApk `
+            -GitHubManifestPath $githubManifestPath -ReleaseNotesPath $notesPath -OutputPath $recoveryOutput `
+            -ApiRequest $mockApi -DownloadAsset $mockDownload
+        if ($LASTEXITCODE -ne 0) { throw '已有 latest.json/.sha256 recovery 幂等模拟失败' }
+    } finally { $env:GITEE_TOKEN = $oldToken; $env:GITHUB_OUTPUT = $oldOutput }
+    if (@($mockState.Calls | Where-Object { $_.Method -eq 'Patch' -or $_.Method -eq 'Delete' }).Count -ne 0 -or
+            @($mockState.Calls | Where-Object { $_.Method -eq 'Post' -and $_.Path -eq '/releases' }).Count -ne 0) {
+        throw '已有 Release recovery 不得 PATCH、DELETE 或重建 Release'
+    }
+    $uploads = @($mockState.Calls | Where-Object { $_.Method -eq 'Post' -and $_.Path -eq '/releases/42/attach_files' } | ForEach-Object { $_.Form.file.Name })
+    if (($uploads | Where-Object { $_ -eq $recoveryApkItem.Name }).Count -ne 0 -or
+            (@($uploads | Sort-Object) -join ',') -ne "latest.json,$($recoveryApkItem.Name).sha256") {
+        throw "已有 Release recovery 未精确补齐 .sha256/latest.json：$($uploads -join ',')"
+    }
+    $outputValues = Get-Content -LiteralPath (Join-Path $recoveryRoot 'github-output.txt')
+    if ($outputValues -notcontains 'manifest_url=https://gitee.com/Jockjrop/polaris-course-schedule/releases/download/v1.27.2/latest.json' -or
+            $outputValues -notcontains "apk_url=$existingApkUrl") {
+        throw '已有 Release recovery 未输出正确公开 URL'
+    }
+
     $workflow = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../../.github/workflows/build.yml')
     $expectedInstrumentedCondition = "    if: github.event_name != 'workflow_dispatch' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))"
     if ($workflow -notmatch "(?m)^$([regex]::Escape($expectedInstrumentedCondition))\r?$") {
@@ -204,10 +305,11 @@ try {
     }
     $publisher = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'publish-gitee-release.ps1')
     if ($publisher -match 'ls-remote|GIT_ASKPASS|GIT_TERMINAL_PROMPT|credential\.helper' -or
-            ([regex]::Matches($publisher, "'/tags\?per_page=100&page=1'")).Count -ne 1) {
+            ([regex]::Matches($publisher, "'/tags\?per_page=100&page=1'")).Count -ne 1 -or
+            $publisher -match "Invoke-GiteeJson 'Patch'|Method = 'Patch'|Method 'Patch'") {
         throw 'Gitee 发布路径未彻底收敛为单次 tags API 调用'
     }
-    Write-Host 'release safety tests: 32 passed'
+    Write-Host 'release safety tests: 41 passed'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force
 }

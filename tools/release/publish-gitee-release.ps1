@@ -7,7 +7,9 @@ param(
     [Parameter(Mandatory = $true)][string]$ApkPath,
     [Parameter(Mandatory = $true)][string]$GitHubManifestPath,
     [Parameter(Mandatory = $true)][string]$ReleaseNotesPath,
-    [Parameter(Mandatory = $true)][string]$OutputPath
+    [Parameter(Mandatory = $true)][string]$OutputPath,
+    [scriptblock]$ApiRequest,
+    [scriptblock]$DownloadAsset
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,6 +23,11 @@ $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json' }
 $encodedTag = [Uri]::EscapeDataString($Tag)
 
 function Invoke-GiteeJson([string]$Method, [string]$Path, [hashtable]$Body) {
+    if ($null -ne $ApiRequest) {
+        return & $ApiRequest ([pscustomobject]@{
+                Method = $Method; Path = $Path; Body = $Body; Form = $null
+            })
+    }
     return Invoke-GiteeApiRequest -Method $Method -Uri "$apiRoot$Path" `
         -Headers $headers -Body $Body -RetryServerErrors:($Method -ne 'Post')
 }
@@ -48,7 +55,7 @@ if ($apkItem.Name -ne $githubManifest.apk.fileName -or
 $releases = @(Invoke-GiteeJson 'Get' '/releases?per_page=100&page=1' $null)
 $matchingReleases = @($releases | Where-Object { $_.tag_name -eq $Tag })
 $releaseAction = Get-GiteeReleaseAction $matchingReleases.Count
-$release = $matchingReleases | Select-Object -First 1
+$release = $matchingReleases[0]
 $releaseBody = Get-Content -Raw -LiteralPath $ReleaseNotesPath -Encoding UTF8
 $releaseFields = @{
     tag_name = $Tag
@@ -60,22 +67,44 @@ $releaseFields = @{
 if ($releaseAction -eq 'Create') {
     $release = Invoke-GiteeJson 'Post' '/releases' $releaseFields
 } else {
-    $release = Invoke-GiteeJson 'Patch' "/releases/$($release.id)" $releaseFields
+    $targetVerified = Assert-GiteeReleaseForReuse -Release $release -Tag $Tag `
+        -ExpectedCommitSha $ExpectedCommitSha
+    if (-not $targetVerified -and -not [string]::IsNullOrWhiteSpace($release.target_commitish)) {
+        Write-Warning 'Gitee 已有 Release 的 target_commitish 不是完整 commit SHA；已由 tag commit 安全门禁确认发布身份'
+    }
+    if ($release.name -is [string] -and $release.name -cne $Tag) {
+        Write-Warning 'Gitee 已有 Release 的 name 不同；恢复流程不会修改已有正式 Release'
+    }
+    if ($release.body -is [string] -and $release.body -cne $releaseBody) {
+        Write-Warning 'Gitee 已有 Release 的 body 不同；恢复流程不会修改已有正式 Release'
+    }
+    Write-Host "Reusing existing Gitee Release id: $($release.id)"
 }
 if ($null -eq $release.id) {
     throw 'Gitee Release 未返回 release id'
 }
 
-$attachments = @(Invoke-GiteeJson 'Get' "/releases/$($release.id)/attach_files?per_page=100&page=1" $null)
+$attachments = [Collections.Generic.List[object]]::new()
+foreach ($attachmentSet in @(Invoke-GiteeJson 'Get' "/releases/$($release.id)/attach_files?per_page=100&page=1" $null)) {
+    foreach ($attachment in $attachmentSet) {
+        $attachments.Add($attachment)
+    }
+}
 
 function Upload-GiteeAsset([string]$Path) {
+    if ($null -ne $ApiRequest) {
+        return & $ApiRequest ([pscustomobject]@{
+                Method = 'Post'; Path = "/releases/$($release.id)/attach_files"; Body = $null
+                Form = @{ file = Get-Item -LiteralPath $Path }
+            })
+    }
     return Invoke-GiteeApiRequest -Method 'Post' `
         -Uri "$apiRoot/releases/$($release.id)/attach_files" -Headers $headers `
         -Form @{ file = Get-Item -LiteralPath $Path } -RetryServerErrors:$false
 }
 
 function Find-GiteeAsset([string]$Name) {
-    $matches = @($attachments | Where-Object { $_.name -eq $Name })
+    $matches = @($attachments.ToArray() | Where-Object { $_.name -eq $Name })
     if ($matches.Count -gt 1) {
         throw "Gitee Release 存在多个同名附件 $Name，拒绝继续"
     }
@@ -85,13 +114,17 @@ function Find-GiteeAsset([string]$Name) {
 $checkDirectory = Join-Path $OutputPath '.existing-assets'
 New-Item -ItemType Directory -Force -Path $checkDirectory | Out-Null
 function Assert-RemoteAssetMatches([object]$Attachment, [string]$ExpectedPath) {
-    if ($Attachment.browser_download_url -notmatch '^https://gitee\.com/') {
+    if (-not (Test-GiteeBrowserDownloadUrl $Attachment.browser_download_url)) {
         throw "Gitee 附件 $($Attachment.name) 未返回可信的公开下载地址"
     }
     $downloaded = Join-Path $checkDirectory $Attachment.name
     try {
-        Invoke-WebRequest -Uri $Attachment.browser_download_url -OutFile $downloaded `
-            -MaximumRedirection 5 -ConnectionTimeoutSeconds 15 -OperationTimeoutSeconds 300
+        if ($null -ne $DownloadAsset) {
+            & $DownloadAsset $Attachment.browser_download_url $downloaded
+        } else {
+            Invoke-WebRequest -Uri $Attachment.browser_download_url -OutFile $downloaded `
+                -MaximumRedirection 5 -ConnectionTimeoutSeconds 15 -OperationTimeoutSeconds 300
+        }
     } catch {
         throw "Gitee 已有附件下载验证失败：$($Attachment.name)"
     }
@@ -105,12 +138,17 @@ function Ensure-GiteeAsset([string]$Path) {
         Assert-RemoteAssetMatches $existing $Path
         return $existing
     }
-    return Upload-GiteeAsset $Path
+    $uploaded = Upload-GiteeAsset $Path
+    if ($null -eq $uploaded -or $uploaded.name -ne $name) {
+        throw "Gitee 上传附件未返回预期附件：$name"
+    }
+    $attachments.Add($uploaded)
+    return $uploaded
 }
 
 # APK 先复用或上传；已有同名 APK 必须与 GitHub 正式资产完全一致。
 $apkAttachment = Ensure-GiteeAsset $ApkPath
-if ($apkAttachment.browser_download_url -notmatch '^https://gitee\.com/') {
+if (-not (Test-GiteeBrowserDownloadUrl $apkAttachment.browser_download_url)) {
     throw 'Gitee APK 附件未返回可信的公开下载地址'
 }
 
@@ -147,7 +185,7 @@ if ($githubManifest.apk.fileName -ne $giteeManifest.apk.fileName -or
 
 Ensure-GiteeAsset (Join-Path $OutputPath "$($apkItem.Name).sha256") | Out-Null
 $manifestAttachment = Ensure-GiteeAsset $giteeManifestPath
-if ($manifestAttachment.browser_download_url -notmatch '^https://gitee\.com/') {
+if (-not (Test-GiteeBrowserDownloadUrl $manifestAttachment.browser_download_url)) {
     throw 'Gitee latest.json 未返回可信的公开下载地址'
 }
 
