@@ -73,7 +73,11 @@ public class BottomNavNavigationTest {
         launch();
         onView(withNavLabel("计划")).perform(click());
         Espresso.onIdle();
-        onView(withNavLabel("计划")).check(matches(isSelected()));
+        onView(org.hamcrest.Matchers.allOf(withNavLabel("计划"),
+                androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA(
+                        androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(
+                                com.polaris.timetable.ui.shell.BottomNavView.class))))
+                .check(matches(isSelected()));
         // 1.26.0 起整宽「＋ 新建计划」按钮由右下角悬浮加号取代，
         // 计划页以悬浮按钮的可见性作为页面呈现的判据。
         onView(withContentDescription("添加内容")).check(matches(isDisplayed()));
