@@ -67,12 +67,51 @@ try {
     Expect-Failure { Assert-MatchingAsset -ExpectedPath $apk -ExistingPath $copy -Label APK } 'Gitee APK hash 冲突'
     Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit ('a' * 40)
     Expect-Failure { Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit ('b' * 40) } 'tag commit 冲突'
+    Expect-Failure { Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit ('a' * 7) } '短 tag SHA'
+
+    $lightweightCommit = Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
+        "$('c' * 40)`trefs/tags/v1.27.2"
+    )
+    if ($lightweightCommit -ne ('c' * 40)) { throw 'lightweight tag 解析失败' }
+
+    $annotatedCommit = Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
+        "$('d' * 40)`trefs/tags/v1.27.2",
+        "$('e' * 40)`trefs/tags/v1.27.2^{}"
+    )
+    if ($annotatedCommit -ne ('e' * 40)) { throw 'annotated tag 未使用 peeled commit' }
+    Expect-Failure {
+        Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
+            "$('c' * 40)`trefs/tags/v1.27.2",
+            "$('d' * 40)`trefs/tags/v1.27.2"
+        )
+    } '重复 tag ref'
+    Expect-Failure {
+        Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
+            "$('c' * 39)`trefs/tags/v1.27.2"
+        )
+    } '异常 tag ref 格式'
+
+    $attempts = 0
+    $delays = 0
+    Expect-Failure {
+        Wait-GitRemoteTagCommit -RepositoryUrl 'https://gitee.example/repo.git' -Tag v1.27.2 `
+            -MaxAttempts 3 -RetryDelaySeconds 0 `
+            -Query { param($Url, $TagName) $script:attempts++; return $null } `
+            -Delay { param($Seconds) $script:delays++ }
+    } '找不到 tag 时有限重试'
+    if ($attempts -ne 3 -or $delays -ne 2) { throw '找不到 tag 时重试次数不正确' }
+
+    $apiCommit = 'f' * 40
+    $gitRefCommit = 'a' * 40
+    if ($apiCommit -eq $gitRefCommit) { throw 'REST API 差异测试数据无效' }
+    Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit $gitRefCommit
+
     $workflow = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../../.github/workflows/build.yml')
     $recovery = $workflow.Substring($workflow.IndexOf('  recover-gitee-release:'))
     if ($recovery -match 'gh release (create|edit|upload|delete)') {
         throw 'workflow_dispatch 恢复 job 不得修改 GitHub Release'
     }
-    Write-Host 'release safety tests: 10 passed'
+    Write-Host 'release safety tests: 17 passed'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force
 }

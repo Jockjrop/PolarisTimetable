@@ -93,11 +93,95 @@ function Get-GiteeReleaseAction([int]$MatchingReleaseCount) {
     throw '同一 tag 存在多个 Gitee Release，拒绝继续'
 }
 
+function Resolve-GitTagCommit {
+    param(
+        [Parameter(Mandatory = $true)][string]$Tag,
+        [AllowEmptyCollection()][string[]]$LsRemoteOutput
+    )
+
+    $tagRef = "refs/tags/$Tag"
+    $peeledRef = "$tagRef^{}"
+    $refs = @{}
+    foreach ($line in @($LsRemoteOutput)) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line -notmatch '^([0-9a-fA-F]{40})\s+(\S+)$') {
+            throw "Gitee tag ref 输出格式异常：$line"
+        }
+        $sha = $Matches[1].ToLowerInvariant()
+        $refName = $Matches[2]
+        if ($refName -ne $tagRef -and $refName -ne $peeledRef) {
+            throw "Gitee tag ref 输出包含意外引用：$refName"
+        }
+        if ($refs.ContainsKey($refName)) {
+            throw "Gitee tag ref 输出包含重复引用：$refName"
+        }
+        $refs[$refName] = $sha
+    }
+
+    if ($refs.Count -eq 0) { return $null }
+    if (-not $refs.ContainsKey($tagRef)) {
+        throw "Gitee tag ref 输出缺少引用：$tagRef"
+    }
+    if ($refs.ContainsKey($peeledRef)) {
+        return $refs[$peeledRef]
+    }
+    return $refs[$tagRef]
+}
+
+function Get-GitRemoteTagCommit {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepositoryUrl,
+        [Parameter(Mandatory = $true)][string]$Tag
+    )
+
+    $output = @(& git ls-remote --tags $RepositoryUrl `
+        "refs/tags/$Tag" "refs/tags/$Tag^{}" 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "读取 Gitee tag ref 失败（git ls-remote 退出码 $LASTEXITCODE）"
+    }
+    return Resolve-GitTagCommit -Tag $Tag -LsRemoteOutput $output
+}
+
+function Wait-GitRemoteTagCommit {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepositoryUrl,
+        [Parameter(Mandatory = $true)][string]$Tag,
+        [ValidateRange(1, 100)][int]$MaxAttempts = 12,
+        [ValidateRange(0, 300)][int]$RetryDelaySeconds = 5,
+        [scriptblock]$Query,
+        [scriptblock]$Delay
+    )
+
+    if ($null -eq $Query) {
+        $Query = { param($Url, $TagName) Get-GitRemoteTagCommit -RepositoryUrl $Url -Tag $TagName }
+    }
+    if ($null -eq $Delay) {
+        $Delay = { param($Seconds) Start-Sleep -Seconds $Seconds }
+    }
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $commit = & $Query $RepositoryUrl $Tag
+        if ($null -ne $commit) { return $commit }
+        if ($attempt -lt $MaxAttempts) { & $Delay $RetryDelaySeconds }
+    }
+    throw "等待 Gitee 镜像 tag 超时：$Tag（已尝试 $MaxAttempts 次）"
+}
+
 function Assert-TagCommitMatch([string]$GitHubCommit, [string]$GiteeCommit) {
-    if ([string]::IsNullOrWhiteSpace($GitHubCommit) -or $GitHubCommit -ne $GiteeCommit) {
-        throw 'Gitee tag 与 GitHub tag commit 不一致'
+    $expected = if ($null -eq $GitHubCommit) { '' } else { $GitHubCommit.Trim() }
+    $resolved = if ($null -eq $GiteeCommit) { '' } else { $GiteeCommit.Trim() }
+    if ($expected -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "Expected GitHub commit 不是完整 40 位 SHA：$expected"
+    }
+    if ($resolved -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "Resolved Gitee tag commit 不是完整 40 位 SHA：$resolved"
+    }
+    $expected = $expected.ToLowerInvariant()
+    $resolved = $resolved.ToLowerInvariant()
+    if ($expected -ne $resolved) {
+        throw "Gitee tag 与 GitHub tag commit 不一致`nExpected GitHub commit: $expected`nResolved Gitee tag commit: $resolved"
     }
 }
 
 Export-ModuleMember -Function Assert-ReleaseVersionGate, Assert-MatchingAsset, `
-    Get-GiteeReleaseAction, Assert-TagCommitMatch
+    Get-GiteeReleaseAction, Resolve-GitTagCommit, Get-GitRemoteTagCommit, `
+    Wait-GitRemoteTagCommit, Assert-TagCommitMatch

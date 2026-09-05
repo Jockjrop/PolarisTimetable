@@ -17,6 +17,7 @@ if ([string]::IsNullOrWhiteSpace($token)) {
     throw 'GITEE_TOKEN 未配置，无法发布 Gitee 更新源'
 }
 $apiRoot = "https://gitee.com/api/v5/repos/$Owner/$Repo"
+$gitRepositoryUrl = "https://gitee.com/$Owner/$Repo.git"
 $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json' }
 $encodedTag = [Uri]::EscapeDataString($Tag)
 
@@ -37,18 +38,10 @@ function Invoke-GiteeJson([string]$Method, [string]$Path, [hashtable]$Body) {
     }
 }
 
-# Pull 镜像可能稍晚同步 tag。只等待，不创建 tag；并核对它指向 GitHub 的同一 commit。
-$tagEntry = $null
-for ($attempt = 1; $attempt -le 12; $attempt++) {
-    $tags = @(Invoke-GiteeJson 'Get' '/tags?per_page=100&page=1' $null)
-    $tagEntry = $tags | Where-Object { $_.name -eq $Tag } | Select-Object -First 1
-    if ($null -ne $tagEntry) { break }
-    if ($attempt -lt 12) { Start-Sleep -Seconds 5 }
-}
-if ($null -eq $tagEntry) {
-    throw '等待 Gitee 镜像 tag 超时'
-}
-Assert-TagCommitMatch -GitHubCommit $ExpectedCommitSha -GiteeCommit $tagEntry.commit.sha
+# Pull 镜像可能稍晚同步 tag。只等待，不创建 tag；以公开 Git ref 核对它指向 GitHub 的同一 commit。
+$giteeTagCommit = Wait-GitRemoteTagCommit -RepositoryUrl $gitRepositoryUrl -Tag $Tag `
+    -MaxAttempts 12 -RetryDelaySeconds 5
+Assert-TagCommitMatch -GitHubCommit $ExpectedCommitSha -GiteeCommit $giteeTagCommit
 
 $githubManifest = Get-Content -Raw -LiteralPath $GitHubManifestPath -Encoding UTF8 | ConvertFrom-Json
 $apkItem = Get-Item -LiteralPath $ApkPath
