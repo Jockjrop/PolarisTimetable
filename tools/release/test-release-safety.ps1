@@ -41,6 +41,22 @@ try {
         return $exception
     }
 
+    $expectedPublishedAt = '2026-09-05T05:10:27Z'
+    if ((ConvertTo-UtcPublishedAt '2026-09-05T05:10:27Z') -cne $expectedPublishedAt) {
+        throw 'ISO UTC publishedAt 规范化失败'
+    }
+    $utcDateTime = [DateTime]::SpecifyKind([DateTime]::new(2026, 9, 5, 5, 10, 27),
+        [DateTimeKind]::Utc)
+    if ((ConvertTo-UtcPublishedAt $utcDateTime) -cne $expectedPublishedAt) {
+        throw 'DateTime publishedAt 规范化失败'
+    }
+    $offsetDateTime = [DateTimeOffset]::new(2026, 9, 5, 13, 10, 27, [TimeSpan]::FromHours(8))
+    if ((ConvertTo-UtcPublishedAt $offsetDateTime) -cne $expectedPublishedAt) {
+        throw 'DateTimeOffset publishedAt UTC 换算失败'
+    }
+    Expect-Failure { ConvertTo-UtcPublishedAt '09/05/2026 05:10:27' } '区域格式 publishedAt'
+    Expect-Failure { ConvertTo-UtcPublishedAt 'not-a-date' } '无效 publishedAt'
+
     $previous = Join-Path $root 'previous.json'
     Write-Manifest $previous '1.27.1' 12701 $sha 4
     $result = Assert-ReleaseVersionGate -CurrentTag v1.27.2 -CurrentVersionName 1.27.2 `
@@ -191,7 +207,7 @@ try {
             ([regex]::Matches($publisher, "'/tags\?per_page=100&page=1'")).Count -ne 1) {
         throw 'Gitee 发布路径未彻底收敛为单次 tags API 调用'
     }
-    Write-Host 'release safety tests: 27 passed'
+    Write-Host 'release safety tests: 32 passed'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force
 }

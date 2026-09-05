@@ -4,6 +4,33 @@ function Get-FileSha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function ConvertTo-UtcPublishedAt([object]$Value) {
+    $parsed = [DateTimeOffset]::MinValue
+    if ($Value -is [string]) {
+        $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor `
+            [Globalization.DateTimeStyles]::AdjustToUniversal
+        $valid = [DateTimeOffset]::TryParseExact($Value, "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            [Globalization.CultureInfo]::InvariantCulture, $styles, [ref]$parsed)
+        if (-not $valid) {
+            $valid = [DateTimeOffset]::TryParseExact($Value, "yyyy-MM-dd'T'HH:mm:sszzz",
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::None, [ref]$parsed)
+        }
+        if (-not $valid) { throw 'publishedAt 字符串不是严格 ISO 8601 秒级时间' }
+    } elseif ($Value -is [DateTimeOffset]) {
+        $parsed = $Value
+    } elseif ($Value -is [DateTime]) {
+        if ($Value.Kind -eq [DateTimeKind]::Unspecified) {
+            throw 'publishedAt DateTime 缺少时区信息'
+        }
+        $parsed = [DateTimeOffset]::new($Value)
+    } else {
+        throw "publishedAt 类型不受支持：$($Value.GetType().FullName)"
+    }
+    return $parsed.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",
+        [Globalization.CultureInfo]::InvariantCulture)
+}
+
 function Assert-ReleaseVersionGate {
     param(
         [Parameter(Mandatory = $true)][string]$CurrentTag,
@@ -224,4 +251,4 @@ function Assert-TagCommitMatch([string]$GitHubCommit, [string]$GiteeCommit) {
 
 Export-ModuleMember -Function Assert-ReleaseVersionGate, Assert-MatchingAsset, `
     Get-GiteeReleaseAction, Resolve-GiteeApiTagCommit, Invoke-GiteeApiRequest, `
-    Assert-TagCommitMatch
+    Assert-TagCommitMatch, ConvertTo-UtcPublishedAt

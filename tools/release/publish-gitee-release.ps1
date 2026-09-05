@@ -34,6 +34,8 @@ Write-Host "Expected GitHub commit: $($ExpectedCommitSha.Trim().ToLowerInvariant
 Assert-TagCommitMatch -GitHubCommit $ExpectedCommitSha -GiteeCommit $giteeTagCommit
 
 $githubManifest = Get-Content -Raw -LiteralPath $GitHubManifestPath -Encoding UTF8 | ConvertFrom-Json
+$normalizedPublishedAt = ConvertTo-UtcPublishedAt $githubManifest.publishedAt
+Write-Host "Normalized publishedAt: $normalizedPublishedAt"
 $apkItem = Get-Item -LiteralPath $ApkPath
 $actualSha = (Get-FileHash -LiteralPath $ApkPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($apkItem.Name -ne $githubManifest.apk.fileName -or
@@ -122,7 +124,7 @@ if ($apkAttachment.browser_download_url -notmatch '^https://gitee\.com/') {
     -MinSupportedVersionCode $githubManifest.minSupportedVersionCode `
     -ApkUrl $apkAttachment.browser_download_url `
     -ReleaseNotesUrl "https://gitee.com/$Owner/$Repo/releases/tag/$encodedTag" `
-    -PublishedAt $githubManifest.publishedAt
+    -PublishedAt $normalizedPublishedAt
 if ($LASTEXITCODE -ne 0) { throw 'Gitee latest.json 生成或自检失败' }
 
 $giteeManifestPath = Join-Path $OutputPath 'latest.json'
