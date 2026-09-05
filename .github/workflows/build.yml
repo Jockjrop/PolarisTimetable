@@ -342,7 +342,7 @@ jobs:
           VERSION_CODE=${{ steps.version.outputs.code }}
           EXPECTED_SHA256=$(echo "${{ secrets.POLARIS_RELEASE_CERT_SHA256 }}" | tr 'A-F' 'a-f')
           rm -rf /tmp/verify && mkdir -p /tmp/verify && cd /tmp/verify
-          gh release download "$TAG" --clobber
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --clobber
           COUNT=$(ls -1 | wc -l)
           if [ "$COUNT" -ne 3 ]; then
             echo "::error::Draft 资产数量 $COUNT != 3（APK/.sha256/latest.json）"; exit 1
