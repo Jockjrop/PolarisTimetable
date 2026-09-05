@@ -243,7 +243,7 @@
 
 ## 应用内更新系统回归项（1.27.0）
 
-完整验收清单见 `docs/app-self-update-plan.md` 验收章节。关键回归点：
+完整验收清单见 `docs/plans/app-self-update-plan.md` 验收章节。关键回归点：
 
 | 项 | 断言 |
 |---|---|

@@ -1,0 +1,61 @@
+name: Bug 报告
+description: 课表解析错误、界面异常或崩溃
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请先确认没有重复 Issue。**请勿上传含真实姓名、学号、成绩等个人信息的截图或文件。**
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类别
+      options:
+        - PDF 解析（课程缺失 / 时间 / 周次错误）
+        - 课表展示 / UI 异常
+        - 计划 / 考试 / DDL
+        - 桌面小组件
+        - 提醒通知
+        - 导出 / 备份
+        - 应用内更新
+        - 崩溃 / 无响应
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: school
+    attributes:
+      label: 学校与课表来源（解析问题必填）
+      description: 如「西安邮电大学教务系统导出 PDF」；解析问题请附脱敏样例 PDF 特征描述
+  - type: input
+    id: device
+    attributes:
+      label: 机型与 Android 版本
+      placeholder: 如 Pixel 6 / Android 14，或模拟器 API 35
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 设置 → 关于 中查看，如 1.27.0
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开应用开始，一步步描述到问题出现
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为与实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图（请脱敏）
+      description: 崩溃请附 logcat 片段；截图请遮挡姓名、学号等个人信息

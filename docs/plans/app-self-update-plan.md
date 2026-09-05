@@ -585,7 +585,7 @@ Provider authority 固定为 `${applicationId}.updates`，不能扩大到整个�
 新增：
 
 ```text
-tools/generate-update-manifest.ps1
+tools/release/generate-update-manifest.ps1
 ```
 
 脚本输入必须显式提供：
@@ -656,7 +656,7 @@ app/src/test/java/com/polaris/timetable/update/UpdatePolicyTest.java
 app/src/test/java/com/polaris/timetable/update/UpdatePreferencesTest.java
 app/src/androidTest/java/com/polaris/timetable/update/UpdateEntryTest.java
 app/src/androidTest/java/com/polaris/timetable/update/UpdateInstallerTest.java
-tools/generate-update-manifest.ps1
+tools/release/generate-update-manifest.ps1
 docs/releases/<实施版本号>.md
 ```
 
@@ -672,7 +672,7 @@ docs/releases/<实施版本号>.md
 | `.github/workflows/build.yml` | 删除 Debug fallback，增加版本、签名、APK、清单验证和正式资产上传 |
 | `README.md` | 更新网络权限、构建和 Release 发布说明 |
 | `PRIVACY.md` | 更新联网行为与权限用途 |
-| `docs/test-plan.md` | 纳入更新系统回归项；若该文档已不再维护，则将回归项保留在本文验收章节 |
+| `docs/qa/test-plan.md` | 纳入更新系统回归项；若该文档已不再维护，则将回归项保留在本文验收章节 |
 
 如果实施时文件结构已经变化，以功能职责匹配为准，但不得把上述新增业务逻辑重新塞入 `MainActivity`。
 

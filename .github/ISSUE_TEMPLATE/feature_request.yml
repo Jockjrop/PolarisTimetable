@@ -1,0 +1,26 @@
+name: 功能建议
+description: 新功能或体验改进建议
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决的问题或场景
+      description: 现在的使用场景是什么，哪里不方便
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的方案
+      description: 期望的交互或效果；若涉及其他课表 App 的做法请说明出处
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: 边界确认
+      description: 项目约束（AGENTS.md）：保持原生 Android Java，不迁移 Compose/Web，不做大依赖替代 PDFBox 路线
+      options:
+        - label: 我已了解该建议需要符合上述项目边界
+          required: true

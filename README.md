@@ -72,8 +72,8 @@ CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_R
 - 强制要求签名 Secret（`POLARIS_RELEASE_KEYSTORE_B64` 等）；缺失时直接失败，**不再回退 Debug APK**
 - 用 `POLARIS_RELEASE_CERT_SHA256` 核对 APK 签名证书指纹，并用 `apkanalyzer` 核对包名与版本
 - 校验 Git 标签 = `v<versionName>`、`versionCode` 三段式映射且严格大于最近稳定清单
-- 以 `docs/releases/<versionName>.md` 为唯一来源生成 `latest.json` 与 `.sha256`（脚本 `tools/generate-update-manifest.ps1`，含协议自检），与正式 APK 一起上传 Release
-- 客户端按 `docs/app-self-update-plan.md` 的清单协议检查、下载、校验并交给系统安装器
+- 以 `docs/releases/<versionName>.md` 为唯一来源生成 `latest.json` 与 `.sha256`（脚本 `tools/release/generate-update-manifest.ps1`，含协议自检），与正式 APK 一起上传 Release
+- 客户端按 `docs/plans/app-self-update-plan.md` 的清单协议检查、下载、校验并交给系统安装器
 
 发布前需在仓库 Secrets 配置：`POLARIS_RELEASE_KEYSTORE_B64`、`POLARIS_RELEASE_STORE_PASSWORD`、`POLARIS_RELEASE_KEY_ALIAS`、`POLARIS_RELEASE_KEY_PASSWORD`、`POLARIS_RELEASE_CERT_SHA256`（证书 SHA-256 指纹），并维护者离线备份签名材料。
 
@@ -91,13 +91,17 @@ CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_R
 
 ## 文档
 
-- [架构设计](docs/architecture.md)
-- [数据模型](docs/data-model.md)
-- [解析器设计](docs/parser-design.md)
-- [界面设计](docs/ui-design.md)
-- [产品设计](docs/product-design.md)
-- [应用内更新系统](docs/app-self-update-plan.md)
-- [测试计划](docs/test-plan.md)
+设计文档总览见 [DESIGN.md](DESIGN.md)，完整版本历史见 [CHANGELOG.md](CHANGELOG.md)：
+
+- [视觉系统规范](docs/design/visual-system.md)
+- [架构设计](docs/design/architecture.md)
+- [数据模型](docs/design/data-model.md)
+- [解析器设计](docs/design/parser-design.md)
+- [界面设计](docs/design/ui-design.md)
+- [产品设计](docs/design/product-design.md)
+- [应用内更新系统](docs/plans/app-self-update-plan.md)
+- [测试计划](docs/qa/test-plan.md)
+- [UI 高保真页面](design/pages/)（历史视觉参考）
 
 ## 隐私
 

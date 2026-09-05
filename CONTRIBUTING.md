@@ -40,7 +40,7 @@ Polaris 目前只内置 3 所学校的解析模板，而各校教务系统 PDF �
 //    等坐标定位基础设施，按该校版式写课程种子与单元格解析
 ```
 
-可参考现有三个分支（`parseBlocks` / `parseHduBlocks` / `parseXautBlocks`）与 [docs/parser-design.md](docs/parser-design.md)。
+可参考现有三个分支（`parseBlocks` / `parseHduBlocks` / `parseXautBlocks`）与 [docs/design/parser-design.md](docs/design/parser-design.md)。
 
 ### 3. 编写测试样例
 

@@ -110,7 +110,7 @@ public class SettingsPageBuilder {
         String versionText();
         String contactEmail();
         String githubDisplay();
-        // 应用内更新（docs/app-self-update-plan.md）：检查行副标题与自动检查开关状态
+        // 应用内更新（docs/plans/app-self-update-plan.md）：检查行副标题与自动检查开关状态
         String updateCheckStatusText();
         boolean autoCheckUpdateEnabled();
 

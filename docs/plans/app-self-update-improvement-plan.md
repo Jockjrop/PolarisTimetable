@@ -304,7 +304,7 @@ lint 当前为 0 error、4 warning；既有允许基线为 3 条 PDFBox 依赖�
 - `UpdateDownloadController.java`
 - `UpdateDownloadControllerTest.java`
 - `.github/workflows/build.yml`
-- `tools/generate-update-manifest.ps1`
+- `tools/release/generate-update-manifest.ps1`
 - 发布维护文档
 - `PlanAddMenuView.java` 或对应 lint 抑制位置
 
