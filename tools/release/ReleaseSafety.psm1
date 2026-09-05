@@ -128,24 +128,182 @@ function Resolve-GitTagCommit {
     return $refs[$tagRef]
 }
 
+function Get-SanitizedGitTransportError([string]$StandardError, [string]$Token) {
+    $safeError = if ($null -eq $StandardError) { '' } else { $StandardError.Trim() }
+    if (-not [string]::IsNullOrEmpty($Token)) {
+        $safeError = $safeError.Replace($Token, '***')
+    }
+    $safeError = [regex]::Replace($safeError,
+        '(?i)(Authorization\s*:\s*(?:Bearer|token)\s+)\S+', '$1***')
+    $safeError = [regex]::Replace($safeError,
+        '(?i)https://[^\s/@:]+:[^\s/@]+@', 'https://***@')
+    if ([string]::IsNullOrWhiteSpace($safeError)) { return '<empty>' }
+    if ($safeError.Length -gt 4000) {
+        return $safeError.Substring(0, 4000) + '... <truncated>'
+    }
+    return $safeError
+}
+
+function Get-GitTransportErrorCategory([string]$StandardError) {
+    if ($StandardError -match '(?i)could not resolve host|name or service not known|temporary failure in name resolution') {
+        return 'DNS'
+    }
+    if ($StandardError -match '(?i)SSL|TLS|certificate') { return 'TLS' }
+    if ($StandardError -match '(?i)(HTTP[^\r\n]*\b401\b|error:\s*401\b|unauthorized)') { return 'HTTP 401' }
+    if ($StandardError -match '(?i)(HTTP[^\r\n]*\b403\b|error:\s*403\b|forbidden)') { return 'HTTP 403' }
+    if ($StandardError -match '(?i)failed to connect|could not connect|connection (?:timed out|refused|reset)') {
+        return 'Connection'
+    }
+    if ($StandardError -match '(?i)authentication failed|invalid username or password|access denied|terminal prompts disabled|could not read (?:username|password)') {
+        return 'Authentication'
+    }
+    return 'Other'
+}
+
+function New-GiteeAskPassFiles([string]$Directory) {
+    $files = [Collections.Generic.List[string]]::new()
+    if ($IsWindows) {
+        $helperPath = Join-Path $Directory 'gitee-askpass.ps1'
+        $launcherPath = Join-Path $Directory 'gitee-askpass.cmd'
+        @'
+param([string]$Prompt)
+if ($Prompt -match '(?i)username') {
+    [Console]::Out.WriteLine($env:GITEE_GIT_USERNAME)
+    exit 0
+}
+if ($Prompt -match '(?i)password') {
+    [Console]::Out.WriteLine($env:GITEE_TOKEN)
+    exit 0
+}
+exit 1
+'@ | Set-Content -LiteralPath $helperPath -Encoding utf8NoBOM
+        @'
+@echo off
+pwsh.exe -NoLogo -NoProfile -File "%~dp0gitee-askpass.ps1" "%~1"
+'@ | Set-Content -LiteralPath $launcherPath -Encoding ascii
+        $files.Add($helperPath)
+        $files.Add($launcherPath)
+        return [pscustomobject]@{ Path = $launcherPath; Files = $files.ToArray() }
+    }
+
+    $askPassPath = Join-Path $Directory 'gitee-askpass.sh'
+    @'
+#!/bin/sh
+case "$1" in
+  *sername*) printf '%s\n' "$GITEE_GIT_USERNAME" ;;
+  *assword*) printf '%s\n' "$GITEE_TOKEN" ;;
+  *) exit 1 ;;
+esac
+'@ | Set-Content -LiteralPath $askPassPath -Encoding utf8NoBOM
+    $mode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor `
+        [IO.UnixFileMode]::UserExecute
+    [IO.File]::SetUnixFileMode($askPassPath, $mode)
+    $files.Add($askPassPath)
+    return [pscustomobject]@{ Path = $askPassPath; Files = $files.ToArray() }
+}
+
+function Invoke-GitProcess([object]$Request) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Request.FileName
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $Request.Arguments) {
+        $startInfo.ArgumentList.Add($argument)
+    }
+    foreach ($entry in $Request.Environment.GetEnumerator()) {
+        $startInfo.Environment[$entry.Key] = $entry.Value
+    }
+
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) { throw '无法启动 git 进程' }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            StandardOutput = $stdoutTask.GetAwaiter().GetResult()
+            StandardError = $stderrTask.GetAwaiter().GetResult()
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
 function Get-GitRemoteTagCommit {
     param(
         [Parameter(Mandatory = $true)][string]$RepositoryUrl,
-        [Parameter(Mandatory = $true)][string]$Tag
+        [Parameter(Mandatory = $true)][string]$Tag,
+        [Parameter(Mandatory = $true)][string]$Username,
+        [Parameter(Mandatory = $true)][string]$Token,
+        [scriptblock]$CommandRunner
     )
 
-    $output = @(& git ls-remote --tags $RepositoryUrl `
-        "refs/tags/$Tag" "refs/tags/$Tag^{}" 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "读取 Gitee tag ref 失败（git ls-remote 退出码 $LASTEXITCODE）"
+    if ([string]::IsNullOrWhiteSpace($Username) -or [string]::IsNullOrWhiteSpace($Token)) {
+        throw 'Gitee Git HTTPS 认证信息不完整，拒绝匿名读取 tag ref'
     }
-    return Resolve-GitTagCommit -Tag $Tag -LsRemoteOutput $output
+    if ($RepositoryUrl -notmatch '^https://[^/]+@gitee\.com/' -or
+            $RepositoryUrl -match '(?i)^https://[^/]+:[^/]+@' -or
+            $RepositoryUrl.Contains($Token)) {
+        throw 'Gitee Git URL 非法或包含凭据，拒绝执行'
+    }
+
+    $tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ("polaris-gitee-askpass-" + [guid]::NewGuid())
+    [IO.Directory]::CreateDirectory($tempDirectory) | Out-Null
+    $askPass = $null
+    try {
+        $askPass = New-GiteeAskPassFiles $tempDirectory
+        $arguments = @(
+            '-c', 'credential.helper=', 'ls-remote', '--tags', $RepositoryUrl,
+            "refs/tags/$Tag", "refs/tags/$Tag^{}"
+        )
+        $processEnvironment = @{
+            GIT_ASKPASS = $askPass.Path
+            GIT_ASKPASS_REQUIRE = 'force'
+            GIT_TERMINAL_PROMPT = '0'
+            GITEE_GIT_USERNAME = $Username
+            GITEE_TOKEN = $Token
+        }
+        $request = [pscustomobject]@{
+            FileName = 'git'
+            Arguments = $arguments
+            Environment = $processEnvironment
+            AskPassPath = $askPass.Path
+            AskPassFiles = $askPass.Files
+        }
+        $result = if ($null -eq $CommandRunner) {
+            Invoke-GitProcess $request
+        } else {
+            & $CommandRunner $request
+        }
+        if ($null -eq $result -or $null -eq $result.ExitCode) {
+            throw 'Gitee Git 命令执行器未返回退出码'
+        }
+        if ([int]$result.ExitCode -ne 0) {
+            $safeError = Get-SanitizedGitTransportError $result.StandardError $Token
+            $category = Get-GitTransportErrorCategory $safeError
+            throw "Unable to resolve Gitee tag through authenticated Git HTTPS`ncategory: $category`ngit exit code: $($result.ExitCode)`nstderr: $safeError"
+        }
+        $output = @($result.StandardOutput -split '\r?\n')
+        return Resolve-GitTagCommit -Tag $Tag -LsRemoteOutput $output
+    } finally {
+        if ($null -ne $askPass) {
+            foreach ($file in $askPass.Files) {
+                if ([IO.File]::Exists($file)) { [IO.File]::Delete($file) }
+            }
+        }
+        if ([IO.Directory]::Exists($tempDirectory)) { [IO.Directory]::Delete($tempDirectory) }
+    }
 }
 
 function Wait-GitRemoteTagCommit {
     param(
         [Parameter(Mandatory = $true)][string]$RepositoryUrl,
         [Parameter(Mandatory = $true)][string]$Tag,
+        [string]$Username,
+        [string]$Token,
         [ValidateRange(1, 100)][int]$MaxAttempts = 12,
         [ValidateRange(0, 300)][int]$RetryDelaySeconds = 5,
         [scriptblock]$Query,
@@ -153,13 +311,17 @@ function Wait-GitRemoteTagCommit {
     )
 
     if ($null -eq $Query) {
-        $Query = { param($Url, $TagName) Get-GitRemoteTagCommit -RepositoryUrl $Url -Tag $TagName }
+        $Query = {
+            param($Url, $TagName, $GitUsername, $GitToken)
+            Get-GitRemoteTagCommit -RepositoryUrl $Url -Tag $TagName `
+                -Username $GitUsername -Token $GitToken
+        }
     }
     if ($null -eq $Delay) {
         $Delay = { param($Seconds) Start-Sleep -Seconds $Seconds }
     }
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        $commit = & $Query $RepositoryUrl $Tag
+        $commit = & $Query $RepositoryUrl $Tag $Username $Token
         if ($null -ne $commit) { return $commit }
         if ($attempt -lt $MaxAttempts) { & $Delay $RetryDelaySeconds }
     }

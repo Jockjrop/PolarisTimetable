@@ -61,7 +61,7 @@ jobs:
     # 曾被评估为 false，instrumented 被静默跳过而 release 照常发布
     # （v1.24.11 实测），等于绕过了仪器验证；release 的 fail-closed
     # 判断（needs.instrumented.result）即因此补上。
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'workflow_dispatch' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     # 2026-09-01 教训：用例挂死时该 job 曾占用 runner 近 3 小时无输出。
     timeout-minutes: 20

@@ -107,11 +107,120 @@ try {
     Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit $gitRefCommit
 
     $workflow = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../../.github/workflows/build.yml')
+    $expectedInstrumentedCondition = "    if: github.event_name != 'workflow_dispatch' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))"
+    if ($workflow -notmatch "(?m)^$([regex]::Escape($expectedInstrumentedCondition))\r?$") {
+        throw 'instrumented job 未使用预期的单行 fail-closed 条件'
+    }
+    foreach ($requiredCondition in @(
+            "    if: github.event_name != 'workflow_dispatch'",
+            "    if: startsWith(github.ref, 'refs/tags/v') && needs.instrumented.result == 'success'",
+            "    if: github.event_name == 'workflow_dispatch'")) {
+        if ($workflow -notmatch "(?m)^$([regex]::Escape($requiredCondition))\r?$") {
+            throw "workflow 缺少预期 job 条件：$requiredCondition"
+        }
+    }
+    function Test-InstrumentedCondition([string]$EventName, [string]$Ref) {
+        return $EventName -ne 'workflow_dispatch' -and (
+            $EventName -eq 'pull_request' -or $Ref -eq 'refs/heads/main' -or $Ref.StartsWith('refs/tags/v'))
+    }
+    if (Test-InstrumentedCondition workflow_dispatch refs/heads/main) {
+        throw 'workflow_dispatch 不应启动 instrumented'
+    }
+    if (-not (Test-InstrumentedCondition push refs/heads/main)) { throw 'push main 应启动 instrumented' }
+    if (-not (Test-InstrumentedCondition push refs/tags/v1.27.2)) { throw 'push tag 应启动 instrumented' }
+    if (-not (Test-InstrumentedCondition pull_request refs/pull/1/merge)) { throw 'PR 应启动 instrumented' }
+
+    $testToken = 'gitee-test-token-must-not-leak'
+    $capturedRequest = $null
+    $askPassContents = $null
+    $authenticatedCommit = Get-GitRemoteTagCommit `
+        -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
+        -Tag v1.27.2 -Username Jockjrop -Token $testToken -CommandRunner {
+            param($Request)
+            $script:capturedRequest = $Request
+            $script:askPassContents = @($Request.AskPassFiles | ForEach-Object {
+                Get-Content -Raw -LiteralPath $_
+            }) -join "`n"
+            return [pscustomobject]@{
+                ExitCode = 0
+                StandardOutput = "$('a' * 40)`trefs/tags/v1.27.2`n"
+                StandardError = ''
+            }
+        }
+    if ($authenticatedCommit -ne ('a' * 40)) { throw '认证 Git ls-remote 成功结果解析失败' }
+    if ($capturedRequest.Environment.GIT_ASKPASS -ne $capturedRequest.AskPassPath -or
+            $capturedRequest.Environment.GIT_ASKPASS_REQUIRE -ne 'force' -or
+            $capturedRequest.Environment.GIT_TERMINAL_PROMPT -ne '0' -or
+            $capturedRequest.Environment.GITEE_GIT_USERNAME -ne 'Jockjrop' -or
+            $capturedRequest.Environment.GITEE_TOKEN -ne $testToken) {
+        throw 'GIT_ASKPASS 进程环境不完整'
+    }
+    $commandText = @($capturedRequest.FileName) + @($capturedRequest.Arguments) -join ' '
+    if ($commandText.Contains($testToken) -or $askPassContents.Contains($testToken) -or
+            $capturedRequest.Arguments -notcontains 'credential.helper=') {
+        throw 'Git 命令、URL 或 askpass 文件泄露 Token，或未清空 credential.helper'
+    }
+    Expect-Failure {
+        Get-GitRemoteTagCommit `
+            -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
+            -Tag v1.27.2 -Username Jockjrop -Token '' -CommandRunner { throw '不应执行匿名 Git' }
+    } '缺少凭据时拒绝匿名访问'
+
+    try {
+        Get-GitRemoteTagCommit `
+            -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
+            -Tag v1.27.2 -Username Jockjrop -Token $testToken -CommandRunner {
+                return [pscustomobject]@{
+                    ExitCode = 128
+                    StandardOutput = ''
+                    StandardError = "fatal: unable to access repository: HTTP 403 Forbidden $testToken"
+                }
+            }
+        throw '认证 Git exit 128 未被拒绝'
+    } catch {
+        $failure = $_.Exception.Message
+        if ($failure -eq '认证 Git exit 128 未被拒绝') { throw }
+        if ($failure -notmatch 'category: HTTP 403' -or $failure -notmatch 'git exit code: 128' -or
+                $failure -notmatch 'stderr:' -or $failure.Contains($testToken)) {
+            throw '认证 Git exit 128 未保留安全、可诊断的 stderr'
+        }
+    }
+
+    $transportCases = @(
+        @{ Error = 'fatal: Could not resolve host: gitee.com'; Category = 'DNS' },
+        @{ Error = 'fatal: SSL certificate problem'; Category = 'TLS' },
+        @{ Error = 'fatal: HTTP 401 Unauthorized'; Category = 'HTTP 401' },
+        @{ Error = 'fatal: HTTP 403 Forbidden'; Category = 'HTTP 403' },
+        @{ Error = 'fatal: Failed to connect to gitee.com'; Category = 'Connection' },
+        @{ Error = 'fatal: Authentication failed'; Category = 'Authentication' },
+        @{ Error = 'fatal: unexpected transport failure'; Category = 'Other' }
+    )
+    foreach ($case in $transportCases) {
+        $script:transportError = $case.Error
+        try {
+            Get-GitRemoteTagCommit `
+                -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
+                -Tag v1.27.2 -Username Jockjrop -Token $testToken -CommandRunner {
+                    return [pscustomobject]@{
+                        ExitCode = 128
+                        StandardOutput = ''
+                        StandardError = $script:transportError
+                    }
+                }
+            throw "Git transport 分类未失败：$($case.Category)"
+        } catch {
+            if ($_.Exception.Message -eq "Git transport 分类未失败：$($case.Category)") { throw }
+            if ($_.Exception.Message -notmatch "category: $([regex]::Escape($case.Category))") {
+                throw "Git transport 错误分类失败：$($case.Category)"
+            }
+        }
+    }
+
     $recovery = $workflow.Substring($workflow.IndexOf('  recover-gitee-release:'))
     if ($recovery -match 'gh release (create|edit|upload|delete)') {
         throw 'workflow_dispatch 恢复 job 不得修改 GitHub Release'
     }
-    Write-Host 'release safety tests: 17 passed'
+    Write-Host 'release safety tests: 25 passed'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force
 }
