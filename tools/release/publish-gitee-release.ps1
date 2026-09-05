@@ -28,8 +28,9 @@ function Invoke-GiteeJson([string]$Method, [string]$Path, [hashtable]$Body) {
 # Gitee Open API 是发布集成的唯一控制面；tag 列表只读取一次并在当前进程内复用。
 $tags = @(Invoke-GiteeJson 'Get' '/tags?per_page=100&page=1' $null)
 $giteeTagCommit = Resolve-GiteeApiTagCommit -Tag $Tag -Tags $tags
-Write-Host "Expected GitHub commit: $($ExpectedCommitSha.Trim().ToLowerInvariant())"
+Write-Host "Resolved Gitee tag: $Tag"
 Write-Host "Resolved Gitee API commit: $giteeTagCommit"
+Write-Host "Expected GitHub commit: $($ExpectedCommitSha.Trim().ToLowerInvariant())"
 Assert-TagCommitMatch -GitHubCommit $ExpectedCommitSha -GiteeCommit $giteeTagCommit
 
 $githubManifest = Get-Content -Raw -LiteralPath $GitHubManifestPath -Encoding UTF8 | ConvertFrom-Json

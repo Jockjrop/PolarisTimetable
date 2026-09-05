@@ -99,10 +99,13 @@ function Resolve-GiteeApiTagCommit {
         [AllowEmptyCollection()][object[]]$Tags
     )
 
-    $matches = @($Tags | Where-Object { $_.name -ceq $Tag })
-    if ($matches.Count -eq 0) { throw "Gitee API 中不存在 tag：$Tag" }
-    if ($matches.Count -ne 1) { throw "Gitee API 中 tag 不唯一：$Tag（$($matches.Count) 项）" }
-    $commit = [string]$matches[0].commit.sha
+    $tagEntries = @($Tags | ForEach-Object { $_ | Write-Output })
+    $matchingTags = @($tagEntries | Where-Object { $_.name -ceq $Tag })
+    if ($matchingTags.Count -eq 0) { throw "Gitee API 中不存在 tag：$Tag" }
+    if ($matchingTags.Count -ne 1) { throw "Gitee API 中 tag 不唯一：$Tag（$($matchingTags.Count) 项）" }
+    $tagEntry = $matchingTags[0]
+    $commit = $tagEntry.commit.sha
+    if ($commit -isnot [string]) { throw 'Resolved Gitee API commit 必须是单个 System.String' }
     if ($commit.Trim() -notmatch '^[0-9a-fA-F]{40}$') {
         throw "Resolved Gitee API commit 不是完整 40 位 SHA：$($commit.Trim())"
     }

@@ -77,12 +77,20 @@ try {
     Assert-MatchingAsset -ExpectedPath $apk -ExistingPath $copy -Label APK
     [IO.File]::WriteAllBytes($copy, [byte[]](4, 3, 2, 1))
     Expect-Failure { Assert-MatchingAsset -ExpectedPath $apk -ExistingPath $copy -Label APK } 'Gitee APK hash 冲突'
-    $validTag = [pscustomobject]@{
-        name = 'v1.27.2'; commit = [pscustomobject]@{ sha = ('A' * 40) }
+    $expectedTagCommit = '45be3fe662eda26d1fb77ab872bd3864c1224488'
+    $apiTags = @(1..9 | ForEach-Object {
+        $name = if ($_ -eq 7) { 'v1.27.2' } elseif ($_ -eq 5) { 'v1.27.0' } `
+            elseif ($_ -eq 6) { 'v1.27.1' } else { "v1.26.$_" }
+        $commit = if ($_ -eq 7) { $expectedTagCommit } else { '{0:x40}' -f $_ }
+        [pscustomobject]@{ name = $name; commit = [pscustomobject]@{ sha = $commit } }
+    })
+    $validTag = $apiTags[6]
+    # Invoke-RestMethod 可把 JSON 顶层数组作为一个对象输出；用嵌套形态复现 Build #71。
+    $apiCommit = Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags (,$apiTags)
+    if ($apiCommit -isnot [string] -or $apiCommit -cne $expectedTagCommit) {
+        throw 'Gitee 多 tag API 响应未解析为目标 scalar string'
     }
-    $apiCommit = Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @($validTag)
-    if ($apiCommit -cne ('a' * 40)) { throw 'Gitee tag API commit 解析失败' }
-    Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit $apiCommit
+    Assert-TagCommitMatch -GitHubCommit $expectedTagCommit -GiteeCommit $apiCommit
     Expect-Failure { Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @() } 'Gitee tag 不存在'
     Expect-Failure {
         Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @($validTag, $validTag)
