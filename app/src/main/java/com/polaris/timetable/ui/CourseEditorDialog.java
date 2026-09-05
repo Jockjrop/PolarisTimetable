@@ -494,7 +494,7 @@ public final class CourseEditorDialog {
         editText.setTextSize(16);
         editText.setSingleLine(true);
         editText.setEllipsize(TextUtils.TruncateAt.END);
-        editText.setGravity(Gravity.CENTER);
+        editText.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         editText.setIncludeFontPadding(false);
         editText.setPadding(0, 0, 0, 0);
         editText.setBackgroundColor(Color.TRANSPARENT);
@@ -516,26 +516,25 @@ public final class CourseEditorDialog {
                 return;
             }
             Rect target = new Rect(0, -dp(16), input.getWidth(), input.getHeight() + dp(24));
-            scrollView.requestChildRectangleOnScreen(input, target, false);
+            input.requestRectangleOnScreen(target, true);
         }, delayMillis);
     }
 
     /**
      * 全屏课程编辑页在 edge-to-edge 与部分输入法组合下不会可靠触发系统 resize，
-     * 因此用 IME inset 扩大 ScrollView 的可滚动底部，并重新定位当前焦点。
+     * 因此用 IME inset 缩小页面实际视口，并通过输入框的父链重新定位当前焦点。
      */
     private void installImeAvoidance(Dialog dialog, View page, ScrollView scrollView) {
-        scrollView.setClipToPadding(false);
+        // 缩小实际内容视口，确保 ScrollView 的自动焦点滚动以键盘上沿为边界。
         ViewCompat.setOnApplyWindowInsetsListener(page, (view, insets) -> {
             boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
             int imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
             int navigationBottom = insets.getInsets(
                     WindowInsetsCompat.Type.navigationBars()).bottom;
-            int bottomPadding = imeVisible
-                    ? Math.max(0, imeBottom - navigationBottom) + dp(16) : 0;
-            if (scrollView.getPaddingBottom() != bottomPadding) {
-                scrollView.setPadding(scrollView.getPaddingLeft(), scrollView.getPaddingTop(),
-                        scrollView.getPaddingRight(), bottomPadding);
+            int bottomPadding = Math.max(imeBottom, navigationBottom);
+            if (page.getPaddingBottom() != bottomPadding) {
+                page.setPadding(page.getPaddingLeft(), page.getPaddingTop(),
+                        page.getPaddingRight(), bottomPadding);
             }
             if (imeVisible) {
                 View focused = dialog.getCurrentFocus();
@@ -1125,6 +1124,7 @@ public final class CourseEditorDialog {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false);
         window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         window.setBackgroundDrawable(new ColorDrawable(backgroundColor));
         window.getDecorView().setBackgroundColor(backgroundColor);

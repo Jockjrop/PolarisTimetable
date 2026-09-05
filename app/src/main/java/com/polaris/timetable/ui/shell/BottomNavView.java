@@ -131,13 +131,10 @@ public class BottomNavView extends LinearLayout {
 
     private TextView navItem(int tab) {
         TextView item = new TextView(getContext());
-        item.setText(host.navLabel(tab, host.navTabActive(tab)));
         item.setGravity(Gravity.CENTER);
         item.setTextSize(14);
         item.setLineSpacing(0f, 0.92f);
-        boolean active = host.navTabActive(tab);
-        item.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-        item.setTextColor(active ? host.navInkColor() : host.navMutedColor());
+        applyTabState(item, tab, host.navTabActive(tab));
         item.setOnClickListener(v -> host.onNavTabSelected(tab));
         host.attachNavPressFeedback(item);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -158,26 +155,33 @@ public class BottomNavView extends LinearLayout {
     /** tab 状态变化后更新三个入口的文本与字重。 */
     public void updateTabs(boolean schedule, boolean plan, boolean mine) {
         if (scheduleNav != null) {
-            scheduleNav.setText(host.navLabel(0, schedule));
-            scheduleNav.setTypeface(schedule ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            applyTabState(scheduleNav, 0, schedule);
         }
         if (planNav != null) {
-            planNav.setText(host.navLabel(1, plan));
-            planNav.setTypeface(plan ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            applyTabState(planNav, 1, plan);
         }
         if (myNav != null) {
-            myNav.setText(host.navLabel(2, mine));
-            myNav.setTypeface(mine ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            applyTabState(myNav, 2, mine);
         }
     }
 
     /** 主题/明暗变化后刷新入口颜色。 */
-    public void applyTabColors(boolean scheduleActive, boolean mineActive) {
+    public void applyTabColors(boolean scheduleActive, boolean planActive, boolean mineActive) {
         if (scheduleNav != null) {
             scheduleNav.setTextColor(scheduleActive ? host.navInkColor() : host.navMutedColor());
+        }
+        if (planNav != null) {
+            planNav.setTextColor(planActive ? host.navInkColor() : host.navMutedColor());
         }
         if (myNav != null) {
             myNav.setTextColor(mineActive ? host.navInkColor() : host.navMutedColor());
         }
+    }
+
+    private void applyTabState(TextView item, int tab, boolean active) {
+        item.setText(host.navLabel(tab, active));
+        item.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        item.setTextColor(active ? host.navInkColor() : host.navMutedColor());
+        item.setSelected(active);
     }
 }
