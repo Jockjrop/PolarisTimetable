@@ -28,6 +28,18 @@ try {
             if ($_.Exception.Message -eq "未拒绝：$Name") { throw }
         }
     }
+    function Expect-FailureMatch([scriptblock]$Action, [string]$Pattern, [string]$Name) {
+        try { & $Action; throw "未拒绝：$Name" } catch {
+            if ($_.Exception.Message -eq "未拒绝：$Name") { throw }
+            if ($_.Exception.Message -notmatch $Pattern) { throw "失败信息不明确：$Name" }
+        }
+    }
+    function New-TestHttpError([int]$StatusCode, [int]$RetryAfter = -1) {
+        $exception = [Exception]::new("test HTTP $StatusCode")
+        $exception.Data['StatusCode'] = $StatusCode
+        if ($RetryAfter -ge 0) { $exception.Data['RetryAfter'] = $RetryAfter }
+        return $exception
+    }
 
     $previous = Join-Path $root 'previous.json'
     Write-Manifest $previous '1.27.1' 12701 $sha 4
@@ -65,46 +77,78 @@ try {
     Assert-MatchingAsset -ExpectedPath $apk -ExistingPath $copy -Label APK
     [IO.File]::WriteAllBytes($copy, [byte[]](4, 3, 2, 1))
     Expect-Failure { Assert-MatchingAsset -ExpectedPath $apk -ExistingPath $copy -Label APK } 'Gitee APK hash 冲突'
-    Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit ('a' * 40)
+    $validTag = [pscustomobject]@{
+        name = 'v1.27.2'; commit = [pscustomobject]@{ sha = ('A' * 40) }
+    }
+    $apiCommit = Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @($validTag)
+    if ($apiCommit -cne ('a' * 40)) { throw 'Gitee tag API commit 解析失败' }
+    Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit $apiCommit
+    Expect-Failure { Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @() } 'Gitee tag 不存在'
+    Expect-Failure {
+        Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @($validTag, $validTag)
+    } 'Gitee tag 重复'
+    $shortTag = [pscustomobject]@{
+        name = 'v1.27.2'; commit = [pscustomobject]@{ sha = '45be3fe' }
+    }
+    Expect-Failure { Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @($shortTag) } 'Gitee API 短 SHA'
     Expect-Failure { Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit ('b' * 40) } 'tag commit 冲突'
-    Expect-Failure { Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit ('a' * 7) } '短 tag SHA'
+    Expect-Failure { Assert-TagCommitMatch -GitHubCommit ('a' * 7) -GiteeCommit ('a' * 40) } 'GitHub 短 SHA'
 
-    $lightweightCommit = Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
-        "$('c' * 40)`trefs/tags/v1.27.2"
-    )
-    if ($lightweightCommit -ne ('c' * 40)) { throw 'lightweight tag 解析失败' }
+    $apiAttempts = 0
+    $delays = @()
+    $apiResult = Invoke-GiteeApiRequest -Method Get -Uri 'https://gitee.test/tags' `
+        -Request {
+            $script:apiAttempts++
+            if ($script:apiAttempts -eq 1) { throw (New-TestHttpError 429 7) }
+            return 'ok'
+        } -Delay { param($Seconds) $script:delays += $Seconds }
+    if ($apiResult -ne 'ok' -or $apiAttempts -ne 2 -or $delays.Count -ne 1 -or $delays[0] -ne 7) {
+        throw 'HTTP 429 未遵循 Retry-After'
+    }
 
-    $annotatedCommit = Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
-        "$('d' * 40)`trefs/tags/v1.27.2",
-        "$('e' * 40)`trefs/tags/v1.27.2^{}"
-    )
-    if ($annotatedCommit -ne ('e' * 40)) { throw 'annotated tag 未使用 peeled commit' }
-    Expect-Failure {
-        Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
-            "$('c' * 40)`trefs/tags/v1.27.2",
-            "$('d' * 40)`trefs/tags/v1.27.2"
-        )
-    } '重复 tag ref'
-    Expect-Failure {
-        Resolve-GitTagCommit -Tag v1.27.2 -LsRemoteOutput @(
-            "$('c' * 39)`trefs/tags/v1.27.2"
-        )
-    } '异常 tag ref 格式'
+    $apiAttempts = 0
+    $delays = @()
+    $apiResult = Invoke-GiteeApiRequest -Method Get -Uri 'https://gitee.test/tags' `
+        -Request {
+            $script:apiAttempts++
+            if ($script:apiAttempts -lt 3) { throw (New-TestHttpError 429) }
+            return 'ok'
+        } -Delay { param($Seconds) $script:delays += $Seconds }
+    if ($apiResult -ne 'ok' -or $apiAttempts -ne 3 -or
+            (@($delays) -join ',') -ne '2,5') {
+        throw 'HTTP 429 指数退避错误'
+    }
 
-    $attempts = 0
-    $delays = 0
-    Expect-Failure {
-        Wait-GitRemoteTagCommit -RepositoryUrl 'https://gitee.example/repo.git' -Tag v1.27.2 `
-            -MaxAttempts 3 -RetryDelaySeconds 0 `
-            -Query { param($Url, $TagName) $script:attempts++; return $null } `
-            -Delay { param($Seconds) $script:delays++ }
-    } '找不到 tag 时有限重试'
-    if ($attempts -ne 3 -or $delays -ne 2) { throw '找不到 tag 时重试次数不正确' }
+    $apiAttempts = 0
+    $delays = @()
+    Expect-FailureMatch {
+        Invoke-GiteeApiRequest -Method Get -Uri 'https://gitee.test/tags' -MaxAttempts 3 `
+            -Request { $script:apiAttempts++; throw (New-TestHttpError 429) } `
+            -Delay { param($Seconds) $script:delays += $Seconds }
+    } 'HTTP 429.*3 次' 'HTTP 429 超过上限'
+    if ($apiAttempts -ne 3 -or (@($delays) -join ',') -ne '2,5') {
+        throw 'HTTP 429 超限重试次数错误'
+    }
 
-    $apiCommit = 'f' * 40
-    $gitRefCommit = 'a' * 40
-    if ($apiCommit -eq $gitRefCommit) { throw 'REST API 差异测试数据无效' }
-    Assert-TagCommitMatch -GitHubCommit ('a' * 40) -GiteeCommit $gitRefCommit
+    Expect-FailureMatch {
+        Invoke-GiteeApiRequest -Method Get -Uri 'https://gitee.test/tags' `
+            -Request { throw (New-TestHttpError 401) } -Delay { throw '401 不应等待' }
+    } '认证失败.*HTTP 401' 'HTTP 401'
+    Expect-FailureMatch {
+        Invoke-GiteeApiRequest -Method Get -Uri 'https://gitee.test/tags' `
+            -Request { throw (New-TestHttpError 403) } -Delay { throw '403 不应等待' }
+    } '权限不足.*HTTP 403' 'HTTP 403'
+
+    $apiAttempts = 0
+    $delays = @()
+    Expect-FailureMatch {
+        Invoke-GiteeApiRequest -Method Get -Uri 'https://gitee.test/tags' -MaxAttempts 3 `
+            -Request { $script:apiAttempts++; throw (New-TestHttpError 503) } `
+            -Delay { param($Seconds) $script:delays += $Seconds }
+    } '服务错误.*HTTP 503.*3 次' 'HTTP 5xx'
+    if ($apiAttempts -ne 3 -or (@($delays) -join ',') -ne '2,5') {
+        throw 'HTTP 5xx 有限重试错误'
+    }
 
     $workflow = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../../.github/workflows/build.yml')
     $expectedInstrumentedCondition = "    if: github.event_name != 'workflow_dispatch' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))"
@@ -130,97 +174,16 @@ try {
     if (-not (Test-InstrumentedCondition push refs/tags/v1.27.2)) { throw 'push tag 应启动 instrumented' }
     if (-not (Test-InstrumentedCondition pull_request refs/pull/1/merge)) { throw 'PR 应启动 instrumented' }
 
-    $testToken = 'gitee-test-token-must-not-leak'
-    $capturedRequest = $null
-    $askPassContents = $null
-    $authenticatedCommit = Get-GitRemoteTagCommit `
-        -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
-        -Tag v1.27.2 -Username Jockjrop -Token $testToken -CommandRunner {
-            param($Request)
-            $script:capturedRequest = $Request
-            $script:askPassContents = @($Request.AskPassFiles | ForEach-Object {
-                Get-Content -Raw -LiteralPath $_
-            }) -join "`n"
-            return [pscustomobject]@{
-                ExitCode = 0
-                StandardOutput = "$('a' * 40)`trefs/tags/v1.27.2`n"
-                StandardError = ''
-            }
-        }
-    if ($authenticatedCommit -ne ('a' * 40)) { throw '认证 Git ls-remote 成功结果解析失败' }
-    if ($capturedRequest.Environment.GIT_ASKPASS -ne $capturedRequest.AskPassPath -or
-            $capturedRequest.Environment.GIT_ASKPASS_REQUIRE -ne 'force' -or
-            $capturedRequest.Environment.GIT_TERMINAL_PROMPT -ne '0' -or
-            $capturedRequest.Environment.GITEE_GIT_USERNAME -ne 'Jockjrop' -or
-            $capturedRequest.Environment.GITEE_TOKEN -ne $testToken) {
-        throw 'GIT_ASKPASS 进程环境不完整'
-    }
-    $commandText = @($capturedRequest.FileName) + @($capturedRequest.Arguments) -join ' '
-    if ($commandText.Contains($testToken) -or $askPassContents.Contains($testToken) -or
-            $capturedRequest.Arguments -notcontains 'credential.helper=') {
-        throw 'Git 命令、URL 或 askpass 文件泄露 Token，或未清空 credential.helper'
-    }
-    Expect-Failure {
-        Get-GitRemoteTagCommit `
-            -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
-            -Tag v1.27.2 -Username Jockjrop -Token '' -CommandRunner { throw '不应执行匿名 Git' }
-    } '缺少凭据时拒绝匿名访问'
-
-    try {
-        Get-GitRemoteTagCommit `
-            -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
-            -Tag v1.27.2 -Username Jockjrop -Token $testToken -CommandRunner {
-                return [pscustomobject]@{
-                    ExitCode = 128
-                    StandardOutput = ''
-                    StandardError = "fatal: unable to access repository: HTTP 403 Forbidden $testToken"
-                }
-            }
-        throw '认证 Git exit 128 未被拒绝'
-    } catch {
-        $failure = $_.Exception.Message
-        if ($failure -eq '认证 Git exit 128 未被拒绝') { throw }
-        if ($failure -notmatch 'category: HTTP 403' -or $failure -notmatch 'git exit code: 128' -or
-                $failure -notmatch 'stderr:' -or $failure.Contains($testToken)) {
-            throw '认证 Git exit 128 未保留安全、可诊断的 stderr'
-        }
-    }
-
-    $transportCases = @(
-        @{ Error = 'fatal: Could not resolve host: gitee.com'; Category = 'DNS' },
-        @{ Error = 'fatal: SSL certificate problem'; Category = 'TLS' },
-        @{ Error = 'fatal: HTTP 401 Unauthorized'; Category = 'HTTP 401' },
-        @{ Error = 'fatal: HTTP 403 Forbidden'; Category = 'HTTP 403' },
-        @{ Error = 'fatal: Failed to connect to gitee.com'; Category = 'Connection' },
-        @{ Error = 'fatal: Authentication failed'; Category = 'Authentication' },
-        @{ Error = 'fatal: unexpected transport failure'; Category = 'Other' }
-    )
-    foreach ($case in $transportCases) {
-        $script:transportError = $case.Error
-        try {
-            Get-GitRemoteTagCommit `
-                -RepositoryUrl 'https://Jockjrop@gitee.com/Jockjrop/polaris-course-schedule.git' `
-                -Tag v1.27.2 -Username Jockjrop -Token $testToken -CommandRunner {
-                    return [pscustomobject]@{
-                        ExitCode = 128
-                        StandardOutput = ''
-                        StandardError = $script:transportError
-                    }
-                }
-            throw "Git transport 分类未失败：$($case.Category)"
-        } catch {
-            if ($_.Exception.Message -eq "Git transport 分类未失败：$($case.Category)") { throw }
-            if ($_.Exception.Message -notmatch "category: $([regex]::Escape($case.Category))") {
-                throw "Git transport 错误分类失败：$($case.Category)"
-            }
-        }
-    }
-
     $recovery = $workflow.Substring($workflow.IndexOf('  recover-gitee-release:'))
     if ($recovery -match 'gh release (create|edit|upload|delete)') {
         throw 'workflow_dispatch 恢复 job 不得修改 GitHub Release'
     }
-    Write-Host 'release safety tests: 25 passed'
+    $publisher = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'publish-gitee-release.ps1')
+    if ($publisher -match 'ls-remote|GIT_ASKPASS|GIT_TERMINAL_PROMPT|credential\.helper' -or
+            ([regex]::Matches($publisher, "'/tags\?per_page=100&page=1'")).Count -ne 1) {
+        throw 'Gitee 发布路径未彻底收敛为单次 tags API 调用'
+    }
+    Write-Host 'release safety tests: 27 passed'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force
 }

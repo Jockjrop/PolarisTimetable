@@ -93,239 +93,114 @@ function Get-GiteeReleaseAction([int]$MatchingReleaseCount) {
     throw '同一 tag 存在多个 Gitee Release，拒绝继续'
 }
 
-function Resolve-GitTagCommit {
+function Resolve-GiteeApiTagCommit {
     param(
         [Parameter(Mandatory = $true)][string]$Tag,
-        [AllowEmptyCollection()][string[]]$LsRemoteOutput
+        [AllowEmptyCollection()][object[]]$Tags
     )
 
-    $tagRef = "refs/tags/$Tag"
-    $peeledRef = "$tagRef^{}"
-    $refs = @{}
-    foreach ($line in @($LsRemoteOutput)) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        if ($line -notmatch '^([0-9a-fA-F]{40})\s+(\S+)$') {
-            throw "Gitee tag ref 输出格式异常：$line"
+    $matches = @($Tags | Where-Object { $_.name -ceq $Tag })
+    if ($matches.Count -eq 0) { throw "Gitee API 中不存在 tag：$Tag" }
+    if ($matches.Count -ne 1) { throw "Gitee API 中 tag 不唯一：$Tag（$($matches.Count) 项）" }
+    $commit = [string]$matches[0].commit.sha
+    if ($commit.Trim() -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "Resolved Gitee API commit 不是完整 40 位 SHA：$($commit.Trim())"
+    }
+    return $commit.Trim().ToLowerInvariant()
+}
+
+function Get-GiteeApiErrorInfo([Management.Automation.ErrorRecord]$ErrorRecord) {
+    $statusCode = $null
+    $retryAfter = $null
+    $responseProperty = $ErrorRecord.Exception.PSObject.Properties['Response']
+    $response = if ($null -eq $responseProperty) { $null } else { $responseProperty.Value }
+    if ($ErrorRecord.Exception.Data.Contains('StatusCode')) {
+        $statusCode = [int]$ErrorRecord.Exception.Data['StatusCode']
+    } elseif ($null -ne $response -and $null -ne $response.StatusCode) {
+        $statusCode = [int]$response.StatusCode
+    }
+    if ($ErrorRecord.Exception.Data.Contains('RetryAfter')) {
+        $retryAfter = [int]$ErrorRecord.Exception.Data['RetryAfter']
+    } elseif ($null -ne $response -and $null -ne $response.Headers -and
+            $null -ne $response.Headers.RetryAfter) {
+        $header = $response.Headers.RetryAfter
+        if ($null -ne $header.Delta) {
+            $retryAfter = [int][Math]::Ceiling($header.Delta.TotalSeconds)
+        } elseif ($null -ne $header.Date) {
+            $retryAfter = [int][Math]::Ceiling(($header.Date - [DateTimeOffset]::UtcNow).TotalSeconds)
         }
-        $sha = $Matches[1].ToLowerInvariant()
-        $refName = $Matches[2]
-        if ($refName -ne $tagRef -and $refName -ne $peeledRef) {
-            throw "Gitee tag ref 输出包含意外引用：$refName"
-        }
-        if ($refs.ContainsKey($refName)) {
-            throw "Gitee tag ref 输出包含重复引用：$refName"
-        }
-        $refs[$refName] = $sha
     }
-
-    if ($refs.Count -eq 0) { return $null }
-    if (-not $refs.ContainsKey($tagRef)) {
-        throw "Gitee tag ref 输出缺少引用：$tagRef"
-    }
-    if ($refs.ContainsKey($peeledRef)) {
-        return $refs[$peeledRef]
-    }
-    return $refs[$tagRef]
-}
-
-function Get-SanitizedGitTransportError([string]$StandardError, [string]$Token) {
-    $safeError = if ($null -eq $StandardError) { '' } else { $StandardError.Trim() }
-    if (-not [string]::IsNullOrEmpty($Token)) {
-        $safeError = $safeError.Replace($Token, '***')
-    }
-    $safeError = [regex]::Replace($safeError,
-        '(?i)(Authorization\s*:\s*(?:Bearer|token)\s+)\S+', '$1***')
-    $safeError = [regex]::Replace($safeError,
-        '(?i)https://[^\s/@:]+:[^\s/@]+@', 'https://***@')
-    if ([string]::IsNullOrWhiteSpace($safeError)) { return '<empty>' }
-    if ($safeError.Length -gt 4000) {
-        return $safeError.Substring(0, 4000) + '... <truncated>'
-    }
-    return $safeError
-}
-
-function Get-GitTransportErrorCategory([string]$StandardError) {
-    if ($StandardError -match '(?i)could not resolve host|name or service not known|temporary failure in name resolution') {
-        return 'DNS'
-    }
-    if ($StandardError -match '(?i)SSL|TLS|certificate') { return 'TLS' }
-    if ($StandardError -match '(?i)(HTTP[^\r\n]*\b401\b|error:\s*401\b|unauthorized)') { return 'HTTP 401' }
-    if ($StandardError -match '(?i)(HTTP[^\r\n]*\b403\b|error:\s*403\b|forbidden)') { return 'HTTP 403' }
-    if ($StandardError -match '(?i)failed to connect|could not connect|connection (?:timed out|refused|reset)') {
-        return 'Connection'
-    }
-    if ($StandardError -match '(?i)authentication failed|invalid username or password|access denied|terminal prompts disabled|could not read (?:username|password)') {
-        return 'Authentication'
-    }
-    return 'Other'
-}
-
-function New-GiteeAskPassFiles([string]$Directory) {
-    $files = [Collections.Generic.List[string]]::new()
-    if ($IsWindows) {
-        $helperPath = Join-Path $Directory 'gitee-askpass.ps1'
-        $launcherPath = Join-Path $Directory 'gitee-askpass.cmd'
-        @'
-param([string]$Prompt)
-if ($Prompt -match '(?i)username') {
-    [Console]::Out.WriteLine($env:GITEE_GIT_USERNAME)
-    exit 0
-}
-if ($Prompt -match '(?i)password') {
-    [Console]::Out.WriteLine($env:GITEE_TOKEN)
-    exit 0
-}
-exit 1
-'@ | Set-Content -LiteralPath $helperPath -Encoding utf8NoBOM
-        @'
-@echo off
-pwsh.exe -NoLogo -NoProfile -File "%~dp0gitee-askpass.ps1" "%~1"
-'@ | Set-Content -LiteralPath $launcherPath -Encoding ascii
-        $files.Add($helperPath)
-        $files.Add($launcherPath)
-        return [pscustomobject]@{ Path = $launcherPath; Files = $files.ToArray() }
-    }
-
-    $askPassPath = Join-Path $Directory 'gitee-askpass.sh'
-    @'
-#!/bin/sh
-case "$1" in
-  *sername*) printf '%s\n' "$GITEE_GIT_USERNAME" ;;
-  *assword*) printf '%s\n' "$GITEE_TOKEN" ;;
-  *) exit 1 ;;
-esac
-'@ | Set-Content -LiteralPath $askPassPath -Encoding utf8NoBOM
-    $mode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor `
-        [IO.UnixFileMode]::UserExecute
-    [IO.File]::SetUnixFileMode($askPassPath, $mode)
-    $files.Add($askPassPath)
-    return [pscustomobject]@{ Path = $askPassPath; Files = $files.ToArray() }
-}
-
-function Invoke-GitProcess([object]$Request) {
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $Request.FileName
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    foreach ($argument in $Request.Arguments) {
-        $startInfo.ArgumentList.Add($argument)
-    }
-    foreach ($entry in $Request.Environment.GetEnumerator()) {
-        $startInfo.Environment[$entry.Key] = $entry.Value
-    }
-
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    try {
-        if (-not $process.Start()) { throw '无法启动 git 进程' }
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
-        return [pscustomobject]@{
-            ExitCode = $process.ExitCode
-            StandardOutput = $stdoutTask.GetAwaiter().GetResult()
-            StandardError = $stderrTask.GetAwaiter().GetResult()
-        }
-    } finally {
-        $process.Dispose()
+    return [pscustomobject]@{
+        StatusCode = $statusCode
+        RetryAfter = if ($retryAfter -gt 0) { $retryAfter } else { $null }
+        Message = $ErrorRecord.Exception.Message
     }
 }
 
-function Get-GitRemoteTagCommit {
+function Invoke-GiteeApiRequest {
     param(
-        [Parameter(Mandatory = $true)][string]$RepositoryUrl,
-        [Parameter(Mandatory = $true)][string]$Tag,
-        [Parameter(Mandatory = $true)][string]$Username,
-        [Parameter(Mandatory = $true)][string]$Token,
-        [scriptblock]$CommandRunner
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Username) -or [string]::IsNullOrWhiteSpace($Token)) {
-        throw 'Gitee Git HTTPS 认证信息不完整，拒绝匿名读取 tag ref'
-    }
-    if ($RepositoryUrl -notmatch '^https://[^/]+@gitee\.com/' -or
-            $RepositoryUrl -match '(?i)^https://[^/]+:[^/]+@' -or
-            $RepositoryUrl.Contains($Token)) {
-        throw 'Gitee Git URL 非法或包含凭据，拒绝执行'
-    }
-
-    $tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ("polaris-gitee-askpass-" + [guid]::NewGuid())
-    [IO.Directory]::CreateDirectory($tempDirectory) | Out-Null
-    $askPass = $null
-    try {
-        $askPass = New-GiteeAskPassFiles $tempDirectory
-        $arguments = @(
-            '-c', 'credential.helper=', 'ls-remote', '--tags', $RepositoryUrl,
-            "refs/tags/$Tag", "refs/tags/$Tag^{}"
-        )
-        $processEnvironment = @{
-            GIT_ASKPASS = $askPass.Path
-            GIT_ASKPASS_REQUIRE = 'force'
-            GIT_TERMINAL_PROMPT = '0'
-            GITEE_GIT_USERNAME = $Username
-            GITEE_TOKEN = $Token
-        }
-        $request = [pscustomobject]@{
-            FileName = 'git'
-            Arguments = $arguments
-            Environment = $processEnvironment
-            AskPassPath = $askPass.Path
-            AskPassFiles = $askPass.Files
-        }
-        $result = if ($null -eq $CommandRunner) {
-            Invoke-GitProcess $request
-        } else {
-            & $CommandRunner $request
-        }
-        if ($null -eq $result -or $null -eq $result.ExitCode) {
-            throw 'Gitee Git 命令执行器未返回退出码'
-        }
-        if ([int]$result.ExitCode -ne 0) {
-            $safeError = Get-SanitizedGitTransportError $result.StandardError $Token
-            $category = Get-GitTransportErrorCategory $safeError
-            throw "Unable to resolve Gitee tag through authenticated Git HTTPS`ncategory: $category`ngit exit code: $($result.ExitCode)`nstderr: $safeError"
-        }
-        $output = @($result.StandardOutput -split '\r?\n')
-        return Resolve-GitTagCommit -Tag $Tag -LsRemoteOutput $output
-    } finally {
-        if ($null -ne $askPass) {
-            foreach ($file in $askPass.Files) {
-                if ([IO.File]::Exists($file)) { [IO.File]::Delete($file) }
-            }
-        }
-        if ([IO.Directory]::Exists($tempDirectory)) { [IO.Directory]::Delete($tempDirectory) }
-    }
-}
-
-function Wait-GitRemoteTagCommit {
-    param(
-        [Parameter(Mandatory = $true)][string]$RepositoryUrl,
-        [Parameter(Mandatory = $true)][string]$Tag,
-        [string]$Username,
-        [string]$Token,
-        [ValidateRange(1, 100)][int]$MaxAttempts = 12,
-        [ValidateRange(0, 300)][int]$RetryDelaySeconds = 5,
-        [scriptblock]$Query,
+        [Parameter(Mandatory = $true)][string]$Method,
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [hashtable]$Headers,
+        [hashtable]$Body,
+        [hashtable]$Form,
+        [ValidateRange(1, 10)][int]$MaxAttempts = 5,
+        [bool]$RetryServerErrors = $true,
+        [scriptblock]$Request,
         [scriptblock]$Delay
     )
 
-    if ($null -eq $Query) {
-        $Query = {
-            param($Url, $TagName, $GitUsername, $GitToken)
-            Get-GitRemoteTagCommit -RepositoryUrl $Url -Tag $TagName `
-                -Username $GitUsername -Token $GitToken
+    if ($null -ne $Body -and $null -ne $Form) { throw 'Gitee API 请求不能同时使用 Body 和 Form' }
+    if ($null -eq $Delay) { $Delay = { param($Seconds) Start-Sleep -Seconds $Seconds } }
+    $backoff = @(2, 5, 10, 20)
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            if ($null -ne $Request) {
+                return & $Request ([pscustomobject]@{
+                    Method = $Method; Uri = $Uri; Headers = $Headers; Body = $Body; Form = $Form
+                })
+            }
+            $parameters = @{
+                Uri = $Uri; Method = $Method; Headers = $Headers; ErrorAction = 'Stop'
+            }
+            if ($null -ne $Body) { $parameters.Body = $Body }
+            if ($null -ne $Form) { $parameters.Form = $Form }
+            return Invoke-RestMethod @parameters
+        } catch {
+            $info = Get-GiteeApiErrorInfo $_
+            if ($info.StatusCode -eq 401) { throw "Gitee API 认证失败（HTTP 401）：$Method $Uri" }
+            if ($info.StatusCode -eq 403) { throw "Gitee API 权限不足（HTTP 403）：$Method $Uri" }
+            if ($info.StatusCode -eq 404) { throw "Gitee API 资源不存在（HTTP 404）：$Method $Uri" }
+            $retryable = $info.StatusCode -eq 429 -or
+                ($RetryServerErrors -and $info.StatusCode -ge 500 -and $info.StatusCode -le 599)
+            if ($retryable -and $attempt -lt $MaxAttempts) {
+                $delaySeconds = if ($info.StatusCode -eq 429 -and $null -ne $info.RetryAfter) {
+                    $info.RetryAfter
+                } else {
+                    $backoff[[Math]::Min($attempt - 1, $backoff.Count - 1)]
+                }
+                & $Delay $delaySeconds
+                continue
+            }
+            if ($info.StatusCode -eq 429) {
+                throw "Gitee API 限流重试已达上限（HTTP 429，$attempt 次）：$Method $Uri"
+            }
+            if ($info.StatusCode -ge 500 -and $info.StatusCode -le 599) {
+                throw "Gitee API 服务错误（HTTP $($info.StatusCode)，$attempt 次）：$Method $Uri"
+            }
+            $message = $info.Message
+            if ($message -match '(?i)could not resolve|name or service not known') {
+                throw "Gitee API DNS 解析失败：$Method $Uri"
+            }
+            if ($message -match '(?i)SSL|TLS|certificate') {
+                throw "Gitee API TLS 连接失败：$Method $Uri"
+            }
+            if ($message -match '(?i)connect|connection|timed out|timeout') {
+                throw "Gitee API 连接失败：$Method $Uri"
+            }
+            throw "Gitee API 请求失败：$Method $Uri"
         }
     }
-    if ($null -eq $Delay) {
-        $Delay = { param($Seconds) Start-Sleep -Seconds $Seconds }
-    }
-    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        $commit = & $Query $RepositoryUrl $Tag $Username $Token
-        if ($null -ne $commit) { return $commit }
-        if ($attempt -lt $MaxAttempts) { & $Delay $RetryDelaySeconds }
-    }
-    throw "等待 Gitee 镜像 tag 超时：$Tag（已尝试 $MaxAttempts 次）"
 }
 
 function Assert-TagCommitMatch([string]$GitHubCommit, [string]$GiteeCommit) {
@@ -335,15 +210,15 @@ function Assert-TagCommitMatch([string]$GitHubCommit, [string]$GiteeCommit) {
         throw "Expected GitHub commit 不是完整 40 位 SHA：$expected"
     }
     if ($resolved -notmatch '^[0-9a-fA-F]{40}$') {
-        throw "Resolved Gitee tag commit 不是完整 40 位 SHA：$resolved"
+        throw "Resolved Gitee API commit 不是完整 40 位 SHA：$resolved"
     }
     $expected = $expected.ToLowerInvariant()
     $resolved = $resolved.ToLowerInvariant()
     if ($expected -ne $resolved) {
-        throw "Gitee tag 与 GitHub tag commit 不一致`nExpected GitHub commit: $expected`nResolved Gitee tag commit: $resolved"
+        throw "Gitee tag 与 GitHub tag commit 不一致`nExpected GitHub commit: $expected`nResolved Gitee API commit: $resolved"
     }
 }
 
 Export-ModuleMember -Function Assert-ReleaseVersionGate, Assert-MatchingAsset, `
-    Get-GiteeReleaseAction, Resolve-GitTagCommit, Get-GitRemoteTagCommit, `
-    Wait-GitRemoteTagCommit, Assert-TagCommitMatch
+    Get-GiteeReleaseAction, Resolve-GiteeApiTagCommit, Invoke-GiteeApiRequest, `
+    Assert-TagCommitMatch

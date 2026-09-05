@@ -17,30 +17,19 @@ if ([string]::IsNullOrWhiteSpace($token)) {
     throw 'GITEE_TOKEN 未配置，无法发布 Gitee 更新源'
 }
 $apiRoot = "https://gitee.com/api/v5/repos/$Owner/$Repo"
-$gitRepositoryUrl = "https://$Owner@gitee.com/$Owner/$Repo.git"
 $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json' }
 $encodedTag = [Uri]::EscapeDataString($Tag)
 
 function Invoke-GiteeJson([string]$Method, [string]$Path, [hashtable]$Body) {
-    $parameters = @{
-        Uri = "$apiRoot$Path"
-        Method = $Method
-        Headers = $headers
-        ErrorAction = 'Stop'
-    }
-    if ($null -ne $Body) {
-        $parameters.Body = $Body
-    }
-    try {
-        return Invoke-RestMethod @parameters
-    } catch {
-        throw "Gitee API 请求失败：$Method $Path"
-    }
+    return Invoke-GiteeApiRequest -Method $Method -Uri "$apiRoot$Path" `
+        -Headers $headers -Body $Body -RetryServerErrors:($Method -ne 'Post')
 }
 
-# Pull 镜像可能稍晚同步 tag。只等待，不创建 tag；以公开 Git ref 核对它指向 GitHub 的同一 commit。
-$giteeTagCommit = Wait-GitRemoteTagCommit -RepositoryUrl $gitRepositoryUrl -Tag $Tag `
-    -Username $Owner -Token $token -MaxAttempts 12 -RetryDelaySeconds 5
+# Gitee Open API 是发布集成的唯一控制面；tag 列表只读取一次并在当前进程内复用。
+$tags = @(Invoke-GiteeJson 'Get' '/tags?per_page=100&page=1' $null)
+$giteeTagCommit = Resolve-GiteeApiTagCommit -Tag $Tag -Tags $tags
+Write-Host "Expected GitHub commit: $($ExpectedCommitSha.Trim().ToLowerInvariant())"
+Write-Host "Resolved Gitee API commit: $giteeTagCommit"
 Assert-TagCommitMatch -GitHubCommit $ExpectedCommitSha -GiteeCommit $giteeTagCommit
 
 $githubManifest = Get-Content -Raw -LiteralPath $GitHubManifestPath -Encoding UTF8 | ConvertFrom-Json
@@ -77,17 +66,9 @@ if ($null -eq $release.id) {
 $attachments = @(Invoke-GiteeJson 'Get' "/releases/$($release.id)/attach_files?per_page=100&page=1" $null)
 
 function Upload-GiteeAsset([string]$Path) {
-    try {
-        $uploadParameters = @{
-            Method = 'Post'
-            Uri = "$apiRoot/releases/$($release.id)/attach_files"
-            Headers = $headers
-            Form = @{ file = Get-Item -LiteralPath $Path }
-        }
-        return Invoke-RestMethod @uploadParameters
-    } catch {
-        throw "Gitee Release 附件上传失败：$([IO.Path]::GetFileName($Path))"
-    }
+    return Invoke-GiteeApiRequest -Method 'Post' `
+        -Uri "$apiRoot/releases/$($release.id)/attach_files" -Headers $headers `
+        -Form @{ file = Get-Item -LiteralPath $Path } -RetryServerErrors:$false
 }
 
 function Find-GiteeAsset([string]$Name) {
