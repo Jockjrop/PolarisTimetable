@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.util.Log;
 
 import com.polaris.timetable.Course;
+import com.polaris.timetable.SemesterStartDateDefaults;
 import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseStructureMapper;
 import com.polaris.timetable.model.CourseTimeMode;
@@ -20,6 +21,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 
 public class ScheduleRepository {
@@ -283,6 +285,9 @@ public class ScheduleRepository {
         saveSchedules(schedules);
         Config config = new Config();
         config.scheduleName = entry.name;
+        // 新表开学日期取当前学期锚点：Config 默认值是静态日期（随学期更替必然过期），
+        // 直接落库会让新建课表立刻"学期外"，周次钳制到末周导致头部显示错误的周日期。
+        config.firstWeekDay = SemesterStartDateDefaults.resolve(Calendar.getInstance());
         saveConfig(id, config);
         saveStructuredCourses(id, new ArrayList<>());
         return entry;

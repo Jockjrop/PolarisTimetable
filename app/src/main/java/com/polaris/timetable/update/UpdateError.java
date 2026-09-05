@@ -15,6 +15,10 @@ public enum UpdateError {
     INVALID_METADATA,
     /** 清单 schemaVersion 高于客户端支持值。 */
     UNSUPPORTED_SCHEMA,
+    /** 两个官方来源对同一 versionCode 给出的 APK 身份不一致。 */
+    SOURCE_MISMATCH,
+    /** 两个官方更新来源均不可用或均返回无效数据。 */
+    UPDATE_SERVICE_UNAVAILABLE,
     /** 设备 API 低于远端 APK minSdk。 */
     DEVICE_UNSUPPORTED,
     /** 可用空间不足（APK 大小 + 50 MiB 余量）。 */

@@ -2,7 +2,7 @@
 
 原生 Android 课程表应用（Java）：从教务系统 PDF 课表自动提取课程、节次、周次、地点与教师，以适配手机和平板的横向周课表展示。
 
-> **隐私承诺**：Polaris 默认不联网。仅当你手动检查更新，或主动开启"自动检查更新"后，应用才会访问官方更新地址获取版本信息与安装包（详见 [PRIVACY.md](PRIVACY.md)）。课程、课表、学校、账户资料、设置及导入文件不会上传。
+> **隐私承诺**：Polaris 默认不联网。仅当你手动检查更新，或主动开启"自动检查更新"后，应用才会访问官方 GitHub / Gitee 发布源获取版本信息与安装包（详见 [PRIVACY.md](PRIVACY.md)）。课程、课表、学校、账户资料、设置及导入文件不会上传。
 
 ## 功能
 
@@ -37,7 +37,7 @@
 - 「更多 → 关于 → 检查更新」手动检查稳定版更新，可开启每日一次的自动检查（默认关闭）
 - 检测到新版本时展示版本号、安装包大小、发布日期与更新说明，应用内下载并显示实时进度
 - 下载完成后进行大小、SHA-256、包名/版本与签名四层校验，全部通过才交给系统安装器由你确认覆盖安装
-- 更新数据仅来自官方 Release 清单（`latest.json`），检查与下载不携带任何课表或账户信息
+- 更新数据来自 Polaris 官方 GitHub / Gitee Release 清单（`latest.json`），Gitee 不可用时自动切换 GitHub；检查与下载不携带任何课表或账户信息
 
 ## 打开方式
 
@@ -72,10 +72,10 @@ CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_R
 - 强制要求签名 Secret（`POLARIS_RELEASE_KEYSTORE_B64` 等）；缺失时直接失败，**不再回退 Debug APK**
 - 用 `POLARIS_RELEASE_CERT_SHA256` 核对 APK 签名证书指纹，并用 `apkanalyzer` 核对包名与版本
 - 校验 Git 标签 = `v<versionName>`、`versionCode` 三段式映射且严格大于最近稳定清单
-- 以 `docs/releases/<versionName>.md` 为唯一来源生成 `latest.json` 与 `.sha256`（脚本 `tools/release/generate-update-manifest.ps1`，含协议自检），与正式 APK 一起上传 Release
+- 以 `docs/releases/<versionName>.md` 为唯一来源生成 GitHub / Gitee 的 `latest.json` 与 `.sha256`；同一个正式 APK 经复验后上传两个 Release
 - 客户端按稳定清单协议检查、下载、校验并交给系统安装器
 
-发布前需在仓库 Secrets 配置：`POLARIS_RELEASE_KEYSTORE_B64`、`POLARIS_RELEASE_STORE_PASSWORD`、`POLARIS_RELEASE_KEY_ALIAS`、`POLARIS_RELEASE_KEY_PASSWORD`、`POLARIS_RELEASE_CERT_SHA256`（证书 SHA-256 指纹），并维护者离线备份签名材料。
+发布前需在仓库 Secrets 配置：`POLARIS_RELEASE_KEYSTORE_B64`、`POLARIS_RELEASE_STORE_PASSWORD`、`POLARIS_RELEASE_KEY_ALIAS`、`POLARIS_RELEASE_KEY_PASSWORD`、`POLARIS_RELEASE_CERT_SHA256`（证书 SHA-256 指纹）和具有 Gitee Release 写权限的 `GITEE_TOKEN`，并由维护者离线备份签名材料。
 
 ## 学校 PDF 模板支持
 

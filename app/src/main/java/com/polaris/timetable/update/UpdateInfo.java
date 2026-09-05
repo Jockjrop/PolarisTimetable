@@ -107,6 +107,17 @@ public final class UpdateInfo {
         return required;
     }
 
+    /** 两个发布源是否描述同一个 APK；下载地址和说明页地址允许不同。 */
+    public boolean hasSameApkIdentity(UpdateInfo other) {
+        return other != null
+                && versionCode == other.versionCode
+                && apkSize == other.apkSize
+                && stringEquals(packageName, other.packageName)
+                && stringEquals(versionName, other.versionName)
+                && stringEquals(apkFileName, other.apkFileName)
+                && stringEquals(apkSha256, other.apkSha256);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {

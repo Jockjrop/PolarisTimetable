@@ -227,6 +227,69 @@ public class UpdateCoordinatorTest {
                 + "\",\"required\":" + required + "}";
     }
 
+    private String giteeManifest(int versionCode, String versionName, boolean required) {
+        return manifest(versionCode, versionName, required)
+                .replace("https://github.com/x",
+                        "https://gitee.com/Jockjrop/polaris-course-schedule");
+    }
+
+    private UpdateRepository sourceRepository(String giteeBody, UpdateError giteeFailure,
+                                              String githubBody, UpdateError githubFailure) {
+        return new UpdateRepository((URL url) -> new HttpURLConnection(url) {
+            private final boolean giteeApi = "gitee.com".equals(url.getHost())
+                    && url.getPath().endsWith("/releases/latest");
+            private final boolean giteeAsset = "gitee.com".equals(url.getHost()) && !giteeApi;
+            private final UpdateError failure = (giteeApi || giteeAsset)
+                    ? giteeFailure : githubFailure;
+
+            @Override public void connect() { }
+            @Override public void disconnect() { }
+            @Override public boolean usingProxy() { return false; }
+
+            @Override
+            public int getResponseCode() throws java.io.IOException {
+                if (failure == UpdateError.TIMEOUT) {
+                    throw new java.net.SocketTimeoutException("fake timeout");
+                }
+                return failure == UpdateError.HTTP ? 500 : 200;
+            }
+
+            @Override public String getHeaderField(String name) { return null; }
+
+            @Override
+            public InputStream getInputStream() throws java.io.IOException {
+                if (failure == UpdateError.NETWORK) {
+                    throw new java.io.IOException("fake network");
+                }
+                String body;
+                if (giteeApi) {
+                    java.util.regex.Matcher matcher = java.util.regex.Pattern
+                            .compile("\\\"versionName\\\":\\\"([^\\\"]+)\\\"")
+                            .matcher(giteeBody == null ? "" : giteeBody);
+                    String version = matcher.find() ? matcher.group(1) : "1.27.0";
+                    body = "{\"tag_name\":\"v" + version + "\",\"prerelease\":false,"
+                            + "\"assets\":[{\"name\":\"latest.json\","
+                            + "\"browser_download_url\":\"https://gitee.com/Jockjrop/"
+                            + "polaris-course-schedule/releases/download/v" + version
+                            + "/latest.json\"}]}";
+                } else {
+                    body = giteeAsset ? giteeBody : githubBody;
+                }
+                return new ByteArrayInputStream((body == null ? "" : body).getBytes(
+                        java.nio.charset.StandardCharsets.UTF_8));
+            }
+        });
+    }
+
+    private void useSources(String giteeBody, UpdateError giteeFailure,
+                            String githubBody, UpdateError githubFailure) {
+        coordinator = new UpdateCoordinator(prefs,
+                new UpdateJsonParser("com.polaris.timetable"),
+                sourceRepository(giteeBody, giteeFailure, githubBody, githubFailure),
+                Runnable::run, gateway, LOCAL_CODE, "1.26.1");
+        coordinator.attachHostForTest(host);
+    }
+
     /** 假仓库为内存实现，单线程执行器几乎瞬时完成；短暂等待后断言。 */
     private void runCheck() {
         coordinator.maybeAutoCheck();
@@ -456,5 +519,83 @@ public class UpdateCoordinatorTest {
     public void statusLineIdleFallsBackToCurrentVersion() {
         assertNotNull(coordinator.statusLineText());
         assertFalse(host.dialogs.size() > 0);
+    }
+
+    @Test
+    public void giteeNewVersionIsPreferredWhenGithubFails() {
+        useSources(giteeManifest(12700, "1.27.0", false), null,
+                null, UpdateError.HTTP);
+        runManualCheck();
+        assertEquals(1, host.dialogs.size());
+        assertEquals("gitee.com", host.dialogs.get(0).apkUrl().split("/")[2]);
+    }
+
+    @Test
+    public void giteeTimeoutFallsBackToGithub() {
+        useSources(null, UpdateError.TIMEOUT, manifestBody, null);
+        runManualCheck();
+        assertEquals(1, host.dialogs.size());
+        assertEquals("github.com", host.dialogs.get(0).apkUrl().split("/")[2]);
+    }
+
+    @Test
+    public void giteeHttpOrBrokenJsonFallsBackToGithub() {
+        for (Object value : new Object[]{UpdateError.HTTP, "broken"}) {
+            host.dialogs.clear();
+            useSources(value instanceof UpdateError ? null : (String) value,
+                    value instanceof UpdateError ? (UpdateError) value : null,
+                    manifestBody, null);
+            runManualCheck();
+            assertEquals(1, host.dialogs.size());
+            assertEquals("github.com", host.dialogs.get(0).apkUrl().split("/")[2]);
+        }
+    }
+
+    @Test
+    public void newerGithubBeatsCurrentGitee() {
+        useSources(giteeManifest(12601, "1.26.1", false), null,
+                manifest(12701, "1.27.1", false), null);
+        runManualCheck();
+        assertEquals(12701, host.dialogs.get(0).versionCode());
+        assertEquals("github.com", host.dialogs.get(0).apkUrl().split("/")[2]);
+    }
+
+    @Test
+    public void matchingSameVersionPrefersGitee() {
+        useSources(giteeManifest(12700, "1.27.0", false), null,
+                manifestBody, null);
+        runManualCheck();
+        assertEquals(1, host.dialogs.size());
+        assertEquals("gitee.com", host.dialogs.get(0).apkUrl().split("/")[2]);
+    }
+
+    @Test
+    public void sameVersionDifferentHashIsRejected() {
+        String different = manifestBody.replace(SHA,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        useSources(giteeManifest(12700, "1.27.0", false), null, different, null);
+        runManualCheck();
+        assertTrue(host.dialogs.isEmpty());
+        assertEquals(1, host.downloadFailures.size());
+    }
+
+    @Test
+    public void bothSourcesFailManualReportsButAutoStaysSilent() {
+        useSources(null, UpdateError.HTTP, null, UpdateError.NETWORK);
+        runManualCheck();
+        assertEquals(1, host.downloadFailures.size());
+
+        host.downloadFailures.clear();
+        prefs.setAutoCheckEnabled(true);
+        runCheck();
+        assertTrue(host.downloadFailures.isEmpty());
+    }
+
+    @Test
+    public void serverVersionBelowInstalledDoesNotDowngrade() {
+        useSources(giteeManifest(12600, "1.26.0", false), null,
+                manifest(12600, "1.26.0", false), null);
+        runManualCheck();
+        assertTrue(host.dialogs.isEmpty());
     }
 }

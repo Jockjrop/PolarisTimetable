@@ -292,6 +292,8 @@
     <string name="update_error_http">更新服务暂时不可用，请稍后重试</string>
     <string name="update_error_invalid_metadata">更新信息格式错误</string>
     <string name="update_error_unsupported_schema">更新协议版本过新，请到项目页面获取更新</string>
+    <string name="update_error_source_mismatch">更新源数据不一致，请稍后重试</string>
+    <string name="update_error_service_unavailable">更新服务暂时不可用，请稍后重试</string>
     <string name="update_error_device_unsupported">该更新不支持当前系统版本</string>
     <string name="update_error_insufficient_storage">存储空间不足，无法下载更新</string>
     <string name="update_error_cancelled">下载已取消</string>
@@ -374,7 +376,7 @@
     <!-- 学业事件（考试/DDL/实践，P4）。
          注意:"不关联"/"未指定"是选择对话框的比较值,保持字面量。 -->
     <string name="academic_title">考试 / DDL</string>
-    <string name="academic_entry">考试 / DDL 时间线</string>
+    <string name="plan_timeline_empty_hint">暂无考试 / DDL，点击右下角＋添加</string>
     <string name="academic_action_add">＋ 添加事件</string>
     <string name="academic_empty_hint">还没有考试 / 截止事件，点击上方「＋ 添加事件」</string>
     <string name="academic_unnamed">未命名事件</string>

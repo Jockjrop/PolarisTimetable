@@ -14,12 +14,15 @@ import android.widget.TextView;
 import com.polaris.timetable.R;
 import com.polaris.timetable.model.AcademicEvent;
 import com.polaris.timetable.model.StudyPlan;
+import com.polaris.timetable.time.CourseTimeResolver;
 import com.polaris.timetable.ui.DesignTokens;
 import com.polaris.timetable.ui.WindowSizeClass;
 import com.polaris.timetable.ui.shell.BottomNavView;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -92,6 +95,9 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         /** 打开考试/DDL 时间线对话框（P4）。 */
         void openAcademicTimeline();
 
+        /** 考试/DDL 栏数据快照（时间线事件列表，避免持有可变引用）。 */
+        List<AcademicEvent> academicEvents();
+
         /** 直接打开学业事件编辑器并预选类型（1.26.0 悬浮新增入口）。 */
         void showAcademicEventEditor(AcademicEvent.Type presetType);
 
@@ -115,13 +121,15 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     private FrameLayout planManageFrame;
     private LinearLayout planManageContent;
     private LinearLayout planManageHeader;
-    private TextView academicEntryButton;
+    private LinearLayout timelineListContainer;
 
     // 悬浮新增菜单：手机计划页与横屏平板管理浮层各一个实例，不共享视图引用。
     private PlanAddMenuView planPageMenu;
     private PlanAddMenuView planManageMenu;
     /** 计划页滚动内容（用于按悬浮按钮占用高度动态留白）。 */
     private LinearLayout planPageContent;
+    /** 计划页滚动容器：固有色在 refreshTheme 中随主题即时刷新。 */
+    private ScrollView planPageScroll;
 
     public PlanPageBuilder(Host host) {
         this.host = host;
@@ -150,25 +158,14 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         root.addView(scrollView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
+        planPageScroll = scrollView;
         planPageContent = page;
 
-        // 考试/DDL 时间线入口（P4）：只负责浏览与管理，新增统一走悬浮菜单。
-        TextView eventEntry = new TextView(context);
-        eventEntry.setText(context.getString(R.string.academic_entry));
-        eventEntry.setTextColor(host.accentColor());
-        eventEntry.setTextSize(15);
-        eventEntry.setTypeface(Typeface.DEFAULT_BOLD);
-        eventEntry.setGravity(Gravity.CENTER_VERTICAL);
-        eventEntry.setPadding(dp(context, 14), 0, dp(context, 14), 0);
-        eventEntry.setMinHeight(dp(context, 44));
-        eventEntry.setBackground(host.roundedBg(host.cardColorHex(), 18));
-        eventEntry.setOnClickListener(v -> host.openAcademicTimeline());
-        host.attachPressFeedback(eventEntry);
-        academicEntryButton = eventEntry;
-        LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44));
-        entryParams.setMargins(dp(context, 12), 0, dp(context, 12), dp(context, 10));
-        page.addView(eventEntry, entryParams);
+        // 上下两栏：上栏「考试 / DDL」、下栏「计划」，高度随各自数量自动变化，
+        // 整体随页面滚动；栏头与卡片均在 refreshList 中重建。
+        timelineListContainer = new LinearLayout(context);
+        timelineListContainer.setOrientation(LinearLayout.VERTICAL);
+        page.addView(timelineListContainer);
 
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
@@ -247,23 +244,10 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.MATCH_PARENT));
 
-        // 考试/DDL 时间线入口（P4，与手机计划页一致）：只负责浏览与管理。
-        TextView eventEntry = new TextView(context);
-        eventEntry.setText(context.getString(R.string.academic_entry));
-        eventEntry.setTextColor(host.accentColor());
-        eventEntry.setTextSize(15);
-        eventEntry.setTypeface(Typeface.DEFAULT_BOLD);
-        eventEntry.setGravity(Gravity.CENTER_VERTICAL);
-        eventEntry.setPadding(dp(context, 14), 0, dp(context, 14), 0);
-        eventEntry.setMinHeight(dp(context, 44));
-        eventEntry.setBackground(host.roundedBg(host.cardColorHex(), 18));
-        eventEntry.setOnClickListener(v -> host.openAcademicTimeline());
-        host.attachPressFeedback(eventEntry);
-        academicEntryButton = eventEntry;
-        LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 44));
-        entryParams.setMargins(0, 0, 0, dp(context, 10));
-        content.addView(eventEntry, entryParams);
+        // 上下两栏（与手机计划页一致）：考试/DDL 栏 + 计划栏。
+        timelineListContainer = new LinearLayout(context);
+        timelineListContainer.setOrientation(LinearLayout.VERTICAL);
+        content.addView(timelineListContainer);
 
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
@@ -384,7 +368,9 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         if (planListContainer == null || context == null) {
             return;
         }
+        refreshTimelineColumn(context);
         planListContainer.removeAllViews();
+        planListContainer.addView(host.sectionHeader(context.getString(R.string.plan_title)));
         if (plans.isEmpty()) {
             TextView empty = new TextView(context);
             empty.setText(context.getString(R.string.plan_empty_hint));
@@ -421,6 +407,172 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
             }
         }
     }
+
+    /**
+     * 上栏「考试 / DDL」：栏头（标题 + 管理入口）与事件卡片一并重建，
+     * 数量自动撑开栏高；主题切换、事件增删后都经 refreshList 走到这里。
+     */
+    private void refreshTimelineColumn(Context context) {
+        if (timelineListContainer == null) {
+            return;
+        }
+        timelineListContainer.removeAllViews();
+        LinearLayout header = new LinearLayout(context);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(host.sectionHeader(context.getString(R.string.academic_title)),
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView manage = new TextView(context);
+        manage.setText(context.getString(R.string.common_manage));
+        manage.setTextSize(13);
+        manage.setTypeface(Typeface.DEFAULT_BOLD);
+        manage.setTextColor(host.accentColor());
+        manage.setGravity(Gravity.CENTER_VERTICAL);
+        manage.setPadding(dp(context, 8), 0, dp(context, 8), 0);
+        manage.setMinHeight(dp(context, 32));
+        manage.setOnClickListener(v -> host.openAcademicTimeline());
+        host.attachPressFeedback(manage);
+        header.addView(manage);
+        timelineListContainer.addView(header);
+
+        List<AcademicEvent> events = host.academicEvents();
+        if (events == null || events.isEmpty()) {
+            TextView empty = new TextView(context);
+            empty.setText(context.getString(R.string.plan_timeline_empty_hint));
+            empty.setTextColor(host.mutedColor());
+            empty.setTextSize(14);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dp(context, 18), 0, dp(context, 18));
+            empty.setOnClickListener(v -> host.openAcademicTimeline());
+            host.attachPressFeedback(empty);
+            timelineListContainer.addView(empty);
+            return;
+        }
+        List<AcademicEvent> pending = new ArrayList<>();
+        List<AcademicEvent> finished = new ArrayList<>();
+        for (AcademicEvent event : events) {
+            (event.done ? finished : pending).add(event);
+        }
+        Collections.sort(pending, EVENT_DATE_ASC);
+        Collections.sort(finished, EVENT_DATE_DESC);
+        for (AcademicEvent event : pending) {
+            timelineListContainer.addView(academicEventRow(context, event));
+        }
+        for (AcademicEvent event : finished) {
+            timelineListContainer.addView(academicEventRow(context, event));
+        }
+    }
+
+    /**
+     * 考试/DDL 事件卡：类型色圆点 + 标题 + 日期行（与时间线同一套类型色与排序规则），
+     * 点击打开时间线浏览/勾选/编辑；完成态标题加删除线并降低透明度。
+     */
+    private View academicEventRow(Context context, AcademicEvent event) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 8));
+        row.setBackground(host.roundedBg(host.cardColorHex(), 16));
+        row.setOnClickListener(v -> host.openAcademicTimeline());
+        host.attachCardPressFeedback(row, 16);
+
+        View dot = new View(context);
+        GradientDrawable dotBg = new GradientDrawable();
+        dotBg.setShape(GradientDrawable.OVAL);
+        dotBg.setColor(typeColor(event.type));
+        dot.setBackground(dotBg);
+        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(
+                dp(context, 10), dp(context, 10));
+        dotParams.rightMargin = dp(context, 8);
+        row.addView(dot, dotParams);
+
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(context);
+        title.setText(event.title.length() == 0
+                ? context.getString(R.string.academic_unnamed) : event.title);
+        title.setTextColor(host.inkColor());
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        if (event.done) {
+            title.setPaintFlags(title.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+            title.setAlpha(0.55f);
+        }
+        content.addView(title);
+
+        StringBuilder meta = new StringBuilder(typeLabel(context, event.type))
+                .append(" · ").append(eventDateText(event));
+        if (event.hasTime()) {
+            meta.append(" ").append(CourseTimeResolver.formatMinuteOfDay(event.minuteOfDay));
+        }
+        if (event.hasCourse()) {
+            meta.append(" · ").append(event.courseName);
+        }
+        if (event.hasLocation()) {
+            meta.append(" · ").append(event.location);
+        }
+        TextView metaView = new TextView(context);
+        metaView.setText(meta.toString());
+        metaView.setTextColor(host.mutedColor());
+        metaView.setTextSize(12);
+        metaView.setSingleLine(true);
+        metaView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        metaParams.topMargin = dp(context, 2);
+        content.addView(metaView, metaParams);
+        row.addView(content, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, 0, dp(context, 8));
+        row.setLayoutParams(params);
+        return row;
+    }
+
+    /** 与时间线徽标（AcademicEventDialogs）保持同一套类型色。 */
+    private static int typeColor(AcademicEvent.Type type) {
+        if (type == AcademicEvent.Type.EXAM) {
+            return 0xFFE4572E;
+        }
+        if (type == AcademicEvent.Type.DEADLINE) {
+            return 0xFF8B5CF6;
+        }
+        return 0xFF0E9F6E;
+    }
+
+    private static String typeLabel(Context context, AcademicEvent.Type type) {
+        if (type == AcademicEvent.Type.EXAM) {
+            return context.getString(R.string.academic_type_exam);
+        }
+        if (type == AcademicEvent.Type.DEADLINE) {
+            return context.getString(R.string.academic_type_deadline);
+        }
+        return context.getString(R.string.academic_type_practice);
+    }
+
+    private static String eventDateText(AcademicEvent event) {
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(event.dateMillis);
+        return (date.get(Calendar.MONTH) + 1) + "/" + date.get(Calendar.DAY_OF_MONTH);
+    }
+
+    /** 未完成按日期升序（最近的在前），已完成按日期降序——与时间线对话框一致。 */
+    private static final Comparator<AcademicEvent> EVENT_DATE_ASC = (first, second) -> {
+        int byDate = Long.compare(first.dateMillis, second.dateMillis);
+        if (byDate != 0) {
+            return byDate;
+        }
+        return Integer.compare(first.minuteOfDay < 0 ? -1 : first.minuteOfDay,
+                second.minuteOfDay < 0 ? -1 : second.minuteOfDay);
+    };
+    private static final Comparator<AcademicEvent> EVENT_DATE_DESC =
+            (first, second) -> Long.compare(second.dateMillis, first.dateMillis);
 
     /**
      * 已完成分组头：标题+数量+折叠箭头，点击切换展开/折叠（Builder 常驻态，
@@ -603,19 +755,18 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
 
     /**
      * 主题/深色模式切换后刷新计划相关界面的固有色：
-     * 管理浮层背景、浮层头部、新建按钮底色，并重建列表行。
+     * 滚动容器背景、管理浮层背景、浮层头部，并重建两栏列表（栏头与卡片固有色随之更新）。
      * 计划 tab 页背景与右侧玻璃面板由 Activity 侧刷新链处理。
      */
     public void refreshTheme(Context context, List<StudyPlan> plans) {
+        if (planPageScroll != null) {
+            planPageScroll.setBackgroundColor(host.pageSurfaceColor());
+        }
         if (planManageFrame != null) {
             planManageFrame.setBackgroundColor(host.pageSurfaceColor());
         }
         if (planManageHeader != null) {
             planManageHeader.setBackgroundColor(host.settingsHeaderSurfaceColor());
-        }
-        if (academicEntryButton != null) {
-            academicEntryButton.setBackground(host.roundedBg(host.cardColorHex(), 18));
-            academicEntryButton.setTextColor(host.accentColor());
         }
         if (planPageMenu != null) {
             planPageMenu.refreshTheme(context);

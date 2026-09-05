@@ -35,7 +35,9 @@ public final class UpdateJsonParser {
     public static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
             "github.com",
             "objects.githubusercontent.com",
-            "release-assets.githubusercontent.com"));
+            "release-assets.githubusercontent.com",
+            "gitee.com",
+            "foruda.gitee.com"));
 
     private static final Pattern VERSION_NAME_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+$");
     private static final Pattern SHA256_PATTERN = Pattern.compile("^[0-9a-f]{64}$");

@@ -28,9 +28,12 @@ import java.util.concurrent.Executors;
  */
 public final class UpdateCoordinator implements UpdateDownloadController.Callbacks {
 
-    /** 客户端内置唯一稳定清单入口；预发布必须标记 prerelease，不得替换稳定入口。 */
+    /** GitHub 稳定清单入口；Gitee 不可用时继续使用。 */
     public static final String STABLE_MANIFEST_URL =
             "https://github.com/Jockjrop/PolarisTimetable/releases/latest/download/latest.json";
+    /** Gitee 公开 Release API；只读取公开元数据，不携带 Token。 */
+    public static final String GITEE_LATEST_RELEASE_URL =
+            "https://gitee.com/api/v5/repos/Jockjrop/polaris-course-schedule/releases/latest";
 
     public enum InstallAction {LAUNCHED, NO_INSTALLER, NOT_READY}
 
@@ -134,8 +137,10 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
     private volatile boolean checkInFlight;
     private volatile boolean activityForeground;
     private UpdateInfo lastAvailable;
+    private UpdateInfo lastAvailableFallback;
     private UpdateInfo pendingAutoOffer;
     private boolean lastCheckFailed;
+    private boolean sawUnsupportedSchema;
     private UpdateDownloadState lastState = UpdateDownloadState.IDLE;
     private long lastDownloaded;
     private long lastTotal;
@@ -388,42 +393,69 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
     }
 
     private UpdateCheckResult doCheck(boolean manual) {
+        lastAvailable = null;
+        lastAvailableFallback = null;
+        sawUnsupportedSchema = false;
+        UpdateInfo gitee = fetchSource(true);
+        UpdateInfo github = fetchSource(false);
+        if (gitee == null && github == null) {
+            // 双源均声明协议过新时保留旧文案；其余失败统一按服务不可用处理。
+            if (sawUnsupportedSchema) {
+                return UpdateCheckResult.unsupportedSchema();
+            }
+            return UpdateCheckResult.invalidMetadata(UpdateError.UPDATE_SERVICE_UNAVAILABLE);
+        }
+
+        UpdateInfo info;
+        UpdateInfo fallback = null;
+        if (gitee != null && github != null) {
+            if (gitee.versionCode() == github.versionCode()
+                    && !gitee.hasSameApkIdentity(github)) {
+                return UpdateCheckResult.invalidMetadata(UpdateError.SOURCE_MISMATCH);
+            }
+            if (gitee.versionCode() >= github.versionCode()) {
+                info = gitee;
+                if (gitee.versionCode() == github.versionCode()) {
+                    fallback = github;
+                }
+            } else {
+                info = github;
+            }
+        } else {
+            info = gitee != null ? gitee : github;
+        }
+
+        prefs.setLastSuccessfulCheckAt(System.currentTimeMillis());
+        UpdatePolicy.Decision decision = UpdatePolicy.evaluate(info, localVersionCode(),
+                android.os.Build.VERSION.SDK_INT, prefs.ignoredVersionCode(), manual);
+        switch (decision) {
+            case AVAILABLE:
+                lastAvailable = info;
+                lastAvailableFallback = fallback;
+                return UpdateCheckResult.available(info);
+            case UP_TO_DATE:
+                return UpdateCheckResult.upToDate(info);
+            case DEVICE_UNSUPPORTED:
+                return UpdateCheckResult.deviceUnsupported(info);
+            case IGNORED_VERSION:
+            default:
+                return UpdateCheckResult.ignoredVersion(info);
+        }
+    }
+
+    private UpdateInfo fetchSource(boolean gitee) {
         try {
-            String body = repository.fetchManifest(STABLE_MANIFEST_URL, localVersionName());
-            UpdateInfo info;
-            try {
-                info = parser.parse(body);
-            } catch (UpdateJsonParser.InvalidManifestException exception) {
-                return exception.reason == UpdateError.UNSUPPORTED_SCHEMA
-                        ? UpdateCheckResult.unsupportedSchema()
-                        : UpdateCheckResult.invalidMetadata(exception.reason);
+            String body = gitee
+                    ? repository.fetchGiteeManifest(GITEE_LATEST_RELEASE_URL, localVersionName())
+                    : repository.fetchManifest(STABLE_MANIFEST_URL, localVersionName());
+            return parser.parse(body);
+        } catch (UpdateJsonParser.InvalidManifestException exception) {
+            if (exception.reason == UpdateError.UNSUPPORTED_SCHEMA) {
+                sawUnsupportedSchema = true;
             }
-            prefs.setLastSuccessfulCheckAt(System.currentTimeMillis());
-            UpdatePolicy.Decision decision = UpdatePolicy.evaluate(info, localVersionCode(),
-                    android.os.Build.VERSION.SDK_INT, prefs.ignoredVersionCode(), manual);
-            switch (decision) {
-                case AVAILABLE:
-                    lastAvailable = info;
-                    return UpdateCheckResult.available(info);
-                case UP_TO_DATE:
-                    return UpdateCheckResult.upToDate(info);
-                case DEVICE_UNSUPPORTED:
-                    return UpdateCheckResult.deviceUnsupported(info);
-                case IGNORED_VERSION:
-                default:
-                    return UpdateCheckResult.ignoredVersion(info);
-            }
+            return null;
         } catch (UpdateRepository.FetchException exception) {
-            switch (exception.error) {
-                case TIMEOUT:
-                    return UpdateCheckResult.networkError(UpdateError.TIMEOUT);
-                case HTTP:
-                    return UpdateCheckResult.httpError();
-                case INVALID_METADATA:
-                    return UpdateCheckResult.invalidMetadata(UpdateError.INVALID_METADATA);
-                default:
-                    return UpdateCheckResult.networkError(UpdateError.NETWORK);
-            }
+            return null;
         }
     }
 
@@ -499,7 +531,7 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
         prefs.clearPendingInstall();
         UpdateDownloadController activeController = controller();
         if (activeController != null) {
-            activeController.start(info);
+            activeController.start(info, lastAvailableFallback);
         }
     }
 
@@ -819,6 +851,10 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
                 return R.string.update_error_invalid_metadata;
             case UNSUPPORTED_SCHEMA:
                 return R.string.update_error_unsupported_schema;
+            case SOURCE_MISMATCH:
+                return R.string.update_error_source_mismatch;
+            case UPDATE_SERVICE_UNAVAILABLE:
+                return R.string.update_error_service_unavailable;
             case DEVICE_UNSUPPORTED:
                 return R.string.update_error_device_unsupported;
             case INSUFFICIENT_STORAGE:

@@ -206,9 +206,41 @@ public class UpdateRepositoryTest {
     @Test
     public void manifestUrlIsHttpsAndAllowed() throws Exception {
         assertTrue(UpdateJsonParser.isAllowedHost(new URL(MANIFEST_URL).getHost()));
+        assertTrue(UpdateJsonParser.isAllowedHost("gitee.com"));
+        assertTrue(UpdateJsonParser.isAllowedHost("foruda.gitee.com"));
         // 触发一次 day 查询参数拼接（缓存穿透），确保 URL 仍合法。
         UpdateRepository repo = repository((url, index) ->
                 new FakeConnection(url, 200, null, validManifestBody().getBytes()));
         assertEquals(validManifestBody(), fetch(repo));
+    }
+
+    @Test
+    public void giteeReleaseApiFindsPublicLatestJsonAsset() throws Exception {
+        String assetUrl = "https://gitee.com/Jockjrop/polaris-course-schedule/"
+                + "releases/download/v1.27.0/latest.json";
+        String release = "{\"tag_name\":\"v1.27.0\",\"prerelease\":false,"
+                + "\"assets\":[{\"name\":\"latest.json\","
+                + "\"browser_download_url\":\"" + assetUrl + "\"}]}";
+        UpdateRepository repo = new UpdateRepository(url -> {
+            byte[] body = url.getPath().endsWith("/releases/latest")
+                    ? release.getBytes() : validManifestBody().getBytes();
+            return new FakeConnection(url, 200, null, body);
+        });
+        assertEquals(validManifestBody(), repo.fetchGiteeManifest(
+                UpdateCoordinator.GITEE_LATEST_RELEASE_URL, "1.27.0"));
+    }
+
+    @Test
+    public void giteeReleaseWithoutLatestJsonIsInvalidMetadata() {
+        String release = "{\"tag_name\":\"v1.27.0\",\"prerelease\":false,"
+                + "\"assets\":[]}";
+        UpdateRepository repo = new UpdateRepository(url ->
+                new FakeConnection(url, 200, null, release.getBytes()));
+        try {
+            repo.fetchGiteeManifest(UpdateCoordinator.GITEE_LATEST_RELEASE_URL, "1.27.0");
+            fail("expected FetchException");
+        } catch (UpdateRepository.FetchException exception) {
+            assertSame(UpdateError.INVALID_METADATA, exception.error);
+        }
     }
 }

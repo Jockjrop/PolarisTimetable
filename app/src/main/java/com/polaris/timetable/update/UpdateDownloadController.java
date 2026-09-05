@@ -165,19 +165,24 @@ public final class UpdateDownloadController {
 
     /** 开始新下载前清理旧版本文件：最多保留一个已验证 APK。 */
     public void start(UpdateInfo info) {
+        start(info, null);
+    }
+
+    /** 主来源在传输任何字节前网络失败时，可从身份一致的备用来源重新开始。 */
+    public void start(UpdateInfo info, UpdateInfo fallback) {
         if (info == null || busy.get()) {
             return;
         }
         busy.set(true);
         cancelled.set(false);
-        executor.execute(() -> runDownload(info));
+        executor.execute(() -> runDownload(info, fallback));
     }
 
     public void shutdown() {
         executor.shutdownNow();
     }
 
-    private void runDownload(UpdateInfo info) {
+    private void runDownload(UpdateInfo info, UpdateInfo fallback) {
         // 任务 ID 隔离：.part 文件带任务后缀，清理逻辑只删除非活动任务的临时文件。
         long taskId = System.nanoTime();
         File part = new File(partDirectory, info.apkFileName() + "." + taskId + ".part");
@@ -193,7 +198,21 @@ public final class UpdateDownloadController {
             if (!ensureFreeSpace(info.apkSize())) {
                 throw failure(UpdateError.INSUFFICIENT_STORAGE);
             }
-            download(info, part);
+            try {
+                download(info, part);
+            } catch (DownloadAbort primaryFailure) {
+                if (!primaryFailure.sourceFallbackAllowed || fallback == null
+                        || cancelled.get()) {
+                    throw primaryFailure;
+                }
+                if (!info.hasSameApkIdentity(fallback)) {
+                    throw failure(UpdateError.SOURCE_MISMATCH);
+                }
+                // 不续传、不拼接：切换来源前删除临时文件并从 0 开始。
+                deleteQuietly(part);
+                notifyState(UpdateDownloadState.PREPARING, 0L, fallback.apkSize());
+                download(fallback, part);
+            }
             if (cancelled.get()) {
                 throw cancelledFailure();
             }
@@ -250,7 +269,7 @@ public final class UpdateDownloadController {
                 if (code >= 300 && code < 400) {
                     // 收到重定向响应时即计数：恰好 5 次允许，第 6 次拒绝。
                     if (redirects >= MAX_REDIRECTS) {
-                        throw failure(UpdateError.NETWORK);
+                        throw failure(UpdateError.NETWORK, true);
                     }
                     redirects++;
                     String location = connection.getHeaderField("Location");
@@ -260,7 +279,7 @@ public final class UpdateDownloadController {
                     continue;
                 }
                 if (code != 200) {
-                    throw failure(UpdateError.HTTP);
+                    throw failure(UpdateError.HTTP, true);
                 }
                 break;
             }
@@ -300,11 +319,11 @@ public final class UpdateDownloadController {
             output.flush();
             output.getFD().sync();
         } catch (SocketTimeoutException exception) {
-            throw failure(UpdateError.TIMEOUT);
+            throw failure(UpdateError.TIMEOUT, written == 0L);
         } catch (MalformedURLException exception) {
-            throw failure(UpdateError.NETWORK);
+            throw failure(UpdateError.NETWORK, written == 0L);
         } catch (IOException exception) {
-            throw failure(UpdateError.NETWORK);
+            throw failure(UpdateError.NETWORK, written == 0L);
         } finally {
             closeQuietly(input);
             closeQuietly(output);
@@ -392,15 +411,25 @@ public final class UpdateDownloadController {
 
     private static final class DownloadAbort extends RuntimeException {
         final UpdateError error;
+        final boolean sourceFallbackAllowed;
 
         DownloadAbort(UpdateError error) {
+            this(error, false);
+        }
+
+        DownloadAbort(UpdateError error, boolean sourceFallbackAllowed) {
             super(error.name());
             this.error = error;
+            this.sourceFallbackAllowed = sourceFallbackAllowed;
         }
     }
 
     private static DownloadAbort failure(UpdateError error) {
         return new DownloadAbort(error);
+    }
+
+    private static DownloadAbort failure(UpdateError error, boolean sourceFallbackAllowed) {
+        return new DownloadAbort(error, sourceFallbackAllowed);
     }
 
     private static DownloadAbort cancelledFailure() {

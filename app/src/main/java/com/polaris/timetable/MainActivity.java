@@ -3444,6 +3444,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             academicEvents.set(index, updated);
         }
         persistAcademicEvents();
+        refreshPlanList();
     }
 
     /** 供时间线编辑器调用的删除入口（同包可访问）。 */
@@ -3455,6 +3456,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             }
         }
         persistAcademicEvents();
+        refreshPlanList();
     }
 
     /**
@@ -3477,6 +3479,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             }
         }
         persistAcademicEvents();
+        // 计划页上栏即时同步新事件。
+        refreshPlanList();
     }
 
     // ===== 学业事件对话框辅助（供 AcademicEventDialogs 复用）=====
@@ -4411,6 +4415,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public void openAcademicTimeline() {
         showAcademicTimelineDialog();
+    }
+
+    @Override
+    public java.util.List<com.polaris.timetable.model.AcademicEvent> academicEvents() {
+        return academicEventSnapshot();
     }
 
     @Override

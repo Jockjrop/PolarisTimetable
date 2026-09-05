@@ -22,14 +22,17 @@ param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
     # minSupportedVersionCode 由发布者显式提供（上一稳定版 versionCode），
     # 不在脚本内硬编码，避免协议数据失真。
-    [Parameter(Mandatory = $true)][long]$MinSupportedVersionCode
+    [Parameter(Mandatory = $true)][long]$MinSupportedVersionCode,
+    [string]$ApkUrl,
+    [string]$ReleaseNotesUrl,
+    [string]$PublishedAt
 )
 
 $ErrorActionPreference = 'Stop'
 $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $MaxApkBytes = 200L * 1024L * 1024L
 $MaxVersionCode = 2100000000L
-$AllowedHosts = @('github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com')
+$AllowedHosts = @('github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'gitee.com', 'foruda.gitee.com')
 
 function Fail([string]$message) {
     Write-Error "generate-update-manifest: $message"
@@ -64,6 +67,21 @@ if ($GitTag -ne "v$VersionName") {
 $apkFileName = "Polaris-$VersionName-release.apk"
 if ([System.IO.Path]::GetFileName($ApkPath) -ne $apkFileName) {
     Fail "APK 文件名必须为 $apkFileName，实际为 '$([System.IO.Path]::GetFileName($ApkPath))'"
+}
+if ([string]::IsNullOrWhiteSpace($ApkUrl)) {
+    $ApkUrl = "https://github.com/Jockjrop/PolarisTimetable/releases/download/v$VersionName/$apkFileName"
+}
+if ([string]::IsNullOrWhiteSpace($ReleaseNotesUrl)) {
+    $ReleaseNotesUrl = "https://github.com/Jockjrop/PolarisTimetable/releases/tag/v$VersionName"
+}
+if ([string]::IsNullOrWhiteSpace($PublishedAt)) {
+    $PublishedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+}
+$publishedValue = [DateTimeOffset]::MinValue
+if (-not [DateTimeOffset]::TryParseExact($PublishedAt, "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$publishedValue)) {
+    Fail "PublishedAt '$PublishedAt' 必须为 UTC 秒级时间"
 }
 
 # --- 2. APK 与哈希 -----------------------------------------------------------
@@ -102,15 +120,15 @@ $manifest = [ordered]@{
     versionName             = $VersionName
     minSdk                  = 23
     minSupportedVersionCode = $MinSupportedVersionCode
-    publishedAt             = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    publishedAt             = $PublishedAt
     apk                     = [ordered]@{
         fileName = $apkFileName
-        url      = "https://github.com/Jockjrop/PolarisTimetable/releases/download/v$VersionName/$apkFileName"
+        url      = $ApkUrl
         size     = $apkItem.Length
         sha256   = $sha256
     }
     releaseNotes            = @($noteLines)
-    releaseNotesUrl         = "https://github.com/Jockjrop/PolarisTimetable/releases/tag/v$VersionName"
+    releaseNotesUrl         = $ReleaseNotesUrl
     required                = $false
 }
 

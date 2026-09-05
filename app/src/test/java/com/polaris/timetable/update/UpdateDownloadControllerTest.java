@@ -146,11 +146,15 @@ public class UpdateDownloadControllerTest {
     }
 
     private UpdateInfo info(long size, String sha256) {
+        return infoForHost("github.com", size, sha256);
+    }
+
+    private UpdateInfo infoForHost(String host, long size, String sha256) {
         return new UpdateInfo(1, "stable", "com.polaris.timetable", 12700, "1.27.0", 23,
                 12601, "2026-09-10T12:00:00Z", FILE_NAME,
-                "https://github.com/x/releases/download/v1.27.0/" + FILE_NAME,
+                "https://" + host + "/x/releases/download/v1.27.0/" + FILE_NAME,
                 size, sha256, java.util.Collections.singletonList("说明"),
-                "https://github.com/x/releases/tag/v1.27.0", false);
+                "https://" + host + "/x/releases/tag/v1.27.0", false);
     }
 
     private UpdateDownloadController controller(UpdateDownloadController.Callbacks callbacks,
@@ -521,6 +525,83 @@ public class UpdateDownloadControllerTest {
         controller.start(info(16, ApkVerifier.sha256Hex(new byte[16])));
         assertTrue(callbacks.terminal.await(10, TimeUnit.SECONDS));
         assertEquals(UpdateError.TIMEOUT, callbacks.failures.get(0));
+        controller.shutdown();
+    }
+
+    @Test
+    public void giteeFailureBeforeBodyRestartsFromGithub() throws Exception {
+        byte[] payload = new byte[64];
+        java.util.Arrays.fill(payload, (byte) 0x2a);
+        String sha = ApkVerifier.sha256Hex(payload);
+        RecordingCallbacks callbacks = new RecordingCallbacks();
+        AtomicInteger opened = new AtomicInteger();
+        UpdateDownloadController controller = controller(callbacks, url -> {
+            opened.incrementAndGet();
+            if ("gitee.com".equals(url.getHost())) {
+                return new FakeConnection(url, 503, null, null, null);
+            }
+            return new FakeConnection(url, 200, null, (long) payload.length,
+                    new ByteArrayInputStream(payload));
+        });
+
+        controller.start(infoForHost("gitee.com", payload.length, sha),
+                infoForHost("github.com", payload.length, sha));
+        assertTrue(callbacks.terminal.await(10, TimeUnit.SECONDS));
+        assertEquals(2, opened.get());
+        assertEquals(1, callbacks.readyFiles.size());
+        controller.shutdown();
+    }
+
+    @Test
+    public void mismatchedGithubMetadataIsNotUsedAsFallback() throws Exception {
+        byte[] payload = new byte[32];
+        String sha = ApkVerifier.sha256Hex(payload);
+        RecordingCallbacks callbacks = new RecordingCallbacks();
+        AtomicInteger opened = new AtomicInteger();
+        UpdateDownloadController controller = controller(callbacks, url -> {
+            opened.incrementAndGet();
+            return new FakeConnection(url, 503, null, null, null);
+        });
+
+        controller.start(infoForHost("gitee.com", payload.length, sha),
+                infoForHost("github.com", payload.length,
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        assertTrue(callbacks.terminal.await(10, TimeUnit.SECONDS));
+        assertEquals(1, opened.get());
+        assertEquals(UpdateError.SOURCE_MISMATCH, callbacks.failures.get(0));
+        controller.shutdown();
+    }
+
+    @Test
+    public void failureAfterFirstByteDoesNotSwitchSources() throws Exception {
+        byte[] payload = new byte[32];
+        String sha = ApkVerifier.sha256Hex(payload);
+        RecordingCallbacks callbacks = new RecordingCallbacks();
+        AtomicInteger opened = new AtomicInteger();
+        UpdateDownloadController controller = controller(callbacks, url -> {
+            opened.incrementAndGet();
+            if ("gitee.com".equals(url.getHost())) {
+                InputStream broken = new InputStream() {
+                    private boolean first = true;
+                    @Override public int read() throws IOException {
+                        if (first) {
+                            first = false;
+                            return 0x2a;
+                        }
+                        throw new IOException("connection lost");
+                    }
+                };
+                return new FakeConnection(url, 200, null, null, broken);
+            }
+            return new FakeConnection(url, 200, null, (long) payload.length,
+                    new ByteArrayInputStream(payload));
+        });
+
+        controller.start(infoForHost("gitee.com", payload.length, sha),
+                infoForHost("github.com", payload.length, sha));
+        assertTrue(callbacks.terminal.await(10, TimeUnit.SECONDS));
+        assertEquals(1, opened.get());
+        assertEquals(UpdateError.NETWORK, callbacks.failures.get(0));
         controller.shutdown();
     }
 }
