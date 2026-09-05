@@ -4070,6 +4070,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         boolean schedule = tab == 0;
         boolean plan = tab == 1;
         boolean mine = tab == 2;
+        // 离开计划页前先收起悬浮新增菜单（PlanAddMenuTest 契约）：页面只是 GONE、
+        // 视图仍留在树上，若带着展开态切走，返回计划页时菜单与遮罩会原样残留。
+        // 在可见状态下收起，动画能正常走完（GONE 后 endAction 不再触发）。
+        if (!plan && planPageBuilder.isAddMenuExpanded()) {
+            planPageBuilder.collapseAddMenus();
+        }
         if (scheduleBoard != null) {
             scheduleBoard.setVisibility(schedule ? View.VISIBLE : View.GONE);
         }
