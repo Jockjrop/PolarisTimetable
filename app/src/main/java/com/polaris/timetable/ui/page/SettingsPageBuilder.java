@@ -110,6 +110,7 @@ public class SettingsPageBuilder {
         String versionText();
         String contactEmail();
         String githubDisplay();
+        String giteeDisplay();
         // 应用内更新：检查行副标题与自动检查开关状态
         String updateCheckStatusText();
         boolean autoCheckUpdateEnabled();
@@ -122,6 +123,7 @@ public class SettingsPageBuilder {
         void onVersionClicked();
         void onContactClicked();
         void onGithubClicked();
+        void onGiteeClicked();
         void onCheckUpdateClicked();
         void onAutoCheckUpdateChanged(boolean value);
     }
@@ -423,6 +425,8 @@ public class SettingsPageBuilder {
         aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_contact), host.contactEmail(), v -> host.onContactClicked()));
         aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_github),
                 host.githubDisplay(), v -> host.onGithubClicked()));
+        aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_gitee),
+                host.giteeDisplay(), v -> host.onGiteeClicked()));
         panel.addView(aboutCard);
         return panel;
     }

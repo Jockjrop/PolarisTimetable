@@ -68,6 +68,7 @@ public class UpdateEntryTest {
         onView(withText(R.string.settings_row_auto_check_update)).check(matches(isDisplayed()));
         onView(withText(R.string.settings_row_contact)).check(matches(isDisplayed()));
         onView(withText(R.string.settings_row_github)).check(matches(isDisplayed()));
+        onView(withText(R.string.settings_row_gitee)).check(matches(isDisplayed()));
     }
 
     @Test

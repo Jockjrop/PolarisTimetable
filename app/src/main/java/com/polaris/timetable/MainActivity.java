@@ -190,6 +190,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final String WEEK_SWIPE_HINT_SHOWN = "week_swipe_hint_shown_v1";
     private static final String CONTACT_EMAIL = "polaris_io@163.com";
     private static final String PROJECT_HOME_URL = "https://github.com/Jockjrop/PolarisTimetable";
+    private static final String PROJECT_GITEE_URL = "https://gitee.com/Jockjrop/polaris-course-schedule";
     private static final String[] APPEARANCE_PRESETS = {"标准", "紧凑", "沉浸"};
     private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
@@ -4896,6 +4897,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
+    public String giteeDisplay() {
+        return PROJECT_GITEE_URL.replace("https://", "");
+    }
+
+    @Override
     public void onSemesterNameClicked() {
         scheduleDialogs.showSemesterNameDialog();
     }
@@ -4931,6 +4937,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     public void onGithubClicked() {
         copyTextToClipboard(PROJECT_HOME_URL);
         android.widget.Toast.makeText(this, getString(R.string.settings_toast_github_copied, PROJECT_HOME_URL),
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onGiteeClicked() {
+        copyTextToClipboard(PROJECT_GITEE_URL);
+        android.widget.Toast.makeText(this, getString(R.string.settings_toast_gitee_copied, PROJECT_GITEE_URL),
                 android.widget.Toast.LENGTH_SHORT).show();
     }
 

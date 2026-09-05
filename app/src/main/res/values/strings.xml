@@ -243,6 +243,8 @@
     <string name="settings_toast_email_copied">邮箱已复制：%1$s</string>
     <string name="settings_row_github">GitHub 项目地址</string>
     <string name="settings_toast_github_copied">GitHub 地址已复制：%1$s</string>
+    <string name="settings_row_gitee">Gitee 项目地址</string>
+    <string name="settings_toast_gitee_copied">Gitee 地址已复制：%1$s</string>
 
     <!-- 应用内更新系统：入口行、状态、弹窗与错误文案。
          错误文案不得包含异常堆栈、缓存路径或内部类名。 -->
