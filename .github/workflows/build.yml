@@ -114,7 +114,7 @@ jobs:
           disable-animations: true
           script: sh tools/ci/run-instrumented.sh
   release:
-    # 稳定发布流水线（docs/plans/app-self-update-plan.md 11 + 改进计划阶段 A）：
+    # 稳定发布流水线；早期设计记录见 docs/archive/app-self-update-plan.md。
     # 缺签名 Secret / 指纹不符 / 版本不一致 / 历史清单查询失败时必须失败；
     # Debug/未签名 APK 永远不允许作为 Release 资产上传；
     # 通过 Draft + 资产复验 + 正式发布的原子流程保证 latest 指向的稳定版三资产齐全（U-P0-04）。

@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 更新清单 latest.json 的不可变数据模型（协议见 docs/plans/app-self-update-plan.md 第 6 节）。
+ * 更新清单 latest.json 的不可变数据模型。
  * 构造完成后字段不再允许 UI 修改。
  */
 public final class UpdateInfo {

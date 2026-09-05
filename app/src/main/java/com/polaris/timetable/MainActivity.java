@@ -250,7 +250,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     int currentWeek = 18;
     int visibleDayCount = 7;
     private final CourseScheduleDialogs scheduleDialogs = new CourseScheduleDialogs(this);
-    // 应用内更新（docs/plans/app-self-update-plan.md）：协调器为进程级单例，Activity 只持有 UI 引用。
+    // 应用内更新协调器为进程级单例，Activity 只持有 UI 引用。
     private UpdateCoordinator updateCoordinator;
     private View updateCheckRow;
     private Dialog updateAvailableDialog;

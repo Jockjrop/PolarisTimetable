@@ -73,7 +73,7 @@ CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_R
 - 用 `POLARIS_RELEASE_CERT_SHA256` 核对 APK 签名证书指纹，并用 `apkanalyzer` 核对包名与版本
 - 校验 Git 标签 = `v<versionName>`、`versionCode` 三段式映射且严格大于最近稳定清单
 - 以 `docs/releases/<versionName>.md` 为唯一来源生成 `latest.json` 与 `.sha256`（脚本 `tools/release/generate-update-manifest.ps1`，含协议自检），与正式 APK 一起上传 Release
-- 客户端按 `docs/plans/app-self-update-plan.md` 的清单协议检查、下载、校验并交给系统安装器
+- 客户端按稳定清单协议检查、下载、校验并交给系统安装器
 
 发布前需在仓库 Secrets 配置：`POLARIS_RELEASE_KEYSTORE_B64`、`POLARIS_RELEASE_STORE_PASSWORD`、`POLARIS_RELEASE_KEY_ALIAS`、`POLARIS_RELEASE_KEY_PASSWORD`、`POLARIS_RELEASE_CERT_SHA256`（证书 SHA-256 指纹），并维护者离线备份签名材料。
 
@@ -99,7 +99,6 @@ CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_R
 - [解析器设计](docs/design/parser-design.md)
 - [界面设计](docs/design/ui-design.md)
 - [产品设计](docs/design/product-design.md)
-- [应用内更新系统](docs/plans/app-self-update-plan.md)
 - [测试计划](docs/qa/test-plan.md)
 - [UI 高保真页面](design/pages/)（历史视觉参考）
 

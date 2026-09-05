@@ -1,7 +1,7 @@
 #Requires -Version 6
 <#
 .SYNOPSIS
-    生成 Polaris 更新清单 latest.json 与 APK SHA-256 文件（docs/plans/app-self-update-plan.md 11.4/11.3-14）。
+    生成 Polaris 更新清单 latest.json 与 APK SHA-256 文件。早期协议设计见 docs/archive/app-self-update-plan.md。
 .DESCRIPTION
     输入全部显式提供；任何校验失败返回非零退出码：
       - APK 必须存在，文件名必须为 Polaris-<versionName>-release.apk

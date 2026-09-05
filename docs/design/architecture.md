@@ -204,7 +204,7 @@ app/src/main/java/com/polaris/timetable/
 
 ## 6. 分阶段迁移策略
 
-> **2026-08-31 核对：第一至第五阶段均已完成**（截至 `1.15.2`）。parser 支撑组件、UI 拆分、storage、export 与提醒都已落地，本节保留为演进记录。当前待办以 [`docs/iteration-plan.md`](iteration-plan.md) 为准。
+以下阶段均已完成，保留用于说明现有模块边界。
 
 ### 第一阶段
 

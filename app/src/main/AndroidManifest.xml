@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- 应用内更新（docs/plans/app-self-update-plan.md + 改进计划 U-P1-13）：仅访问官方更新地址获取
+    <!-- 应用内更新：仅访问官方更新地址获取
          版本信息与安装包，请求不携带课表、账户或设备数据。REQUEST_INSTALL_PACKAGES 允许发起
          PackageInstaller 会话并由系统确认，不授予静默安装能力。 -->
     <uses-permission android:name="android.permission.INTERNET" />

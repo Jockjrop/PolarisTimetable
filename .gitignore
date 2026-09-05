@@ -7,7 +7,6 @@ keystore.properties
 *.jks
 *.keystore
 *.iml
---css
 .uploads/
 
 # 工具产物与本地目录（不入库）
@@ -20,6 +19,8 @@ polaris-ui-design-draft/
 *.apk
 .kotlin/
 captures/
+design/generation-tree.json
+design/orchestration-summary.json
 # 本地工具缓存与验收截图（不入库）
 .gh-cache/
 .workbuddy/
