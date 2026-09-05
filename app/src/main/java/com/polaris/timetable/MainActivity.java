@@ -6,7 +6,6 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.Manifest;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.AppCompatTextView;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import android.app.Dialog;
@@ -3225,20 +3224,23 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private TextSwitcher buildPracticeTopBar() {
         TextSwitcher bar = new TextSwitcher(this);
         bar.setFactory(() -> {
-            // AppCompatTextView：autosize 在全部 API 级别可用（framework 实现仅 26+）。
-            AppCompatTextView name = new AppCompatTextView(this);
+            TextView name = new TextView(this);
             name.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
             name.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_END);
             name.setPadding(dp(12), dp(5), dp(12), dp(5));
             name.setMinHeight(dp(36));
             name.setTextSize(14);
             name.setTypeface(Typeface.DEFAULT_BOLD);
-            // 单行 + 字号自动收缩：长课程名靠缩小字号适配宽度，
-            // 卡片高度始终贴合单行文字，不再因换行或固定 48dp 而过高。
+            // 单行 + 字号自动收缩：长课程名靠缩小字号适配宽度，卡片高度始终
+            // 贴合单行文字，不再因换行或固定 48dp 而过高。autosize 的 framework
+            // 实现自 API 26 起可用（且只有 26+ 有公开 API）；更低版本退化为
+            // 单行末尾省略，高度依旧贴合单行。
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
-            name.setAutoSizeTextTypeUniformWithConfiguration(
-                    10, 14, 1, TypedValue.COMPLEX_UNIT_SP);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                name.setAutoSizeTextTypeUniformWithConfiguration(
+                        10, 14, 1, TypedValue.COMPLEX_UNIT_SP);
+            }
             name.setTextColor(practiceTopBarTextColor());
             name.setLayoutParams(new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
