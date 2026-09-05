@@ -11,6 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot/ReleaseSafety.psm1" -Force
 $token = $env:GITEE_TOKEN
 if ([string]::IsNullOrWhiteSpace($token)) {
     throw 'GITEE_TOKEN 未配置，无法发布 Gitee 更新源'
@@ -47,9 +48,7 @@ for ($attempt = 1; $attempt -le 12; $attempt++) {
 if ($null -eq $tagEntry) {
     throw '等待 Gitee 镜像 tag 超时'
 }
-if ($tagEntry.commit.sha -ne $ExpectedCommitSha) {
-    throw "Gitee tag $Tag 指向的 commit 与 GitHub tag 不一致"
-}
+Assert-TagCommitMatch -GitHubCommit $ExpectedCommitSha -GiteeCommit $tagEntry.commit.sha
 
 $githubManifest = Get-Content -Raw -LiteralPath $GitHubManifestPath -Encoding UTF8 | ConvertFrom-Json
 $apkItem = Get-Item -LiteralPath $ApkPath
@@ -60,9 +59,11 @@ if ($apkItem.Name -ne $githubManifest.apk.fileName -or
     throw '待上传 Gitee 的 APK 与已复验 GitHub 清单不是同一个文件'
 }
 
-# 一个 tag 只保留一个 Release；重复运行时更新已有 Release。
+# 一个 tag 只允许一个 Release；重复运行时复用已有 Release。
 $releases = @(Invoke-GiteeJson 'Get' '/releases?per_page=100&page=1' $null)
-$release = $releases | Where-Object { $_.tag_name -eq $Tag } | Select-Object -First 1
+$matchingReleases = @($releases | Where-Object { $_.tag_name -eq $Tag })
+$releaseAction = Get-GiteeReleaseAction $matchingReleases.Count
+$release = $matchingReleases | Select-Object -First 1
 $releaseBody = Get-Content -Raw -LiteralPath $ReleaseNotesPath -Encoding UTF8
 $releaseFields = @{
     tag_name = $Tag
@@ -71,7 +72,7 @@ $releaseFields = @{
     body = $releaseBody
     prerelease = 'false'
 }
-if ($null -eq $release) {
+if ($releaseAction -eq 'Create') {
     $release = Invoke-GiteeJson 'Post' '/releases' $releaseFields
 } else {
     $release = Invoke-GiteeJson 'Patch' "/releases/$($release.id)" $releaseFields
@@ -80,13 +81,7 @@ if ($null -eq $release.id) {
     throw 'Gitee Release 未返回 release id'
 }
 
-$assetNames = @($apkItem.Name, "$($apkItem.Name).sha256", 'latest.json')
 $attachments = @(Invoke-GiteeJson 'Get' "/releases/$($release.id)/attach_files?per_page=100&page=1" $null)
-foreach ($attachment in $attachments) {
-    if ($assetNames -contains $attachment.name) {
-        Invoke-GiteeJson 'Delete' "/releases/$($release.id)/attach_files/$($attachment.id)" $null | Out-Null
-    }
-}
 
 function Upload-GiteeAsset([string]$Path) {
     try {
@@ -102,8 +97,42 @@ function Upload-GiteeAsset([string]$Path) {
     }
 }
 
-# APK 先上传，使用 API 返回的真实 browser_download_url 生成 Gitee 清单。
-$apkAttachment = Upload-GiteeAsset $ApkPath
+function Find-GiteeAsset([string]$Name) {
+    $matches = @($attachments | Where-Object { $_.name -eq $Name })
+    if ($matches.Count -gt 1) {
+        throw "Gitee Release 存在多个同名附件 $Name，拒绝继续"
+    }
+    return $matches | Select-Object -First 1
+}
+
+$checkDirectory = Join-Path $OutputPath '.existing-assets'
+New-Item -ItemType Directory -Force -Path $checkDirectory | Out-Null
+function Assert-RemoteAssetMatches([object]$Attachment, [string]$ExpectedPath) {
+    if ($Attachment.browser_download_url -notmatch '^https://gitee\.com/') {
+        throw "Gitee 附件 $($Attachment.name) 未返回可信的公开下载地址"
+    }
+    $downloaded = Join-Path $checkDirectory $Attachment.name
+    try {
+        Invoke-WebRequest -Uri $Attachment.browser_download_url -OutFile $downloaded `
+            -MaximumRedirection 5 -ConnectionTimeoutSeconds 15 -OperationTimeoutSeconds 300
+    } catch {
+        throw "Gitee 已有附件下载验证失败：$($Attachment.name)"
+    }
+    Assert-MatchingAsset -ExpectedPath $ExpectedPath -ExistingPath $downloaded -Label $Attachment.name
+}
+
+function Ensure-GiteeAsset([string]$Path) {
+    $name = [IO.Path]::GetFileName($Path)
+    $existing = Find-GiteeAsset $name
+    if ($null -ne $existing) {
+        Assert-RemoteAssetMatches $existing $Path
+        return $existing
+    }
+    return Upload-GiteeAsset $Path
+}
+
+# APK 先复用或上传；已有同名 APK 必须与 GitHub 正式资产完全一致。
+$apkAttachment = Ensure-GiteeAsset $ApkPath
 if ($apkAttachment.browser_download_url -notmatch '^https://gitee\.com/') {
     throw 'Gitee APK 附件未返回可信的公开下载地址'
 }
@@ -139,8 +168,8 @@ if ($githubManifest.apk.fileName -ne $giteeManifest.apk.fileName -or
     throw 'GitHub/Gitee 清单的 APK 身份或发布说明不一致'
 }
 
-Upload-GiteeAsset (Join-Path $OutputPath "$($apkItem.Name).sha256") | Out-Null
-$manifestAttachment = Upload-GiteeAsset $giteeManifestPath
+Ensure-GiteeAsset (Join-Path $OutputPath "$($apkItem.Name).sha256") | Out-Null
+$manifestAttachment = Ensure-GiteeAsset $giteeManifestPath
 if ($manifestAttachment.browser_download_url -notmatch '^https://gitee\.com/') {
     throw 'Gitee latest.json 未返回可信的公开下载地址'
 }
@@ -151,4 +180,5 @@ if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) {
     "apk_url=$($apkAttachment.browser_download_url)" | Out-File `
         -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 }
+Remove-Item -LiteralPath $checkDirectory -Recurse -Force
 Write-Host "Gitee Release 已同步：$Tag（APK/latest.json/.sha256）"

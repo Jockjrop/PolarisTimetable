@@ -5,9 +5,16 @@ on:
     branches: [main, master]
     tags: ['v*']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing formal GitHub Release tag to recover to Gitee
+        required: true
+        type: string
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -211,6 +218,11 @@ jobs:
 
       - name: Verify versionCode is monotonically increasing
         id: monotonic
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ github.ref_name }}
+          CURRENT_VERSION_NAME: ${{ steps.version.outputs.name }}
+          CURRENT_VERSION_CODE: ${{ steps.version.outputs.code }}
         run: |
           # 区分 HTTP 200、404 和网络故障，任何故障不得把上一版本当作 0。
           VERSION_CODE=${{ steps.version.outputs.code }}
@@ -234,12 +246,26 @@ jobs:
           print(v)
           PY
           ) || { echo "::error::上一稳定清单解析失败（畸形 JSON 或 versionCode 非法）"; exit 1; }
-          SOURCE="previous-stable-manifest"
-          echo "$SOURCE：上一稳定版 versionCode=$PREVIOUS"
-          if [ "$VERSION_CODE" -le "$PREVIOUS" ]; then
-            echo "::error::versionCode $VERSION_CODE 未大于最近稳定清单值 $PREVIOUS"; exit 1
+          LATEST_TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$LATEST_TAG" = "${{ github.ref_name }}" ]; then
+            FORMAL=$(gh release view "$LATEST_TAG" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)')
+            if [ "$FORMAL" != "true" ]; then
+              echo "::error::同 tag Release 不是已发布稳定版"; exit 1
+            fi
+            mkdir -p build/existing-release
+            gh release download "$LATEST_TAG" --dir build/existing-release \
+              --pattern 'latest.json' --pattern "Polaris-${{ steps.version.outputs.name }}-release.apk"
+            LATEST_TAG="$LATEST_TAG" pwsh -NoProfile -Command 'Import-Module ./tools/release/ReleaseSafety.psm1 -Force; Assert-ReleaseVersionGate -CurrentTag $env:CURRENT_TAG -CurrentVersionName $env:CURRENT_VERSION_NAME -CurrentVersionCode $env:CURRENT_VERSION_CODE -LatestTag $env:LATEST_TAG -LatestManifestPath build/existing-release/latest.json -PublishedApkPath "build/existing-release/Polaris-$($env:CURRENT_VERSION_NAME)-release.apk" | Out-Null'
+            echo "SAME_RELEASE=true" >> "$GITHUB_OUTPUT"
+            SOURCE="same-formal-release"
+            MIN_SUPPORTED=$(python3 -c "import json;print(json.load(open('build/existing-release/latest.json'))['minSupportedVersionCode'])")
+          else
+            LATEST_TAG="$LATEST_TAG" pwsh -NoProfile -Command 'Import-Module ./tools/release/ReleaseSafety.psm1 -Force; Assert-ReleaseVersionGate -CurrentTag $env:CURRENT_TAG -CurrentVersionName $env:CURRENT_VERSION_NAME -CurrentVersionCode $env:CURRENT_VERSION_CODE -LatestTag $env:LATEST_TAG -LatestManifestPath /tmp/prev-latest.json | Out-Null'
+            SOURCE="previous-stable-manifest"
+            MIN_SUPPORTED=$PREVIOUS
+            echo "SAME_RELEASE=false" >> "$GITHUB_OUTPUT"
           fi
-          MIN_SUPPORTED=$PREVIOUS
+          echo "$SOURCE：最新稳定版 tag=$LATEST_TAG versionCode=$PREVIOUS"
           echo "MIN_SUPPORTED=$MIN_SUPPORTED" >> "$GITHUB_OUTPUT"
           echo "PREVIOUS=$PREVIOUS" >> "$GITHUB_OUTPUT"
           echo "SOURCE=$SOURCE" >> "$GITHUB_OUTPUT"
@@ -256,16 +282,19 @@ jobs:
           echo "MIN_SUPPORTED=$PREVIOUS" >> "$GITHUB_OUTPUT"
           echo "PREVIOUS=$PREVIOUS" >> "$GITHUB_OUTPUT"
           echo "SOURCE=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "SAME_RELEASE=false" >> "$GITHUB_OUTPUT"
           echo "MONOTONIC: source=$SOURCE previous=$PREVIOUS new=$VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::error::查询上一稳定清单返回 HTTP $HTTP_CODE（超时/DNS/TLS/5xx/429），阻止发布"; exit 1
           fi
 
       - name: Decode release keystore
+        if: steps.monotonic.outputs.SAME_RELEASE != 'true'
         run: |
           echo "${{ secrets.POLARIS_RELEASE_KEYSTORE_B64 }}" | base64 -d > keystore.jks
 
       - name: Assemble release APK (signed)
+        if: steps.monotonic.outputs.SAME_RELEASE != 'true'
         env:
           POLARIS_RELEASE_STORE_FILE: keystore.jks
           POLARIS_RELEASE_STORE_PASSWORD: ${{ secrets.POLARIS_RELEASE_STORE_PASSWORD }}
@@ -276,7 +305,11 @@ jobs:
       - name: Locate release APK
         id: apk
         run: |
-          APK_PATH="app/build/outputs/apk/release/Polaris-${{ steps.version.outputs.name }}-release.apk"
+          if [ "${{ steps.monotonic.outputs.SAME_RELEASE }}" = "true" ]; then
+            APK_PATH="build/existing-release/Polaris-${{ steps.version.outputs.name }}-release.apk"
+          else
+            APK_PATH="app/build/outputs/apk/release/Polaris-${{ steps.version.outputs.name }}-release.apk"
+          fi
           if [ ! -f "$APK_PATH" ]; then
             echo "::error::未生成正式签名 APK：$APK_PATH"; exit 1
           fi
@@ -311,6 +344,7 @@ jobs:
           fi
 
       - name: Generate latest.json and .sha256
+        if: steps.monotonic.outputs.SAME_RELEASE != 'true'
         run: |
           pwsh -NoProfile -File tools/release/generate-update-manifest.ps1 \
             -ApkPath '${{ steps.apk.outputs.path }}' \
@@ -322,6 +356,7 @@ jobs:
             -MinSupportedVersionCode ${{ steps.monotonic.outputs.MIN_SUPPORTED }}
 
       - name: Create or update draft release
+        if: steps.monotonic.outputs.SAME_RELEASE != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -337,6 +372,7 @@ jobs:
           fi
 
       - name: Upload draft assets
+        if: steps.monotonic.outputs.SAME_RELEASE != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -346,11 +382,11 @@ jobs:
             "build/update-manifest/latest.json" \
             "build/update-manifest/Polaris-${{ steps.version.outputs.name }}-release.apk.sha256"
 
-      - name: Re-verify draft assets before publishing
+      - name: Re-verify published or draft assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 从 Draft 重新下载三项资产并复验，全部通过才允许发布。
+          # 始终从 GitHub Release 重新下载三项资产；同 tag 重跑不使用新构建产物。
           TAG="${{ github.ref_name }}"
           VERSION_NAME=${{ steps.version.outputs.name }}
           VERSION_CODE=${{ steps.version.outputs.code }}
@@ -406,11 +442,12 @@ jobs:
           if [ "$APP_ID" != "com.polaris.timetable" ]; then
             echo "::error::Draft APK 包名不符"; exit 1
           fi
-          echo "Draft 三资产复验通过：$APK_FILE ($ACTUAL_SIZE bytes, sha256=$ACTUAL_SHA)"
+          echo "GitHub Release 三资产复验通过：$APK_FILE ($ACTUAL_SIZE bytes, sha256=$ACTUAL_SHA)"
 
       # Gitee 是第二发布目标：GitHub 正式发布完成后才同步，
       # Gitee 故障不得阻断或回滚已完成的 GitHub 稳定发布（脚本幂等，可重跑补发）。
       - name: Publish draft as stable release
+        if: steps.monotonic.outputs.SAME_RELEASE != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -428,8 +465,8 @@ jobs:
             -Repo 'polaris-course-schedule' \
             -Tag '${{ github.ref_name }}' \
             -ExpectedCommitSha "$EXPECTED_COMMIT" \
-            -ApkPath '${{ steps.apk.outputs.path }}' \
-            -GitHubManifestPath 'build/update-manifest/latest.json' \
+            -ApkPath '/tmp/verify/Polaris-${{ steps.version.outputs.name }}-release.apk' \
+            -GitHubManifestPath '/tmp/verify/latest.json' \
             -ReleaseNotesPath 'docs/releases/${{ steps.version.outputs.name }}.md' \
             -OutputPath 'build/update-manifest-gitee'
 
@@ -454,10 +491,128 @@ jobs:
           if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ] || [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "::error::Gitee 匿名下载 APK 与清单身份不一致"; exit 1
           fi
-          if [ "$ACTUAL_SHA" != "$(sha256sum '${{ steps.apk.outputs.path }}' | cut -d' ' -f1)" ]; then
+          if [ "$ACTUAL_SHA" != "$(sha256sum '/tmp/verify/Polaris-${{ steps.version.outputs.name }}-release.apk' | cut -d' ' -f1)" ]; then
             echo "::error::GitHub/Gitee 未使用同一个 APK"; exit 1
           fi
 
       - name: Remove temporary keystore
         if: always()
         run: rm -f keystore.jks
+
+  recover-gitee-release:
+    name: Recover existing GitHub Release to Gitee
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      EXPECTED_CERT_SHA256: ${{ secrets.POLARIS_RELEASE_CERT_SHA256 }}
+    steps:
+      - name: Require recovery secrets
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::error::GITEE_TOKEN 未配置"; exit 1
+          fi
+          if [ -z "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::POLARIS_RELEASE_CERT_SHA256 未配置"; exit 1
+          fi
+
+      - name: Checkout recovery scripts from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up JDK 17 for APK verification
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download and validate formal GitHub Release
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if ! echo "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::release_tag 必须为 v<major>.<minor>.<patch>"; exit 1
+          fi
+          FORMAL=$(gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease \
+            --jq '(.tagName == env.RELEASE_TAG) and (.isDraft == false) and (.isPrerelease == false)')
+          if [ "$FORMAL" != "true" ]; then
+            echo "::error::$RELEASE_TAG 不是已发布的正式 GitHub Release"; exit 1
+          fi
+          rm -rf build/recovery && mkdir -p build/recovery
+          gh release download "$RELEASE_TAG" --dir build/recovery --clobber
+          gh release view "$RELEASE_TAG" --json body --jq .body > build/recovery/release-notes.md
+          COUNT=$(find build/recovery -maxdepth 1 -type f ! -name release-notes.md | wc -l)
+          if [ "$COUNT" -ne 3 ]; then
+            echo "::error::GitHub Release 资产数量 $COUNT != 3"; exit 1
+          fi
+          VERSION_NAME="${RELEASE_TAG#v}"
+          APK_PATH="build/recovery/Polaris-$VERSION_NAME-release.apk"
+          SHA_PATH="$APK_PATH.sha256"
+          MANIFEST_PATH="build/recovery/latest.json"
+          for FILE in "$APK_PATH" "$SHA_PATH" "$MANIFEST_PATH"; do
+            if [ ! -f "$FILE" ]; then echo "::error::GitHub Release 缺少 $FILE"; exit 1; fi
+          done
+          VERSION_CODE=$(python3 -c "import json;print(json.load(open('$MANIFEST_PATH'))['versionCode'])")
+          RELEASE_TAG="$RELEASE_TAG" VERSION_NAME="$VERSION_NAME" VERSION_CODE="$VERSION_CODE" APK_PATH="$APK_PATH" \
+            pwsh -NoProfile -Command 'Import-Module ./tools/release/ReleaseSafety.psm1 -Force; Assert-ReleaseVersionGate -CurrentTag $env:RELEASE_TAG -CurrentVersionName $env:VERSION_NAME -CurrentVersionCode $env:VERSION_CODE -LatestTag $env:RELEASE_TAG -LatestManifestPath build/recovery/latest.json -PublishedApkPath $env:APK_PATH | Out-Null'
+          RECORDED=$(cut -d' ' -f1 "$SHA_PATH")
+          ACTUAL_SHA=$(sha256sum "$APK_PATH" | cut -d' ' -f1)
+          if [ "$RECORDED" != "$ACTUAL_SHA" ]; then
+            echo "::error::GitHub Release APK 与 .sha256 不一致"; exit 1
+          fi
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH" > /tmp/recovery-apksigner.txt
+          ACTUAL_CERT=$(grep -m1 -oP 'SHA-256 digest: \K[0-9a-fA-F]+' /tmp/recovery-apksigner.txt)
+          if [ "$ACTUAL_CERT" != "$(echo "$EXPECTED_CERT_SHA256" | tr 'A-F' 'a-f')" ]; then
+            echo "::error::GitHub Release APK 签名指纹不符"; exit 1
+          fi
+          APP_ID=$(apkanalyzer manifest application-id "$APK_PATH" | tail -1)
+          APK_CODE=$(apkanalyzer manifest version-code "$APK_PATH" | tail -1)
+          APK_NAME=$(apkanalyzer manifest version-name "$APK_PATH" | tail -1)
+          if [ "$APP_ID" != "com.polaris.timetable" ] || [ "$APK_CODE" != "$VERSION_CODE" ] || [ "$APK_NAME" != "$VERSION_NAME" ]; then
+            echo "::error::GitHub Release APK 包名或版本不符"; exit 1
+          fi
+          EXPECTED_COMMIT=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "expected_commit=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "manifest_path=$MANIFEST_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Publish existing GitHub assets to Gitee only
+        id: gitee
+        run: |
+          pwsh -NoProfile -File tools/release/publish-gitee-release.ps1 \
+            -Owner 'Jockjrop' \
+            -Repo 'polaris-course-schedule' \
+            -Tag '${{ steps.release.outputs.tag }}' \
+            -ExpectedCommitSha '${{ steps.release.outputs.expected_commit }}' \
+            -ApkPath '${{ steps.release.outputs.apk_path }}' \
+            -GitHubManifestPath '${{ steps.release.outputs.manifest_path }}' \
+            -ReleaseNotesPath 'build/recovery/release-notes.md' \
+            -OutputPath 'build/update-manifest-gitee'
+
+      - name: Verify recovered Gitee assets anonymously
+        run: |
+          curl -fsSL --cookie '' --connect-timeout 10 --max-time 60 \
+            -o /tmp/gitee-latest.json '${{ steps.gitee.outputs.manifest_url }}'
+          python3 -m json.tool /tmp/gitee-latest.json >/dev/null
+          curl -fsSL --cookie '' --connect-timeout 10 --max-time 300 \
+            -o /tmp/gitee-release.apk '${{ steps.gitee.outputs.apk_url }}'
+          EXPECTED_SIZE=$(python3 -c "import json;print(json.load(open('/tmp/gitee-latest.json'))['apk']['size'])")
+          EXPECTED_SHA=$(python3 -c "import json;print(json.load(open('/tmp/gitee-latest.json'))['apk']['sha256'])")
+          ACTUAL_SIZE=$(stat -c%s /tmp/gitee-release.apk)
+          ACTUAL_SHA=$(sha256sum /tmp/gitee-release.apk | cut -d' ' -f1)
+          GITHUB_SHA=$(sha256sum '${{ steps.release.outputs.apk_path }}' | cut -d' ' -f1)
+          if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ] || [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ] || [ "$ACTUAL_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::Gitee 匿名下载资产与 GitHub 正式 APK 不一致"; exit 1
+          fi
