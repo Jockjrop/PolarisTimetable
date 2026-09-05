@@ -4,6 +4,7 @@ import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.view.Gravity;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
@@ -36,6 +37,21 @@ public final class DialogWindowHelper {
         window.setWindowAnimations(0);
         WindowManager.LayoutParams attributes = window.getAttributes();
         attributes.windowAnimations = 0;
+        window.setAttributes(attributes);
+    }
+
+    /**
+     * 大屏靠左对齐：对话框窗口贴屏幕左侧、垂直居中，
+     * 与平板空状态「导入课表」卡片的左侧位置保持同侧（1.27.7）。
+     */
+    public static void alignDialogStart(Window window, Context context) {
+        if (window == null || context == null) {
+            return;
+        }
+        WindowManager.LayoutParams attributes = window.getAttributes();
+        attributes.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        attributes.x = dp(context, 24);
+        attributes.y = 0;
         window.setAttributes(attributes);
     }
 

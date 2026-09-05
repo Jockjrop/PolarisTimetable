@@ -662,6 +662,10 @@
     <string name="side_panel_plan_title">本周计划</string>
     <string name="common_manage">管理</string>
     <string name="side_panel_plan_empty">本周暂无计划，点「管理」新建</string>
+    <string name="side_panel_practice_title">实践</string>
+    <string name="empty_schedule_header_title">暂无课表</string>
+    <string name="side_panel_events_empty">暂无考试 / DDL，点「＋」添加</string>
+    <string name="settings_row_locked_switch_cd">%1$s（平板课表固定显示 7 天，不可关闭）</string>
     <string name="practice_meta_teacher"> · 老师 %1$s</string>
     <string name="conflict_week_title">第 %1$d 周课程冲突</string>
     <string name="conflict_explanation">以下课程在当前周的上课时间重叠。点击一组冲突，可选择要编辑的课程。</string>

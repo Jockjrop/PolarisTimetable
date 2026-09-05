@@ -136,6 +136,17 @@ public class DialogKit {
         DialogWindowHelper.transparentDialog(dialog, host.isDarkModeActive(), host);
     }
 
+    /**
+     * 横屏平板：透明化之外再把对话框靠左放置，与左侧空状态「导入课表」
+     * 卡片同侧（1.27.7 导入弹窗同步居左）；其他场景仍走居中的 transparentDialog。
+     */
+    public void transparentDialogLeft(Dialog dialog) {
+        transparentDialog(dialog);
+        if (com.polaris.timetable.ui.WindowSizeClass.isLandscapeTablet(host)) {
+            DialogWindowHelper.alignDialogStart(dialog.getWindow(), host);
+        }
+    }
+
     public void makeDialogStill(Window window) {
         DialogWindowHelper.makeDialogStill(window);
     }

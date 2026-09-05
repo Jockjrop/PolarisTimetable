@@ -577,7 +577,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleBoard.setOnWeekSwipeListener(this::onBoardWeekChanged);
         scheduleBoard.setWeekBounds(1, scheduleViewState.semesterWeeks);
         scheduleBoard.setCurrentWeek(currentWeek);
-        scheduleBoard.setVisibleDays(scheduleViewState.showSaturday, scheduleViewState.showSunday);
+        scheduleBoard.setVisibleDays(boardShowsSaturday(), boardShowsSunday());
         scheduleBoard.setSectionCount(scheduleViewState.courseSectionCount);
         scheduleBoard.setFirstWeekStartMillis(firstWeekStartMillis());
         scheduleBoard.setClassTimeSettings(scheduleViewState.firstClassStartTime, scheduleViewState.classDurationMinutes, scheduleViewState.classBreakMinutes,
@@ -649,9 +649,17 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
             settingsParams.leftMargin = dp(DesignTokens.TABLET_SETTINGS_SPLIT);
             contentHost.addView(settingsPage, settingsParams);
-            // 实践课程统一放到“···”左侧的名称切换卡，大屏不再重复建右侧面板。
-            practiceSidePanel = null;
-            practiceSidePanelContent = null;
+            // 课表右侧实践面板（1.27.7 改回）：毛玻璃容器 + 可滚动内容层，
+            // 显示课表中全部实践课程，排在今日概览面板下方、计划面板上方。
+            practiceSidePanel = (FrameLayout) glassLayer(floatingPanelBg(scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
+            practiceSidePanelContent = new LinearLayout(this);
+            practiceSidePanelContent.setOrientation(LinearLayout.VERTICAL);
+            practiceSidePanel.addView(practiceSidePanelContent, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+            practiceSidePanel.setVisibility(View.GONE);
+            contentHost.addView(practiceSidePanel, new FrameLayout.LayoutParams(
+                    dp(DesignTokens.TABLET_PRACTICE_PANEL_WIDTH), FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.END | Gravity.TOP));
             if (separateTodayPanel) {
                 // 今日概览独立面板：右侧顶部，实践面板上方。
                 buildTodayOverviewPanel();
@@ -686,10 +694,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         FrameLayout.LayoutParams topParams;
         if (isLandscapeTablet()) {
-            // 横屏平板：顶栏左贴边、宽度与课表网格一致（两侧对齐）。
+            // 横屏平板：顶栏与课表网格右缘对齐，左侧留出页边距不贴屏幕边缘（1.27.7）。
+            int leftInset = tabletTopBarLeftInset();
             topParams = new FrameLayout.LayoutParams(
-                    tabletGridWidth(), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP);
-            topParams.setMargins(0, statusBarHeight() + dp(8), 0, 0);
+                    tabletTopBarWidth(), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP);
+            topParams.setMargins(leftInset, statusBarHeight() + dp(8), 0, 0);
         } else {
             topParams = new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -937,7 +946,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (scheduleBoard != null) {
             scheduleBoard.setWeekBounds(1, scheduleViewState.semesterWeeks);
             scheduleBoard.setCurrentWeek(currentWeek);
-            scheduleBoard.setVisibleDays(scheduleViewState.showSaturday, scheduleViewState.showSunday);
+            scheduleBoard.setVisibleDays(boardShowsSaturday(), boardShowsSunday());
             scheduleBoard.setSectionCount(scheduleViewState.courseSectionCount);
             scheduleBoard.setFirstWeekStartMillis(firstWeekStartMillis());
             scheduleBoard.setClassTimeSettings(scheduleViewState.firstClassStartTime, scheduleViewState.classDurationMinutes, scheduleViewState.classBreakMinutes,
@@ -959,13 +968,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateConflictSummary();
         updateEmptyScheduleView();
         updateReturnCurrentWeekAction();
-        // 横屏平板：顶栏宽度与课表网格一致——周六/周日开关变化后即时重算。
+        // 横屏平板：顶栏宽度与课表网格一致（右缘对齐、左侧留边距）——
+        // 周六/周日开关变化后即时重算。
         if (isLandscapeTablet() && topPanelContainer != null) {
             FrameLayout.LayoutParams topParams =
                     (FrameLayout.LayoutParams) topPanelContainer.getLayoutParams();
-            int gridWidth = tabletGridWidth();
-            if (topParams.width != gridWidth) {
-                topParams.width = gridWidth;
+            int topBarWidth = tabletTopBarWidth();
+            if (topParams.width != topBarWidth) {
+                topParams.width = topBarWidth;
                 topPanelContainer.setLayoutParams(topParams);
             }
         }
@@ -1180,6 +1190,16 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 getResources().getDisplayMetrics().widthPixels, visibleDayCount);
     }
 
+    /** 横屏平板顶栏左侧与屏幕边缘的间距（与平板页边距令牌一致，1.27.7）。 */
+    private int tabletTopBarLeftInset() {
+        return dp(DesignTokens.MARGIN_PAGE_TABLET);
+    }
+
+    /** 横屏平板顶栏宽度：网格宽度减去左侧间距，右缘仍与网格对齐。 */
+    private int tabletTopBarWidth() {
+        return Math.max(0, tabletGridWidth() - tabletTopBarLeftInset());
+    }
+
     /** 横屏平板课表右侧可用空间（减去左右边距，px）。 */
     private int rightPanelSpace() {
         return Math.max(0, getResources().getDisplayMetrics().widthPixels
@@ -1213,9 +1233,22 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return result;
     }
 
+    /** 右侧实践面板数据：课表中全部实践课程，不按当前周过滤（1.27.7）。 */
+    private List<Course> practiceCoursesForPanel() {
+        List<Course> result = new ArrayList<>();
+        for (Course course : courses) {
+            if (course != null && (course.courseType == CourseType.PRACTICE
+                    || course.isBannerOnlyCourse())) {
+                result.add(course);
+            }
+        }
+        return result;
+    }
+
     /**
-     * 刷新课表右侧的本周实践面板：仅横屏平板且右侧空间充足、
-     * 本周有实践、课表 tab 且设置面板未打开时显示。
+     * 刷新课表右侧的实践面板（1.27.7 改回）：仅横屏平板且右侧空间充足、
+     * 课表 tab 且设置面板未打开时显示；内容为全部实践课程，超高可滚动。
+     * 位置排在今日概览面板下方、计划面板上方。
      */
     private void updatePracticeSidePanel() {
         if (practiceSidePanel == null) {
@@ -1226,7 +1259,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         boolean visible = panelEnabled && activeTab == 0
                 && (settingsPage == null
                 || settingsPage.getVisibility() != View.VISIBLE);
-        List<Course> practices = panelEnabled ? practiceCoursesForCurrentWeek()
+        List<Course> practices = panelEnabled ? practiceCoursesForPanel()
                 : new ArrayList<>();
         if (!visible || practices.isEmpty()) {
             practiceSidePanel.setVisibility(View.GONE);
@@ -1235,16 +1268,26 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         practiceSidePanelContent.removeAllViews();
 
         TextView title = new TextView(this);
-        title.setText(getString(R.string.board_practice_title));
+        title.setText(getString(R.string.side_panel_practice_title));
         title.setTextColor(inkColor());
         title.setTextSize(14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(dp(14), dp(10), dp(14), dp(6));
         practiceSidePanelContent.addView(title);
 
+        ScrollView practiceScroll = new ScrollView(this);
+        practiceScroll.setVerticalScrollBarEnabled(practices.size() > 4);
+        practiceScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        LinearLayout practiceList = new LinearLayout(this);
+        practiceList.setOrientation(LinearLayout.VERTICAL);
         for (Course course : practices) {
-            practiceSidePanelContent.addView(buildPracticePanelItem(course));
+            practiceList.addView(buildPracticePanelItem(course));
         }
+        practiceScroll.addView(practiceList, new ScrollView.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+        practiceSidePanelContent.addView(practiceScroll, new LinearLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Math.min(dp(340), practices.size() * dp(66))));
 
         FrameLayout.LayoutParams params =
                 (FrameLayout.LayoutParams) practiceSidePanel.getLayoutParams();
@@ -1318,8 +1361,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     /**
-     * 刷新右侧下方的本周计划面板：仅横屏平板且右侧空间充足、
-     * 课表 tab 且设置面板未打开时显示；排在实践面板下方。
+     * 刷新右侧下方的计划面板：仅横屏平板且右侧空间充足、
+     * 课表 tab 且设置面板未打开时显示；排在实践/今日概览面板下方。
+     * 1.27.7：头部新增与手机端同款「＋」新增入口；内容拆分为
+     * 「考试 / DDL」与「计划」两栏，与手机计划页的分区保持一致。
      */
     private void updatePlanSidePanel() {
         if (planSidePanel == null) {
@@ -1337,6 +1382,28 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         planSidePanelContent.addView(planPageBuilder.buildSidePanelHeader(this));
 
+        // 考试 / DDL 栏：与手机计划页同源（待完成按日期升序，已完成降序）。
+        planSidePanelContent.addView(planPageBuilder.sideSectionTitle(this,
+                getString(R.string.academic_title)));
+        List<AcademicEvent> events = PlanPageBuilder.sortedAcademicEvents(academicEvents);
+        if (events.isEmpty()) {
+            TextView emptyEvents = new TextView(this);
+            emptyEvents.setText(getString(R.string.side_panel_events_empty));
+            emptyEvents.setTextColor(mutedColor());
+            emptyEvents.setTextSize(12);
+            emptyEvents.setGravity(Gravity.CENTER);
+            emptyEvents.setPadding(0, dp(10), 0, dp(10));
+            emptyEvents.setOnClickListener(v -> showAcademicTimelineDialog());
+            planSidePanelContent.addView(emptyEvents);
+        } else {
+            for (AcademicEvent event : events) {
+                planSidePanelContent.addView(planPageBuilder.sideAcademicEventRow(this, event));
+            }
+        }
+
+        // 计划栏：本周计划（未完成在前，按周几排序）。
+        planSidePanelContent.addView(planPageBuilder.sideSectionTitle(this,
+                getString(R.string.plan_title)));
         List<StudyPlan> weekPlans = new ArrayList<>();
         for (StudyPlan plan : studyPlans) {
             if (plan.week == currentWeek) {
@@ -1636,9 +1703,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         importParams.setMargins(0, dp(20), 0, 0);
         card.addView(importButton, importParams);
 
+        // 横屏平板（1.27.7）：导入卡片靠左侧放置（与左侧顶栏同侧），
+        // 不再水平居中横跨大屏；手机/竖屏维持居中全宽。
+        boolean wideTablet = isLandscapeTablet();
         FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER);
+                wideTablet ? dp(420) : FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                wideTablet ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
         layer.addView(card, cardParams);
         return layer;
     }
@@ -2606,8 +2677,23 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popup.setElevation(dp(8));
         popup.setAnimationStyle(android.R.style.Animation_Dialog);
+        // 1.27.7：菜单锚定「···」按钮正下方（右缘与按钮对齐），不再固定在屏幕右上角。
+        showPopupAnchoredBelow(popup, anchor, dp(224));
+    }
+
+    /**
+     * 把弹出菜单显示在锚点视图正下方：右缘与锚点右缘对齐，
+     * 并夹紧在窗口左右安全边距内；y 取锚点底边 + 6dp 间隙。
+     */
+    private void showPopupAnchoredBelow(PopupWindow popup, View anchor, int popupWidth) {
+        int[] location = new int[2];
+        anchor.getLocationInWindow(location);
+        int y = location[1] + anchor.getHeight() + dp(6);
+        int x = Math.max(dp(8), Math.min(
+                location[0] + anchor.getWidth() - popupWidth,
+                getResources().getDisplayMetrics().widthPixels - dp(8) - popupWidth));
         popup.showAtLocation(rootView == null ? anchor : rootView,
-                Gravity.TOP | Gravity.END, dp(14), statusBarHeight() + dp(48));
+                Gravity.TOP | Gravity.START, x, y);
     }
 
     private TextView popupMenuAction(String text, View.OnClickListener listener) {
@@ -3325,7 +3411,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         boolean bannerEnabled = scheduleViewState.showPracticeBanner;
         practiceBarCourses = practiceCoursesForCurrentWeek();
-        boolean show = bannerEnabled && activeTab == 0 && !practiceBarCourses.isEmpty();
+        // 1.27.7：右侧实践面板可见时（面板含全部实践），顶栏不再重复放实践入口；
+        // 面板因空间不足未显示时，顶栏入口仍作为兜底。
+        boolean panelActive = practiceSidePanel != null
+                && practiceSidePanel.getVisibility() == View.VISIBLE;
+        boolean show = bannerEnabled && activeTab == 0 && !panelActive && !practiceBarCourses.isEmpty();
         if (!show) {
             cancelPracticeBarTimers();
             practiceBarDisplayedName = "";
@@ -3676,6 +3766,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private void refreshPlanList() {
         planPageBuilder.refreshList(this, studyPlans);
+        // 1.27.7：右侧计划面板与计划页同源刷新（事件/计划增删改后即时同步）。
+        updatePlanSidePanel();
     }
 
     /**
@@ -4648,6 +4740,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public boolean showSaturday() {
         return scheduleViewState.showSaturday;
+    }
+
+    @Override
+    public boolean sevenDayBoardForced() {
+        return tabletSevenDayBoard();
     }
 
     @Override
@@ -7444,7 +7541,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private String headerTitle() {
-        return courses.isEmpty() ? weekSubtitle() : weekTitle();
+        // 未导入课表时不再显示默认学期的假日期（如「2026/7/13 周一」），改为中性提示。
+        return courses.isEmpty() ? getString(R.string.empty_schedule_header_title) : weekTitle();
     }
 
     private String headerSubtitle() {
@@ -7727,7 +7825,27 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private void updateVisibleDayCount() {
+        if (tabletSevenDayBoard()) {
+            // 平板：课表强制显示 7 天，周六/周日开关不再影响网格（1.27.7）。
+            visibleDayCount = 7;
+            return;
+        }
         visibleDayCount = 5 + (scheduleViewState.showSaturday ? 1 : 0) + (scheduleViewState.showSunday ? 1 : 0);
+    }
+
+    /** 平板课表强制 7 天：网格始终包含周六/周日，开关固定为开启（1.27.7）。 */
+    private boolean tabletSevenDayBoard() {
+        return WindowSizeClass.isTablet(getResources().getConfiguration());
+    }
+
+    /** 网格是否显示周六：平板强制显示，手机跟随设置。 */
+    private boolean boardShowsSaturday() {
+        return tabletSevenDayBoard() || scheduleViewState.showSaturday;
+    }
+
+    /** 网格是否显示周日：平板强制显示，手机跟随设置。 */
+    private boolean boardShowsSunday() {
+        return tabletSevenDayBoard() || scheduleViewState.showSunday;
     }
 
     private int inferSectionCount(List<Course> source) {

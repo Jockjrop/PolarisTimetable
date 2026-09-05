@@ -213,7 +213,8 @@ public class AiImportFlow extends DialogKit {
         });
         dialog.setContentView(glassDialogContent(scroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
-        transparentDialog(dialog);
+        // 横屏平板：AI 导入弹窗与左侧「导入课表」卡片同侧（1.27.7）。
+        transparentDialogLeft(dialog);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setSoftInputMode(
                     WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -403,7 +404,7 @@ public class AiImportFlow extends DialogKit {
         dialog.setOnDismissListener(ignored -> confirmation.cancel());
         dialog.setContentView(glassDialogContent(scroll, panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
-        transparentDialog(dialog);
+        transparentDialogLeft(dialog);
     }
 
     private void addScheduleImportCandidatePreview(

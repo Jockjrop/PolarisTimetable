@@ -58,7 +58,8 @@ public class CourseScheduleDialogs extends DialogKit {
         }));
         dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
-        transparentDialog(dialog);
+        // 横屏平板：导入弹窗与左侧「导入课表」卡片同侧（1.27.7）。
+        transparentDialogLeft(dialog);
     }
 
     /** 已有学校解析模型列表（原解析模型选择对话框内容，含自定义学校）。 */
@@ -92,7 +93,7 @@ public class CourseScheduleDialogs extends DialogKit {
         }));
         dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
-        transparentDialog(dialog);
+        transparentDialogLeft(dialog);
     }
 
     public void showCustomSchoolDialog(Runnable onSelected) {
@@ -124,7 +125,7 @@ public class CourseScheduleDialogs extends DialogKit {
         }));
         dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
         dialog.show();
-        transparentDialog(dialog);
+        transparentDialogLeft(dialog);
     }
 
     public void showClassTimePasteDialog(final List<int[]> rows,

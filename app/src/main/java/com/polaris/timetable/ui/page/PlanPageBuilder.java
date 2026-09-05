@@ -1,15 +1,23 @@
 package com.polaris.timetable.ui.page;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import androidx.appcompat.content.res.AppCompatResources;
+import androidx.core.graphics.drawable.DrawableCompat;
 
 import com.polaris.timetable.R;
 import com.polaris.timetable.model.AcademicEvent;
@@ -766,7 +774,11 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         return planListContainer == null ? null : planListContainer.getContext();
     }
 
-    /** 课表右侧计划面板头部：标题 + 「管理」入口。 */
+    /**
+     * 课表右侧计划面板头部：标题 + 「添加」加号 + 「管理」入口。
+     * 加号与手机计划页悬浮加号同款（强调色圆钮 + ＋图标），点按在正下方
+     * 展开与悬浮菜单一致的三项动作（1.27.7）。
+     */
     public View buildSidePanelHeader(Context context) {
         LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -780,6 +792,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         header.addView(title, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        header.addView(buildSidePanelAddButton(context));
         TextView manage = new TextView(context);
         manage.setText(context.getString(R.string.common_manage));
         manage.setTextSize(13);
@@ -791,6 +804,131 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         manage.setOnClickListener(v -> host.openPlanPage());
         header.addView(manage);
         return header;
+    }
+
+    /** 右侧面板加号：强调色圆钮（与手机计划页 FAB 同款视觉），展开新增菜单。 */
+    private View buildSidePanelAddButton(Context context) {
+        FrameLayout button = new FrameLayout(context);
+        GradientDrawable background = new GradientDrawable();
+        background.setShape(GradientDrawable.OVAL);
+        background.setColor(host.accentColor());
+        button.setBackground(background);
+        ImageView icon = new ImageView(context);
+        icon.setImageDrawable(tintedIcon(context, R.drawable.ic_plan_add, host.onAccentColor()));
+        // 行内加号按钮自身带 contentDescription，图标为装饰。
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        button.addView(icon, new FrameLayout.LayoutParams(
+                dp(context, 16), dp(context, 16), Gravity.CENTER));
+        button.setContentDescription(context.getString(R.string.plan_fab_cd_collapsed));
+        button.setOnClickListener(v -> showSideAddMenu(v));
+        host.attachPressFeedback(button);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                dp(context, 30), dp(context, 30));
+        params.leftMargin = dp(context, 4);
+        params.rightMargin = dp(context, 2);
+        button.setLayoutParams(params);
+        return button;
+    }
+
+    /**
+     * 加号展开的新增菜单：与手机计划页悬浮菜单同款三项
+     * （新建计划 / 添加DDL / 添加考试），锚定加号正下方并右缘对齐。
+     */
+    private void showSideAddMenu(View anchor) {
+        Context context = anchor.getContext();
+        final PopupWindow[] popupHolder = new PopupWindow[1];
+        LinearLayout panel = new LinearLayout(context);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(context, 6), dp(context, 6), dp(context, 6), dp(context, 6));
+        panel.setBackground(host.roundedBg(host.cardColorHex(), 18));
+        panel.addView(sideAddMenuRow(context, popupHolder,
+                PlanAddMenuView.Action.ADD_EXAM, R.drawable.ic_plan_exam, R.string.plan_add_action_exam));
+        panel.addView(sideAddMenuRow(context, popupHolder,
+                PlanAddMenuView.Action.ADD_DDL, R.drawable.ic_plan_deadline, R.string.plan_add_action_deadline));
+        panel.addView(sideAddMenuRow(context, popupHolder,
+                PlanAddMenuView.Action.NEW_PLAN, R.drawable.ic_plan_item, R.string.plan_add_action_plan));
+
+        int popupWidth = dp(context, 168);
+        PopupWindow popup = new PopupWindow();
+        popupHolder[0] = popup;
+        popup.setContentView(panel);
+        popup.setWidth(popupWidth);
+        popup.setHeight(LinearLayout.LayoutParams.WRAP_CONTENT);
+        popup.setFocusable(true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        popup.setElevation(dp(context, 8));
+        // 与实践下拉一致：平移+淡入淡出，避免玻璃内容被系统窗口动画重采样抖动。
+        popup.setAnimationStyle(R.style.PolarisDropdownPopup);
+        popup.showAsDropDown(anchor, anchor.getWidth() - popupWidth, dp(context, 6));
+    }
+
+    /** 新增菜单行：图标 + 文字胶囊，与 PlanAddMenuView 行同款视觉。 */
+    private View sideAddMenuRow(Context context, PopupWindow[] popupHolder,
+                                PlanAddMenuView.Action action, int iconRes, int labelRes) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10));
+        row.setMinimumHeight(dp(context, 44));
+        row.setBackground(host.roundedBg(host.cardColorHex(), 14));
+        ImageView icon = new ImageView(context);
+        icon.setImageDrawable(tintedIcon(context, iconRes, host.accentColor()));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(context, 16), dp(context, 16)));
+        TextView label = new TextView(context);
+        label.setText(context.getString(labelRes));
+        label.setTextColor(host.inkColor());
+        label.setTextSize(14);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        labelParams.leftMargin = dp(context, 8);
+        row.addView(label, labelParams);
+        row.setOnClickListener(v -> {
+            if (popupHolder[0] != null) {
+                popupHolder[0].dismiss();
+            }
+            onPlanAddAction(action);
+        });
+        host.attachPressFeedback(row);
+        return row;
+    }
+
+    /** 生成按指定颜色着色的矢量图标副本（与 PlanAddMenuView.tinted 同一实现）。 */
+    private static Drawable tintedIcon(Context context, int resId, int color) {
+        Drawable drawable = AppCompatResources.getDrawable(context, resId);
+        if (drawable == null) {
+            return null;
+        }
+        Drawable wrapped = DrawableCompat.wrap(drawable.mutate());
+        DrawableCompat.setTint(wrapped, color);
+        return wrapped;
+    }
+
+    /** 课表右侧计划面板：栏标题（与计划页分栏卡片标题同款样式）。 */
+    public View sideSectionTitle(Context context, String text) {
+        return sectionCardTitle(context, text);
+    }
+
+    /** 课表右侧计划面板：考试/DDL 事件行（复用计划页事件卡样式）。 */
+    public View sideAcademicEventRow(Context context, AcademicEvent event) {
+        return academicEventRow(context, event);
+    }
+
+    /** 右侧面板考试/DDL 排序：待完成按日期升序，已完成按日期降序（与时间线一致）。 */
+    public static List<AcademicEvent> sortedAcademicEvents(List<AcademicEvent> source) {
+        List<AcademicEvent> pending = new ArrayList<>();
+        List<AcademicEvent> finished = new ArrayList<>();
+        for (AcademicEvent event : source) {
+            (event.done ? finished : pending).add(event);
+        }
+        Collections.sort(pending, EVENT_DATE_ASC);
+        Collections.sort(finished, EVENT_DATE_DESC);
+        List<AcademicEvent> result = new ArrayList<>(pending.size() + finished.size());
+        result.addAll(pending);
+        result.addAll(finished);
+        return result;
     }
 
     public View planRow(Context context, StudyPlan plan) {

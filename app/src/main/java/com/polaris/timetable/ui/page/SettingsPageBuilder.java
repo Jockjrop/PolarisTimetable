@@ -49,6 +49,8 @@ public class SettingsPageBuilder {
         boolean showSaturday();
         boolean showSunday();
         boolean showOutOfWeek();
+        /** 平板课表强制显示 7 天：周六/周日开关固定开启、变暗不可调（1.27.7）。 */
+        boolean sevenDayBoardForced();
         boolean remindersEnabled();
         int reminderMinutesBefore();
         String reminderStatusText();
@@ -233,6 +235,35 @@ public class SettingsPageBuilder {
         return view;
     }
 
+    /**
+     * 固定开关行（1.27.7）：平板课表强制 7 天时，周六/周日行整体变暗、
+     * 开关固定为开启且不可点击，向用户传达「不可调」而非可切换的关闭态。
+     */
+    public View settingSwitchRowLocked(Context context, String label) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 8));
+        row.setMinimumHeight(dp(context, 58));
+        row.setAlpha(0.45f);
+        row.setContentDescription(context.getString(R.string.settings_row_locked_switch_cd, label));
+
+        TextView labelView = new TextView(context);
+        labelView.setTag("setting_label");
+        labelView.setText(label);
+        labelView.setTextColor(host.inkColor());
+        labelView.setTextSize(16);
+        labelView.setTypeface(Typeface.DEFAULT_BOLD);
+        labelView.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(labelView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        SwitchThumbView toggle = switchView(context, true);
+        toggle.setClickable(false);
+        toggle.setFocusable(false);
+        row.addView(toggle);
+        return row;
+    }
+
     // 纯按压反馈装饰（不消费触摸），点击由 OnClickListener 承接。
     @SuppressLint("ClickableViewAccessibility")
     private void attachRowPressFeedback(Context context, View view) {
@@ -271,8 +302,13 @@ public class SettingsPageBuilder {
         panel.addView(settingValueRow(context, context.getString(R.string.settings_row_current_week), host.currentWeekValue(), v -> {}));
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_schedule_appearance)));
         LinearLayout displayCard = settingsGroup(context);
-        displayCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_show_saturday), host.showSaturday(), host::onShowSaturdayChanged));
-        displayCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_show_sunday), host.showSunday(), host::onShowSundayChanged));
+        boolean daysLocked = host.sevenDayBoardForced();
+        displayCard.addView(daysLocked
+                ? settingSwitchRowLocked(context, context.getString(R.string.settings_row_show_saturday))
+                : settingSwitchRow(context, context.getString(R.string.settings_row_show_saturday), host.showSaturday(), host::onShowSaturdayChanged));
+        displayCard.addView(daysLocked
+                ? settingSwitchRowLocked(context, context.getString(R.string.settings_row_show_sunday))
+                : settingSwitchRow(context, context.getString(R.string.settings_row_show_sunday), host.showSunday(), host::onShowSundayChanged));
         displayCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_show_out_of_week), host.showOutOfWeek(), host::onShowOutOfWeekChanged));
         panel.addView(displayCard);
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_reminder)));
