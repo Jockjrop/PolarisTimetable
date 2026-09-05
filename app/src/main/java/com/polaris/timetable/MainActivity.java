@@ -364,7 +364,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateCoordinator = UpdateCoordinator.acquire(this, this);
         updateCoordinator.onHostCreated();
         if (rootView != null) {
-            // 自动检查：冷启动稳定显示主页面约 5 秒后触发（协议 9.5）。
+            // 自动检查在冷启动稳定显示主页面约 5 秒后触发。
             rootView.postDelayed(this::maybeAutoUpdateCheck, AUTO_UPDATE_CHECK_DELAY_MS);
         }
         Intent launchIntent = getIntent();
@@ -5048,7 +5048,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public boolean isAutoDialogBlocked() {
-        // 主窗口失焦意味着存在对话框/系统选择器等关键交互（U-P1-06），一律延后弹窗。
+        // 主窗口失焦意味着存在对话框或系统选择器等关键交互，一律延后弹窗。
         return !hasWindowFocus()
                 || (settingsPage != null && settingsPage.getVisibility() == View.VISIBLE)
                 || planPageBuilder.isAddMenuExpanded()

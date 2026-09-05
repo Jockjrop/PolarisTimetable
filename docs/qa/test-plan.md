@@ -243,7 +243,7 @@
 
 ## 应用内更新系统回归项（1.27.0）
 
-应用内更新的早期设计和验收记录归档于 `docs/archive/app-self-update-plan.md`。当前关键回归点：
+应用内更新的关键回归点：
 
 | 项 | 断言 |
 |---|---|
@@ -251,8 +251,8 @@
 | 单元测试：版本策略 | `UpdatePolicyTest`——versionCode 单调比较、minSdk 兼容、忽略版本（手动绕过/required 不可忽略）、24h 节流与时钟回拨 |
 | 单元测试：下载 | `UpdateDownloadControllerTest`——正常下载原子改名、声明长度不符、截断流、SHA-256 不匹配、取消、HTTP 错误、重定向白名单/次数、单任务约束、.part 清理 |
 | 单元测试：偏好 | `UpdatePreferencesTest`——默认关闭、偏好键读写与待安装/会话状态清理 |
-| 单元测试：网络仓库 | `UpdateRepositoryTest`——200/404/429/500 分类、重定向恰好 5 次/第 6 次拒绝、空 Location、相对/HTTP/越权重定向、超大响应透传 INVALID_METADATA、超时映射（U-P1-15） |
-| 单元测试：协调器 | `UpdateCoordinatorTest`——手动/自动检查、忽略版本、required 不可忽略、阻塞延后与恢复交付、宿主重绑回放、安装网关成功/失败、PackageInstaller 状态收敛（U-P1-15） |
-| 仪器测试 | `UpdateEntryTest`（检查行可达、防重复连点、**注入假仓库零公网，U-P1-14**）、`UpdateInstallerTest`（接收器注册且不导出、PackageInstaller 会话创建/查询/放弃，U-P1-16） |
+| 单元测试：网络仓库 | `UpdateRepositoryTest`——200/404/429/500 分类、重定向恰好 5 次/第 6 次拒绝、空 Location、相对/HTTP/越权重定向、超大响应透传 INVALID_METADATA、超时映射 |
+| 单元测试：协调器 | `UpdateCoordinatorTest`——手动/自动检查、忽略版本、required 不可忽略、阻塞延后与恢复交付、宿主重绑回放、安装网关成功/失败、PackageInstaller 状态收敛 |
+| 仪器测试 | `UpdateEntryTest`（检查行可达、防重复连点、注入假仓库且不访问公网）、`UpdateInstallerTest`（接收器注册且不导出、PackageInstaller 会话创建/查询/放弃） |
 | 手动回归 | 手动检查无更新/失败态文案；下载弹窗进度与取消；未授权未知来源引导；深色/大字体/平板横屏下弹窗不溢出 |
-| 发布流水线 | 打标签后 instrumented job 跑更新 smoke（U-P1-17）；release job：签名 Secret 缺失即失败、指纹/包名/版本核对、历史清单查询区分 200/404/故障（U-P0-03）、latest.json 生成并自检、**Draft 上传→三资产复验→publish --latest（U-P0-04）** |
+| 发布流水线 | 打标签后 instrumented job 跑更新 smoke；release job 在签名 Secret 缺失时失败，并核对指纹、包名、版本和历史清单，生成并自检 latest.json；Draft 的三项资产复验通过后才发布为 latest |

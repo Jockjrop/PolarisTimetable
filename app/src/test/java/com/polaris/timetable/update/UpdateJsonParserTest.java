@@ -319,7 +319,7 @@ public class UpdateJsonParserTest {
 
     @Test
     public void stringFieldsRejectNonStringValues() throws Exception {
-        // U-P1-07：getString 的宽松转换不允许通过协议校验。
+        // getString 的宽松转换不允许通过协议校验。
         String[] keys = {"channel", "packageName", "versionName", "publishedAt", "releaseNotesUrl"};
         for (String key : keys) {
             JSONObject body = base();
@@ -342,7 +342,7 @@ public class UpdateJsonParserTest {
 
     @Test
     public void apkSizeRejectsFractionalNumbers() throws Exception {
-        // U-P1-08：小数会被静默截断，必须拒绝。
+        // 小数会被静默截断，必须拒绝。
         JSONObject body = base();
         body.getJSONObject("apk").put("size", 18342190.5);
         assertInvalid(serialize(body));
@@ -350,7 +350,7 @@ public class UpdateJsonParserTest {
 
     @Test
     public void versionSegmentCollisionIsRejected() throws Exception {
-        // U-P1-09：minor/patch 超出 0..99 会产生映射碰撞（1.2.100 == 1.3.0），必须拒绝。
+        // minor/patch 超出 0..99 会产生映射碰撞（1.2.100 == 1.3.0），必须拒绝。
         JSONObject body = base();
         body.put("versionName", "1.2.100");
         body.put("versionCode", 10300);
@@ -366,7 +366,7 @@ public class UpdateJsonParserTest {
 
     @Test
     public void publishedAtMustBeFullyConsumed() throws Exception {
-        // U-P1-12：整串必须被解析消费，尾巴字符不允许通过。
+        // 整串必须被解析消费，尾巴字符不允许通过。
         JSONObject body = base();
         body.put("publishedAt", "2026-09-10T12:00:00Z尾巴");
         assertInvalid(serialize(body));

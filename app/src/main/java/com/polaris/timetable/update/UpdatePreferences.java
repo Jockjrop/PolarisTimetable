@@ -139,7 +139,7 @@ public final class UpdatePreferences {
         return store.getString(KEY_PENDING_APK_SHA256, null);
     }
 
-    /** 校验通过、等待安装的 APK：路径 + 目标版本 + 大小 + SHA-256（恢复时完整复验，U-P1-02）。 */
+    /** 校验通过、等待安装的 APK：路径、目标版本、大小和 SHA-256；恢复时完整复验。 */
     public void setPendingApk(String apkPath, int versionCode, long apkSize, String apkSha256) {
         store.putString(KEY_PENDING_APK_PATH, apkPath);
         store.putInt(KEY_PENDING_VERSION_CODE, versionCode);

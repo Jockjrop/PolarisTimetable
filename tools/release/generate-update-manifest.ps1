@@ -1,7 +1,7 @@
 #Requires -Version 6
 <#
 .SYNOPSIS
-    生成 Polaris 更新清单 latest.json 与 APK SHA-256 文件。早期协议设计见 docs/archive/app-self-update-plan.md。
+    生成 Polaris 更新清单 latest.json 与 APK SHA-256 文件。
 .DESCRIPTION
     输入全部显式提供；任何校验失败返回非零退出码：
       - APK 必须存在，文件名必须为 Polaris-<versionName>-release.apk
@@ -20,7 +20,7 @@ param(
     [Parameter(Mandatory = $true)][string]$GitTag,
     [Parameter(Mandatory = $true)][string]$ReleaseNotesPath,
     [Parameter(Mandatory = $true)][string]$OutputPath,
-    # U-P2-01：minSupportedVersionCode 由发布者显式提供（上一稳定版 versionCode），
+    # minSupportedVersionCode 由发布者显式提供（上一稳定版 versionCode），
     # 不在脚本内硬编码，避免协议数据失真。
     [Parameter(Mandatory = $true)][long]$MinSupportedVersionCode
 )
@@ -41,7 +41,7 @@ if ($VersionName -notmatch '^\d+\.\d+\.\d+$') {
     Fail "versionName '$VersionName' 不是 major.minor.patch 三段式"
 }
 $parts = $VersionName.Split('.')
-# U-P1-09：minor/patch 必须在 0..99（防 1.2.100 与 1.3.0 碰撞），与客户端解析规则一致。
+# minor/patch 必须在 0..99（防 1.2.100 与 1.3.0 碰撞），与客户端解析规则一致。
 if ($parts[1] -match '^\d+$' -and [long]$parts[1] -gt 99) {
     Fail "minor 版本段 $($parts[1]) 超出 0..99"
 }

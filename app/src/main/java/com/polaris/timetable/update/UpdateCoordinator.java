@@ -19,10 +19,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 更新系统单一业务入口（协议 7.1 + 改进计划阶段 B/D）：
+ * 更新系统单一业务入口：
  * 防重复检查、区分手动/自动检查、串联 Repository→Parser→Policy、
  * 启动/取消下载、恢复待安装状态、把结果切回主线程通知 UI。
- * 安装链迁移为 PackageInstaller Session（U-P0-02）：未知来源授权页与 FileProvider 链已移除，
+ * 安装链使用 PackageInstaller Session：未知来源授权页与 FileProvider 链已移除，
  * 会话状态经显式广播接收器回传；后台收到待确认 Intent 时暂存 URI，返回前台后启动。
  * 进程级单例，Activity 重建后下载与会话状态均不丢失。
  */
@@ -219,7 +219,7 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
     /** 冷启动恢复：仅控制器空闲时清理 .part 遗留；完整复验待安装 APK 与安装会话。 */
     public void onHostCreated() {
         if (controller == null || !controller.isBusy()) {
-            // 同进程 Activity 重建时下载可能仍在进行，不得误删活动 .part（U-P1-05）。
+            // 同进程 Activity 重建时下载可能仍在进行，不得误删活动 .part。
             UpdateDownloadController.cleanTemporaryFiles(appContext);
         }
         restorePendingApk();
@@ -236,7 +236,7 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
         String sha256 = prefs.pendingApkSha256();
         long size = prefs.pendingApkSize();
         int localCode = localVersionCode();
-        // U-P1-02：恢复时用持久化的大小 + SHA-256 执行完整复验（含包名/版本/签名）。
+        // 恢复时用持久化的大小和 SHA-256 执行完整复验（含包名、版本和签名）。
         UpdateInfo surrogate = new UpdateInfo(1, "stable", appContext.getPackageName(),
                 pendingCode, "", 0, 0, "", pending.getName(), "", size,
                 sha256 == null ? "" : sha256,
@@ -288,7 +288,7 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
         if (h == null) {
             return;
         }
-        // Host 重绑后立即回放当前下载状态（U-P1-05）。
+        // Host 重绑后立即回放当前下载状态。
         if (lastState == UpdateDownloadState.PREPARING
                 || lastState == UpdateDownloadState.DOWNLOADING
                 || lastState == UpdateDownloadState.VERIFYING_HASH
@@ -578,7 +578,7 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
                         h.onInstallStatusMessage(getString(R.string.update_install_failed));
                     }
                 } else if (h == null || !activityForeground) {
-                    // 后台收到确认请求：暂存确认 Intent，用户返回前台后启动（U-P0-02-7）。
+                    // 后台收到确认请求时暂存 Intent，用户返回前台后启动。
                     prefs.setPendingConfirmIntent(
                             confirmIntent.toUri(Intent.URI_INTENT_SCHEME));
                 }

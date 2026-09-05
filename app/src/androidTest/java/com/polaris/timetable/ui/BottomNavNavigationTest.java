@@ -27,7 +27,7 @@ import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 
 /**
  * 底部导航测试:手机竖屏三 tab(课表/计划/我的)切换后对应页面正确呈现。
- * 覆盖重构计划阶段 4-2 BottomNavView 的 Host 回调路由。
+ * 覆盖 BottomNavView 的 Host 回调路由。
  */
 @RunWith(AndroidJUnit4.class)
 @LargeTest

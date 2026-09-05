@@ -28,7 +28,7 @@ import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 /**
  * 字号 1.3x 下设置页渲染测试:模拟系统字体设为 1.3x 后,
  * 打开「课表设置」面板验证关键文本可见且不崩溃。
- * 覆盖重构计划阶段 6 矩阵中的「fontScale 1.3」回归项。
+ * 覆盖 fontScale 1.3 的设置页回归场景。
  */
 @RunWith(AndroidJUnit4.class)
 @LargeTest

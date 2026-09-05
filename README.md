@@ -60,7 +60,7 @@
 ## Release 构建
 
 1. 复制 `keystore.properties.example` 为 `keystore.properties`，填写发布证书路径与密码（该文件与 `*.jks`、`*.keystore` 已被 Git 忽略）
-2. 运行 `./gradlew assembleRelease`
+2. 运行 `./gradlew :app:assembleRelease`
 3. 缺少签名信息时 release 任务会直接失败，不会生成未签名安装包
 
 CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_RELEASE_STORE_PASSWORD`、`POLARIS_RELEASE_KEY_ALIAS`、`POLARIS_RELEASE_KEY_PASSWORD`（GitHub Actions 工作流见 `.github/workflows/build.yml`）。
@@ -91,16 +91,11 @@ CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_R
 
 ## 文档
 
-设计文档总览见 [DESIGN.md](DESIGN.md)，完整版本历史见 [CHANGELOG.md](CHANGELOG.md)：
-
-- [视觉系统规范](docs/design/visual-system.md)
-- [架构设计](docs/design/architecture.md)
-- [数据模型](docs/design/data-model.md)
-- [解析器设计](docs/design/parser-design.md)
-- [界面设计](docs/design/ui-design.md)
-- [产品设计](docs/design/product-design.md)
-- [测试计划](docs/qa/test-plan.md)
-- [UI 高保真页面](design/pages/)（历史视觉参考）
+- [项目开发规则](AGENTS.md)
+- [贡献指南](CONTRIBUTING.md)
+- [设计资料](DESIGN.md)
+- [测试说明](docs/qa/test-plan.md)
+- [版本历史](CHANGELOG.md)
 
 ## 隐私
 

@@ -15,7 +15,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 /**
- * 基于 PackageInstaller Session 的现代安装链（改进计划 U-P0-02）：
+ * 基于 PackageInstaller Session 的安装链：
  * - MODE_FULL_INSTALL + setAppPackageName/setSize 创建会话。
  * - 已验证 APK 流式写入 openWrite 并 fsync 后 commit。
  * - 状态回调用显式、仅本应用接收的广播（UpdateInstallStatusReceiver）。
@@ -61,7 +61,7 @@ public final class UpdateInstaller {
                 output.write(chunk, 0, read);
             }
             output.flush();
-            // openWrite 返回 OutputStream；底层为可 fsync 的文件流时强制落盘（U-P0-02-4）。
+            // openWrite 返回 OutputStream；底层为可 fsync 的文件流时强制落盘。
             if (output instanceof FileOutputStream) {
                 ((FileOutputStream) output).getFD().sync();
             }

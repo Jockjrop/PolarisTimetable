@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 协调器 JVM 测试（U-P1-15）：假仓库/假网关/内存偏好/同步主线程。
+ * 协调器 JVM 测试：假仓库、假网关、内存偏好和同步主线程。
  * 覆盖手动与自动检查、忽略版本、required、宿主阻塞延后与重绑回放、
  * 待安装与安装网关、PackageInstaller 状态收敛。
  */

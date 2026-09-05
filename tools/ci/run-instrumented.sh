@@ -23,7 +23,7 @@ case "$GITHUB_EVENT_NAME" in
   push)
     case "$GITHUB_REF" in
       refs/tags/v*)
-        # U-P1-17：标签发布前必须通过更新入口与安装构件的仪器冒烟
+        # 标签发布前必须通过更新入口与安装构件的仪器冒烟
         ./gradlew :app:connectedDebugAndroidTest \
           -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.update.UpdateEntryTest \
           --no-daemon --console=plain

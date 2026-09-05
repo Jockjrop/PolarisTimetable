@@ -79,7 +79,7 @@ public final class UpdateDownloadController {
 
     public UpdateDownloadController(Context context, Callbacks callbacks,
                                     ConnectionFactory connectionFactory) {
-        // .part 放缓存目录（允许被系统清理，U-P1-01）；校验通过后的 APK 移入 filesDir/updates。
+        // .part 放缓存目录并允许被系统清理；校验通过后的 APK 移入 filesDir/updates。
         this(new File(context.getApplicationContext().getCacheDir(), "updates"),
                 new File(context.getApplicationContext().getFilesDir(), "updates"),
                 context.getApplicationContext(), null, callbacks,
@@ -178,7 +178,7 @@ public final class UpdateDownloadController {
     }
 
     private void runDownload(UpdateInfo info) {
-        // 任务 ID 隔离：.part 文件带任务后缀，清理逻辑只删除非活动任务的临时文件（U-P1-05）。
+        // 任务 ID 隔离：.part 文件带任务后缀，清理逻辑只删除非活动任务的临时文件。
         long taskId = System.nanoTime();
         File part = new File(partDirectory, info.apkFileName() + "." + taskId + ".part");
         File target = new File(verifiedDirectory, info.apkFileName());
@@ -187,7 +187,7 @@ public final class UpdateDownloadController {
             ensureWritableDirectory(partDirectory);
             ensureWritableDirectory(verifiedDirectory);
             // 同名旧 target 必须在下载开始前删除：上次在重命名前后崩溃时，
-            // 保留旧文件会让本次 renameTo 失败（U-P1-03）。
+            // 保留旧文件会让本次 renameTo 失败。
             deleteQuietly(target);
             cleanupStaleParts(part);
             if (!ensureFreeSpace(info.apkSize())) {
@@ -248,7 +248,7 @@ public final class UpdateDownloadController {
                         + "Android/" + android.os.Build.VERSION.SDK_INT);
                 int code = connection.getResponseCode();
                 if (code >= 300 && code < 400) {
-                    // 收到重定向响应时即计数：恰好 5 次允许，第 6 次拒绝（U-P1-10）。
+                    // 收到重定向响应时即计数：恰好 5 次允许，第 6 次拒绝。
                     if (redirects >= MAX_REDIRECTS) {
                         throw failure(UpdateError.NETWORK);
                     }
@@ -280,7 +280,7 @@ public final class UpdateDownloadController {
                     throw cancelledFailure();
                 }
                 written += read;
-                // 超过清单声明大小时立即终止：恶意/错误响应不得继续消耗流量与存储（U-P1-04）。
+                // 超过清单声明大小时立即终止，避免错误响应继续消耗流量与存储。
                 if (written > expected || written > UpdateJsonParser.MAX_APK_BYTES) {
                     throw failure(UpdateError.FILE_SIZE_MISMATCH);
                 }
@@ -353,7 +353,7 @@ public final class UpdateDownloadController {
         }
     }
 
-    /** PREPARING 阶段显式创建目录；失败归为写入错误而非网络错误（U-P0-01）。 */
+    /** PREPARING 阶段显式创建目录；失败归为写入错误而非网络错误。 */
     private void ensureWritableDirectory(File directory) throws DownloadAbort {
         if (directory.isDirectory()) {
             if (!directory.canWrite()) {
@@ -373,7 +373,7 @@ public final class UpdateDownloadController {
         }
     }
 
-    /** 只清理非活动任务的 .part；活动任务的临时文件不受影响（U-P1-05）。 */
+    /** 只清理非活动任务的 .part；活动任务的临时文件不受影响。 */
     private void cleanupStaleParts(File activePart) {
         File[] files = partDirectory.listFiles();
         if (files == null) {

@@ -7,7 +7,7 @@ import android.content.Intent;
 import androidx.core.content.IntentCompat;
 
 /**
- * PackageInstaller 安装状态接收器（U-P0-02）。
+ * PackageInstaller 安装状态接收器。
  * Manifest 中声明且 exported=false，配合 setPackage 的显式广播，仅接收本应用安装会话状态。
  * 收到状态后交给 UpdateCoordinator 处理（前台启动确认 / 后台暂存确认 Intent / 收尾清理）。
  */

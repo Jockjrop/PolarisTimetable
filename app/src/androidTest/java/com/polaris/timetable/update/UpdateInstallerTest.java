@@ -18,7 +18,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 /**
- * PackageInstaller 构件测试（U-P1-15/16）：
+ * PackageInstaller 构件测试：
  * 状态接收器已在 Manifest 注册且不导出、会话可创建/查询/放弃、
  * 显式状态广播 Intent 的 action 与包约束正确。不做真实安装。
  */
@@ -36,7 +36,7 @@ public class UpdateInstallerTest {
 
     @Test
     public void installStatusReceiverIsDeclaredAndNotExported() throws Exception {
-        // U-P0-02-5：显式、仅本应用接收的状态回调。
+        // 显式、仅本应用接收的状态回调。
         ComponentName component = new ComponentName(context, UpdateInstallStatusReceiver.class);
         PackageManager pm = context.getPackageManager();
         android.content.pm.ComponentInfo info = pm.getReceiverInfo(component, 0);

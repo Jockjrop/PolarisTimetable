@@ -14,7 +14,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 
 /**
- * 清单网络层测试（U-P1-15）：状态码分类、重定向边界（5 次成功 / 第 6 次拒绝）、
+ * 清单网络层测试：状态码分类、重定向边界（5 次成功 / 第 6 次拒绝）、
  * 空 Location、相对重定向、HTTP 重定向、超大响应透传 INVALID_METADATA、超时映射。
  * 全部使用注入的假连接，不发起真实网络请求。
  */
@@ -177,7 +177,7 @@ public class UpdateRepositoryTest {
 
     @Test
     public void oversizedBodyIsRejectedAsInvalidMetadata() {
-        // U-P1-11：超过 256 KiB 的响应必须透传 INVALID_METADATA，不得被重映射为 NETWORK。
+        // 超过 256 KiB 的响应必须透传 INVALID_METADATA，不得被重映射为 NETWORK。
         StringBuilder giant = new StringBuilder("{");
         while (giant.length() <= UpdateJsonParser.MAX_MANIFEST_BYTES + 10) {
             giant.append(" ");

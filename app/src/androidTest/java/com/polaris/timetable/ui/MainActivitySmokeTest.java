@@ -25,7 +25,7 @@ import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 
 /**
  * 冒烟测试:App 冷启动后,空状态界面与底部导航必须完整呈现。
- * 覆盖重构计划阶段 0 回归清单中的「冷启动」与「空课表」路径。
+ * 覆盖冷启动与空课表路径。
  */
 @RunWith(AndroidJUnit4.class)
 @LargeTest

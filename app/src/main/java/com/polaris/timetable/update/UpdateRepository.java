@@ -79,7 +79,7 @@ public final class UpdateRepository {
                     return readBodyCapped(connection);
                 }
                 if (code >= 300 && code < 400) {
-                    // 收到重定向响应时即计数：恰好 MAX_REDIRECTS 次允许，第 6 次拒绝（U-P1-10）。
+                    // 收到重定向响应时即计数：恰好 MAX_REDIRECTS 次允许，第 6 次拒绝。
                     if (redirects >= MAX_REDIRECTS) {
                         throw new FetchException(UpdateError.NETWORK);
                     }
@@ -128,7 +128,7 @@ public final class UpdateRepository {
                 buffer.write(chunk, 0, read);
             }
         } catch (IOException exception) {
-            // 超大响应等内部 FetchException 必须原样透传，不得被重映射为网络错误（U-P1-11）。
+            // 超大响应等内部 FetchException 必须原样透传，不得被重映射为网络错误。
             if (exception instanceof FetchException) {
                 throw (FetchException) exception;
             }

@@ -28,7 +28,7 @@ import static com.polaris.timetable.testing.TextMatchers.withNavLabel;
 /**
  * 旋转测试:横竖屏切换触发 onConfigurationChanged → rebuildLayout() 全量重建,
  * 重建后空状态导入按钮与底部导航必须仍然完整可见(不依赖 Activity recreate)。
- * 覆盖重构计划阶段 2(Edge-to-Edge/Insets)与阶段 6 旋转回归项。
+ * 覆盖 Edge-to-Edge、Insets 与屏幕旋转回归场景。
  */
 @RunWith(AndroidJUnit4.class)
 @LargeTest

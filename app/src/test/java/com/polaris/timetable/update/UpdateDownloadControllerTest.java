@@ -382,7 +382,7 @@ public class UpdateDownloadControllerTest {
 
     @Test
     public void firstDownloadCreatesMissingDirectories() throws Exception {
-        // U-P0-01：父目录存在、cache-updates 子目录不存在时，首次下载必须自行创建并成功。
+        // 父目录存在、cache-updates 子目录不存在时，首次下载必须自行创建并成功。
         byte[] payload = new byte[64];
         RecordingCallbacks callbacks = new RecordingCallbacks();
         UpdateDownloadController controller = controller(callbacks, url ->
@@ -400,7 +400,7 @@ public class UpdateDownloadControllerTest {
 
     @Test
     public void updatesPathOccupiedByRegularFileFailsWithStorageError() throws Exception {
-        // U-P0-01：路径被同名普通文件占用时必须归为 STORAGE_WRITE_FAILED，不得误报网络错误。
+        // 路径被同名普通文件占用时必须归为 STORAGE_WRITE_FAILED，不得误报网络错误。
         byte[] payload = new byte[64];
         RecordingCallbacks callbacks = new RecordingCallbacks();
         UpdateDownloadController controller = controller(callbacks, url ->
@@ -433,7 +433,7 @@ public class UpdateDownloadControllerTest {
 
     @Test
     public void sameVersionTargetIsDeletedBeforeDownload() throws Exception {
-        // U-P1-03：同名旧 target 已存在时，下载开始前必须删除，避免 renameTo 失败。
+        // 同名旧 target 已存在时，下载开始前必须删除，避免 renameTo 失败。
         byte[] payload = new byte[32];
         RecordingCallbacks callbacks = new RecordingCallbacks();
         UpdateDownloadController controller = controller(callbacks, url ->
@@ -459,7 +459,7 @@ public class UpdateDownloadControllerTest {
 
     @Test
     public void streamBeyondDeclaredSizeAbortsImmediately() throws Exception {
-        // U-P1-04：响应超过清单声明大小时必须立即中止。
+        // 响应超过清单声明大小时必须立即中止。
         byte[] oversized = new byte[256];
         java.util.Arrays.fill(oversized, (byte) 0x41);
         RecordingCallbacks callbacks = new RecordingCallbacks();
@@ -478,7 +478,7 @@ public class UpdateDownloadControllerTest {
 
     @Test
     public void exactlyFiveRedirectsSucceedAndSixthFails() throws Exception {
-        // U-P1-10：恰好 5 次重定向允许，第 6 次拒绝。
+        // 恰好 5 次重定向允许，第 6 次拒绝。
         byte[] payload = new byte[16];
         UpdateDownloadController.ConnectionFactory fiveHops = url ->
                 new FakeConnection(url, 302,

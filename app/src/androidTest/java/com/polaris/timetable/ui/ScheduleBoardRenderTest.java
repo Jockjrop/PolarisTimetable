@@ -36,7 +36,7 @@ import static org.hamcrest.Matchers.endsWith;
 
 /**
  * 课表渲染与周切换测试:预置课程数据后,课程块必须渲染、左右滑动可切换周视图。
- * 覆盖重构计划阶段 6 矩阵中的「多节课叠加」「周切换」路径(经 ScheduleRepository 写入,
+ * 覆盖多节课叠加和周切换路径（经 ScheduleRepository 写入，
  * 与 PDF 导入后的渲染路径一致)。
  */
 @RunWith(AndroidJUnit4.class)

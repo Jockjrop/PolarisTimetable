@@ -49,10 +49,10 @@ jobs:
 
   instrumented:
     # PR 跑 smoke 快速拦截；push main 跑全量（周切换/旋转/字体缩放等）；
-    # tag push 跑更新入口/安装构件 smoke（U-P1-17：标签发布依赖仪器验证）。
+    # tag push 跑更新入口和安装构件 smoke，标签发布依赖仪器验证。
     # 注意：if 必须写单行。多行 plain scalar 的 job 级 if 在 tag push 上
     # 曾被评估为 false，instrumented 被静默跳过而 release 照常发布
-    # （v1.24.11 实测），等于绕过了 U-P1-17 闸门；release 的 fail-closed
+    # （v1.24.11 实测），等于绕过了仪器验证；release 的 fail-closed
     # 判断（needs.instrumented.result）即因此补上。
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -114,11 +114,11 @@ jobs:
           disable-animations: true
           script: sh tools/ci/run-instrumented.sh
   release:
-    # 稳定发布流水线；早期设计记录见 docs/archive/app-self-update-plan.md。
+    # 稳定发布流水线。
     # 缺签名 Secret / 指纹不符 / 版本不一致 / 历史清单查询失败时必须失败；
     # Debug/未签名 APK 永远不允许作为 Release 资产上传；
-    # 通过 Draft + 资产复验 + 正式发布的原子流程保证 latest 指向的稳定版三资产齐全（U-P0-04）。
-    # fail-closed：instrumented 未真正跑绿（含被跳过）时不得发布（U-P1-17）。
+    # 通过 Draft、资产复验和正式发布的原子流程保证 latest 指向的稳定版三资产齐全。
+    # fail-closed：instrumented 未真正跑绿（含被跳过）时不得发布。
     # 显式 if 会取代「needs 失败即跳过」的默认行为，跳过的依赖也拦不住发布
     # （v1.24.11 实测 instrumented 跳过、release 照常运行），故在此显式校验。
     if: startsWith(github.ref, 'refs/tags/v') && needs.instrumented.result == 'success'
@@ -187,7 +187,7 @@ jobs:
           MAJOR=$(echo "$VERSION_NAME" | cut -d. -f1)
           MINOR=$(echo "$VERSION_NAME" | cut -d. -f2)
           PATCH=$(echo "$VERSION_NAME" | cut -d. -f3)
-          # U-P1-09：minor/patch 限 0..99，防止 versionCode 映射碰撞（与客户端/脚本同规则）。
+          # minor/patch 限 0..99，防止 versionCode 映射碰撞（与客户端和脚本同规则）。
           if [ "$MINOR" -gt 99 ] || [ "$PATCH" -gt 99 ]; then
             echo "::error::minor/patch 必须在 0..99，否则 versionCode 映射碰撞"; exit 1
           fi
@@ -205,7 +205,7 @@ jobs:
       - name: Verify versionCode is monotonically increasing
         id: monotonic
         run: |
-          # U-P0-03：区分 HTTP 200 / 404 / 网络故障，任何故障不得把上一版本当作 0。
+          # 区分 HTTP 200、404 和网络故障，任何故障不得把上一版本当作 0。
           VERSION_CODE=${{ steps.version.outputs.code }}
           set +e
           HTTP_CODE=$(curl -sSL -o /tmp/prev-latest.json -w '%{http_code}' \
@@ -239,7 +239,7 @@ jobs:
           echo "MONOTONIC: source=$SOURCE previous=$PREVIOUS new=$VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
           elif [ "$HTTP_CODE" = "404" ]; then
           # 首次引导分支：仓库尚无 latest.json。基线 12601 为经审计的上一正式版本 1.26.1。
-          # 方案 B 首个稳定版发布后，此分支之外的任何查询故障都必须失败。
+          # 首个稳定版发布后，此分支之外的任何查询故障都必须失败。
           PREVIOUS=12601
           SOURCE="bootstrap-baseline-1.26.1"
           echo "$SOURCE：无稳定清单，按审计基线 previous=$PREVIOUS"
@@ -336,7 +336,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # U-P0-04：从 Draft 重新下载三资产并复验，全部通过才允许发布。
+          # 从 Draft 重新下载三项资产并复验，全部通过才允许发布。
           TAG="${{ github.ref_name }}"
           VERSION_NAME=${{ steps.version.outputs.name }}
           VERSION_CODE=${{ steps.version.outputs.code }}
