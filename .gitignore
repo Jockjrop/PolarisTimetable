@@ -29,3 +29,8 @@ verify/
 .gradle-home/
 # 三校 PDF 样例含真实姓名/学号，隐私原因不入库（PdfRegressionTest 经 run-as 推入 app 私有目录）
 test pdf/
+# 会话工作区与本机导出产物（不入库）
+.agentwork/
+videos/
+web/
+web.zip

@@ -289,7 +289,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private int builtLeftInset = 0;
     private int builtRightInset = 0;
     private boolean insetsRebuildPending = false;
-    private String accountName = "管理员";
+    private String accountName = "";
     private String avatarImageUri = "";
     private BackgroundImageCrop avatarImageCrop = BackgroundImageCrop.full();
     private String draftAvatarImageUri = "";
@@ -2203,8 +2203,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         accountAvatarPreview = new CircleAvatarView(this);
         accountAvatarPreview.setProfile(accountName, draftAvatarImageUri, draftAvatarImageCrop);
+        // 头像底色：按账户名哈希取稳定随机色（1.27.7），编辑器预览与我的页一致。
         accountAvatarPreview.setPlaceholderColor(
-                isDarkModeActive() ? color("#31527D") : color("#172033"));
+                CircleAvatarView.placeholderColorFor(accountName));
         accountAvatarPreview.setContentDescription(getString(R.string.profile_choose_avatar_cd));
         accountAvatarPreview.setClickable(true);
         accountAvatarPreview.setFocusable(true);
@@ -7572,13 +7573,28 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         ScheduleRepository.AccountProfile safeProfile = profile == null
                 ? new ScheduleRepository.AccountProfile() : profile;
         String savedName = safeProfile.name == null ? "" : safeProfile.name.trim();
-        accountName = savedName.length() == 0 ? "管理员" : savedName; // 默认账户名是持久化数据值,不资源化
+        // 默认账户名是持久化数据值,不资源化（1.27.7）：为空或仍是旧默认「管理员」时，
+        // 生成一次「用户 + 6 位随机码（首位为字母）」并落库，同一设备身份在重启后保持稳定。
+        boolean needsGenerate = savedName.length() == 0
+                || ScheduleRepository.LEGACY_DEFAULT_ACCOUNT_NAME.equals(savedName);
+        accountName = needsGenerate ? ScheduleRepository.defaultAccountName() : savedName;
         avatarImageUri = safeProfile.avatarUri == null ? "" : safeProfile.avatarUri;
         avatarImageCrop = BackgroundImageCrop.of(
                 safeProfile.cropLeft,
                 safeProfile.cropTop,
                 safeProfile.cropRight,
                 safeProfile.cropBottom);
+        if (needsGenerate) {
+            ScheduleRepository.AccountProfile persistProfile =
+                    new ScheduleRepository.AccountProfile();
+            persistProfile.name = accountName;
+            persistProfile.avatarUri = avatarImageUri;
+            persistProfile.cropLeft = avatarImageCrop.left;
+            persistProfile.cropTop = avatarImageCrop.top;
+            persistProfile.cropRight = avatarImageCrop.right;
+            persistProfile.cropBottom = avatarImageCrop.bottom;
+            scheduleRepository.saveAccountProfile(persistProfile);
+        }
     }
 
     private void applyConfig(ScheduleRepository.Config config) {

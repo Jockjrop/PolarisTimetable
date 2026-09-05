@@ -142,8 +142,8 @@ public class MyPageBuilder {
 
         CircleAvatarView avatar = new CircleAvatarView(context);
         avatar.setProfile(host.accountName(), host.avatarImageUri(), host.avatarImageCrop());
-        avatar.setPlaceholderColor(PolarisVisualTheme.accentColor(
-                host.visualTheme(), host.isDarkModeActive()));
+        // 头像底色：按账户名哈希取稳定随机色（1.27.7），主题切换不改变头像身份色。
+        avatar.setPlaceholderColor(CircleAvatarView.placeholderColorFor(host.accountName()));
         avatar.setContentDescription(context.getString(R.string.my_cd_edit_account));
         avatar.setClickable(true);
         avatar.setFocusable(true);
@@ -290,8 +290,8 @@ public class MyPageBuilder {
 
         CircleAvatarView avatar = new CircleAvatarView(context);
         avatar.setProfile(host.accountName(), host.avatarImageUri(), host.avatarImageCrop());
-        avatar.setPlaceholderColor(host.isDarkModeActive()
-                ? host.colorValue("#31527D") : host.colorValue("#172033"));
+        // 头像底色：按账户名哈希取稳定随机色（1.27.7），主题切换不改变头像身份色。
+        avatar.setPlaceholderColor(CircleAvatarView.placeholderColorFor(host.accountName()));
         avatar.setContentDescription(context.getString(R.string.my_cd_edit_account));
         avatar.setClickable(true);
         avatar.setFocusable(true);

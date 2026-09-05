@@ -23,6 +23,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
+import java.util.Random;
 
 public class ScheduleRepository {
     private static final String TAG = "ScheduleRepository";
@@ -216,8 +217,9 @@ public class ScheduleRepository {
     public void saveAccountProfile(AccountProfile profile) {
         AccountProfile safeProfile = profile == null ? new AccountProfile() : profile;
         String name = safeProfile.name == null ? "" : safeProfile.name.trim();
+        // 空名原样落库：默认名（用户+随机码）由 UI 加载侧生成并回写，这里不再代填旧默认。
         preferences.edit()
-                .putString(KEY_ACCOUNT_NAME, name.length() == 0 ? "管理员" : name)
+                .putString(KEY_ACCOUNT_NAME, name)
                 .putString(KEY_ACCOUNT_AVATAR_URI,
                         safeProfile.avatarUri == null ? "" : safeProfile.avatarUri)
                 .putFloat(KEY_ACCOUNT_AVATAR_CROP_LEFT, safeProfile.cropLeft)
@@ -605,8 +607,66 @@ public class ScheduleRepository {
                 object.optInt("endMinuteOfDay", -1));
     }
 
+    /** 旧版默认账户名：升级后首次加载时迁移为随机默认名（1.27.7）。 */
+    public static final String LEGACY_DEFAULT_ACCOUNT_NAME = "管理员";
+
+    /**
+     * 默认账户名：「用户」+ 6 位随机字母数字码（1.27.7），首位必须为字母，
+     * 保证头像首字母不会抽到数字）。首次生成后由调用方持久化，保证同一设备身份
+     * 稳定；仅在新装/旧默认迁移时调用。
+     */
+    public static String defaultAccountName() {
+        String letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        String alphanumerics = letters + "0123456789";
+        Random random = new Random();
+        StringBuilder code = new StringBuilder(6);
+        // 首位强制取字母（1.27.7）：头像首字母直接取码首字符，不能是数字。
+        code.append(letters.charAt(random.nextInt(letters.length())));
+        for (int index = 1; index < 6; index++) {
+            code.append(alphanumerics.charAt(random.nextInt(alphanumerics.length())));
+        }
+        return "用户" + code;
+    }
+
+    /**
+     * 判断名字是否为「用户」+ 6 位字母数字码的默认名形状（1.27.7）：
+     * 头像首字母对这种形状取码首字符，避免所有默认账户都显示同一个「用」字；
+     * 数字开头的码是历史版本产物，形状一致则同样按码首字符显示。
+     */
+    public static boolean isDefaultAccountName(String name) {
+        String safe = name == null ? "" : name.trim();
+        if (!safe.startsWith("用户") || safe.length() != 8) {
+            return false;
+        }
+        for (int index = 2; index < safe.length(); index++) {
+            char candidate = safe.charAt(index);
+            boolean isLetter = (candidate >= 'A' && candidate <= 'Z')
+                    || (candidate >= 'a' && candidate <= 'z');
+            boolean isDigit = candidate >= '0' && candidate <= '9';
+            if (!isLetter && !isDigit) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 头像首字母（1.27.7）：默认名取第一个随机字符（新装生成时保证是字母，
+     * 历史数字开头的码照实显示），其余名字取首字符，空名回退「用」。
+     */
+    public static String avatarInitial(String name) {
+        String safe = name == null ? "" : name.trim();
+        if (safe.isEmpty()) {
+            return "用";
+        }
+        if (isDefaultAccountName(safe)) {
+            return safe.substring(2, 3);
+        }
+        return safe.substring(0, safe.offsetByCodePoints(0, 1));
+    }
+
     public static class AccountProfile {
-        public String name = "管理员";
+        public String name = "";
         public String avatarUri = "";
         public float cropLeft = 0f;
         public float cropTop = 0f;
