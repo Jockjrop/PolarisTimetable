@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 下拉面板入场：自锚点下方轻移 + 淡入。只用平移不缩放，避免玻璃面板
+     在窗口缩放动画期间重采样造成的“抖动一下”（1.27.6）。 -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/decelerate_quad">
+    <translate
+        android:fromYDelta="-12%"
+        android:toYDelta="0"
+        android:duration="150" />
+    <alpha
+        android:fromAlpha="0"
+        android:toAlpha="1"
+        android:duration="150" />
+</set>

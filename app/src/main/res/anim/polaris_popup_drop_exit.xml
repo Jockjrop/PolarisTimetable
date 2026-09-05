@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 下拉面板退场：向上轻移 + 淡出，与入场方向呼应。 -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/accelerate_quad">
+    <translate
+        android:fromYDelta="0"
+        android:toYDelta="-8%"
+        android:duration="110" />
+    <alpha
+        android:fromAlpha="1"
+        android:toAlpha="0"
+        android:duration="110" />
+</set>

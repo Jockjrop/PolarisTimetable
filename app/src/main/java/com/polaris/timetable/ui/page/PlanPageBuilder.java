@@ -72,6 +72,14 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
 
         String cardColorHex();
 
+        /** 分组卡片色（与设置页 settingsGroup 同源），用于计划页分栏卡片。 */
+        String groupColorHex();
+
+        boolean isMinimalVisualTheme();
+
+        /** 非极简主题下的卡片投影（与设置页分组一致的 elevation 处理）。 */
+        void applyThemeElevation(View view, int elevationDp);
+
         GradientDrawable roundedBg(String hex, int radius);
 
         void attachPressFeedback(View view);
@@ -123,6 +131,12 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     private LinearLayout planManageHeader;
     private LinearLayout timelineListContainer;
 
+    // 1.27.6 卡片化：外侧大卡片收容「考试 / DDL」与「计划」两个分栏卡片，
+    // 栏头与「管理」入口都在大卡片内。主题切换时由 refreshTheme 重刷固有色。
+    private LinearLayout planOuterCard;
+    private LinearLayout planTimelineSectionCard;
+    private LinearLayout planPlanSectionCard;
+
     // 悬浮新增菜单：手机计划页与横屏平板管理浮层各一个实例，不共享视图引用。
     private PlanAddMenuView planPageMenu;
     private PlanAddMenuView planManageMenu;
@@ -161,15 +175,33 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         planPageScroll = scrollView;
         planPageContent = page;
 
-        // 上下两栏：上栏「考试 / DDL」、下栏「计划」，高度随各自数量自动变化，
-        // 整体随页面滚动；栏头与卡片均在 refreshList 中重建。
+        // 外侧大卡片收容上下两栏：「考试 / DDL」与「计划」各占一张分栏卡片，
+        // 栏头（含「管理」入口）与列表都在卡片内，高度随内容自适应。
+        LinearLayout outerCard = planOuterCard(context);
+        page.addView(outerCard, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        planOuterCard = outerCard;
+
+        LinearLayout timelineSection = planSectionCard(context);
+        outerCard.addView(timelineSection, sectionCardParams(context, 0));
+        planTimelineSectionCard = timelineSection;
+
         timelineListContainer = new LinearLayout(context);
         timelineListContainer.setOrientation(LinearLayout.VERTICAL);
-        page.addView(timelineListContainer);
+        timelineSection.addView(timelineListContainer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout planSection = planSectionCard(context);
+        outerCard.addView(planSection, sectionCardParams(context, 1));
+        planPlanSectionCard = planSection;
 
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
-        page.addView(planListContainer);
+        planSection.addView(planListContainer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         planPageMenu = new PlanAddMenuView(context, this);
         root.addView(planPageMenu, new FrameLayout.LayoutParams(
@@ -244,14 +276,32 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.MATCH_PARENT));
 
-        // 上下两栏（与手机计划页一致）：考试/DDL 栏 + 计划栏。
+        // 与手机计划页一致：外侧大卡片 + 两个分栏卡片（考试/DDL 栏 + 计划栏）。
+        LinearLayout overlayOuterCard = planOuterCard(context);
+        content.addView(overlayOuterCard, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        planOuterCard = overlayOuterCard;
+
+        LinearLayout overlayTimelineSection = planSectionCard(context);
+        overlayOuterCard.addView(overlayTimelineSection, sectionCardParams(context, 0));
+        planTimelineSectionCard = overlayTimelineSection;
+
         timelineListContainer = new LinearLayout(context);
         timelineListContainer.setOrientation(LinearLayout.VERTICAL);
-        content.addView(timelineListContainer);
+        overlayTimelineSection.addView(timelineListContainer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout overlayPlanSection = planSectionCard(context);
+        overlayOuterCard.addView(overlayPlanSection, sectionCardParams(context, 1));
+        planPlanSectionCard = overlayPlanSection;
 
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
-        content.addView(planListContainer);
+        overlayPlanSection.addView(planListContainer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         // 浮层内独立悬浮菜单：遮罩只作用于浮层内容，不遮住整个课表。
         planManageMenu = new PlanAddMenuView(context, this);
@@ -325,6 +375,72 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
                 || (planManageMenu != null && planManageMenu.isExpanded());
     }
 
+    // ===== 1.27.6 计划页卡片化：外侧大卡片 + 两个分栏卡片 =====
+
+    /** 外侧大卡片：收容「考试 / DDL」与「计划」两个分栏卡片。 */
+    private LinearLayout planOuterCard(Context context) {
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8));
+        card.setBackground(host.roundedBg(host.cardColorHex(), 24));
+        if (!host.isMinimalVisualTheme()) {
+            host.applyThemeElevation(card, 2);
+        }
+        return card;
+    }
+
+    /** 分栏卡片：容纳栏头（含「管理」）与自适应行，样式与设置页分组同源。 */
+    private LinearLayout planSectionCard(Context context) {
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(context, 10), dp(context, 10), dp(context, 10), dp(context, 10));
+        card.setBackground(host.roundedBg(host.groupColorHex(),
+                host.isMinimalVisualTheme() ? 18 : 22));
+        if (!host.isMinimalVisualTheme()) {
+            host.applyThemeElevation(card, 2);
+        }
+        return card;
+    }
+
+    /** 分栏卡片布局参数：第二张卡片与上一张留 8dp 间距。 */
+    private LinearLayout.LayoutParams sectionCardParams(Context context, int index) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        if (index > 0) {
+            params.topMargin = dp(context, 8);
+        }
+        return params;
+    }
+
+    /**
+     * 分栏卡片内的栏头标题：比页面级 sectionHeader（22dp 顶距）收紧留白，
+     * 避免卡片内出现大片空白。
+     */
+    private TextView sectionCardTitle(Context context, String text) {
+        TextView header = new TextView(context);
+        header.setText(text);
+        header.setTextColor(host.mutedColor());
+        header.setTextSize(15);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(dp(context, 2), dp(context, 2), dp(context, 2), dp(context, 8));
+        return header;
+    }
+
+    /** 主题/深色切换后重刷三张固定卡片的固有色（列表行由 refreshList 重建）。 */
+    private void refreshPlanCardTheme(Context context) {
+        if (planOuterCard != null) {
+            planOuterCard.setBackground(host.roundedBg(host.cardColorHex(), 24));
+        }
+        int radius = host.isMinimalVisualTheme() ? 18 : 22;
+        if (planTimelineSectionCard != null) {
+            planTimelineSectionCard.setBackground(host.roundedBg(host.groupColorHex(), radius));
+        }
+        if (planPlanSectionCard != null) {
+            planPlanSectionCard.setBackground(host.roundedBg(host.groupColorHex(), radius));
+        }
+    }
+
     /** 收起所有悬浮菜单：单一收起入口，供切页、返回、旋转、打开编辑器等节点调用。 */
     public void collapseAddMenus() {
         if (planPageMenu != null) {
@@ -370,14 +486,15 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         }
         refreshTimelineColumn(context);
         planListContainer.removeAllViews();
-        planListContainer.addView(host.sectionHeader(context.getString(R.string.plan_title)));
+        planListContainer.addView(sectionCardTitle(context,
+                context.getString(R.string.plan_title)));
         if (plans.isEmpty()) {
             TextView empty = new TextView(context);
             empty.setText(context.getString(R.string.plan_empty_hint));
             empty.setTextColor(host.mutedColor());
             empty.setTextSize(15);
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(context, 42), 0, dp(context, 42));
+            empty.setPadding(0, dp(context, 24), 0, dp(context, 24));
             planListContainer.addView(empty);
             return;
         }
@@ -389,21 +506,18 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         Collections.sort(pending, (a, b) -> weekDayValue(a) - weekDayValue(b));
         Collections.sort(finished, (a, b) -> weekDayValue(b) - weekDayValue(a));
         if (!pending.isEmpty()) {
-            planListContainer.addView(host.sectionHeader(context.getString(R.string.plan_section_pending)));
-            LinearLayout group = host.settingsGroup();
+            planListContainer.addView(sectionCardTitle(context,
+                    context.getString(R.string.plan_section_pending)));
             for (StudyPlan plan : pending) {
-                group.addView(planRow(context, plan));
+                planListContainer.addView(planRow(context, plan));
             }
-            planListContainer.addView(group);
         }
         if (!finished.isEmpty()) {
             planListContainer.addView(doneHeader(context, finished.size()));
             if (!doneCollapsed) {
-                LinearLayout group = host.settingsGroup();
                 for (StudyPlan plan : finished) {
-                    group.addView(planRow(context, plan));
+                    planListContainer.addView(planRow(context, plan));
                 }
-                planListContainer.addView(group);
             }
         }
     }
@@ -411,6 +525,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     /**
      * 上栏「考试 / DDL」：栏头（标题 + 管理入口）与事件卡片一并重建，
      * 数量自动撑开栏高；主题切换、事件增删后都经 refreshList 走到这里。
+     * 栏头在大卡片内的分栏卡片顶部，「管理」入口随之处于大卡片内。
      */
     private void refreshTimelineColumn(Context context) {
         if (timelineListContainer == null) {
@@ -420,7 +535,8 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(host.sectionHeader(context.getString(R.string.academic_title)),
+        header.addView(sectionCardTitle(context,
+                context.getString(R.string.academic_title)),
                 new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         TextView manage = new TextView(context);
         manage.setText(context.getString(R.string.common_manage));
@@ -466,6 +582,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     /**
      * 考试/DDL 事件卡：类型色圆点 + 标题 + 日期行（与时间线同一套类型色与排序规则），
      * 点击打开时间线浏览/勾选/编辑；完成态标题加删除线并降低透明度。
+     * 标题与元信息最多两行自适应换行，行高随内容与字号自动撑开。
      */
     private View academicEventRow(Context context, AcademicEvent event) {
         LinearLayout row = new LinearLayout(context);
@@ -495,8 +612,9 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         title.setTextColor(host.inkColor());
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setSingleLine(true);
+        title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setLineSpacing(dp(context, 1), 1f);
         if (event.done) {
             title.setPaintFlags(title.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
             title.setAlpha(0.55f);
@@ -518,7 +636,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         metaView.setText(meta.toString());
         metaView.setTextColor(host.mutedColor());
         metaView.setTextSize(12);
-        metaView.setSingleLine(true);
+        metaView.setMaxLines(2);
         metaView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -705,8 +823,9 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         title.setTextColor(host.inkColor());
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setSingleLine(true);
+        title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setLineSpacing(dp(context, 1), 1f);
         if (plan.done) {
             title.setPaintFlags(title.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
             title.setAlpha(0.55f);
@@ -725,7 +844,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         metaView.setText(meta.toString());
         metaView.setTextColor(host.mutedColor());
         metaView.setTextSize(12);
-        metaView.setSingleLine(true);
+        metaView.setMaxLines(2);
         metaView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -768,6 +887,8 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         if (planManageHeader != null) {
             planManageHeader.setBackgroundColor(host.settingsHeaderSurfaceColor());
         }
+        // 外侧大卡片与两个分栏卡片是常驻视图，固有色在这里重刷。
+        refreshPlanCardTheme(context);
         if (planPageMenu != null) {
             planPageMenu.refreshTheme(context);
         }

@@ -6,6 +6,7 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.Manifest;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.AppCompatTextView;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import android.app.Dialog;
@@ -40,8 +41,10 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.TextPaint;
 import android.text.style.AbsoluteSizeSpan;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.ContextThemeWrapper;
@@ -186,6 +189,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     /** 仅存于进程内：系统杀掉应用后，下次冷启动重新展示 3 秒展开态。 */
     private static boolean todayOverviewCollapsedForProcess;
     private static long todayOverviewCollapseDeadline;
+    /** 仅存于进程内：实践卡收起一次后保持收起，后台清除（进程结束）后冷启动才重新展开。 */
+    private static boolean practiceBarCollapsedForProcess;
+    private static long practiceBarCollapseDeadline;
     private static final int ACTION_PANEL_OPACITY_PERCENT = 70;
     private static final String UI_ONBOARDING_PREFERENCES = "polaris_ui_onboarding";
     private static final String WEEK_SWIPE_HINT_SHOWN = "week_swipe_hint_shown_v1";
@@ -3219,16 +3225,20 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private TextSwitcher buildPracticeTopBar() {
         TextSwitcher bar = new TextSwitcher(this);
         bar.setFactory(() -> {
-            TextView name = new TextView(this);
+            // AppCompatTextView：autosize 在全部 API 级别可用（framework 实现仅 26+）。
+            AppCompatTextView name = new AppCompatTextView(this);
             name.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
             name.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_END);
-            name.setPadding(dp(12), dp(6), dp(12), dp(6));
-            name.setMinHeight(dp(48));
+            name.setPadding(dp(12), dp(5), dp(12), dp(5));
+            name.setMinHeight(dp(36));
             name.setTextSize(14);
             name.setTypeface(Typeface.DEFAULT_BOLD);
-            name.setSingleLine(false);
-            name.setMaxLines(2);
+            // 单行 + 字号自动收缩：长课程名靠缩小字号适配宽度，
+            // 卡片高度始终贴合单行文字，不再因换行或固定 48dp 而过高。
+            name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
+            name.setAutoSizeTextTypeUniformWithConfiguration(
+                    10, 14, 1, TypedValue.COMPLEX_UNIT_SP);
             name.setTextColor(practiceTopBarTextColor());
             name.setLayoutParams(new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -3302,7 +3312,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
-    /** 刷新周次右侧实践卡片；进入课表 3s 后收紧为右对齐的“实践”入口。 */
+    /**
+     * 刷新周次右侧实践卡片。收起态只属于进程：本次运行第一次进入课表展示
+     * 3s 完整课程名后收紧为“实践”入口；之后切页、回前台都直接保持收起，
+     * 直到后台清除（进程结束）后冷启动才重新走一次展开-收起。
+     */
     private void updatePracticeTopBar() {
         if (practiceTopBar == null || practiceBarHandler == null) {
             return;
@@ -3312,7 +3326,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         boolean show = bannerEnabled && activeTab == 0 && !practiceBarCourses.isEmpty();
         if (!show) {
             cancelPracticeBarTimers();
-            practiceBarCompact = false;
             practiceBarDisplayedName = "";
             practiceTopBar.setVisibility(View.GONE);
             return;
@@ -3320,8 +3333,24 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         boolean wasHidden = practiceTopBar.getVisibility() != View.VISIBLE;
         if (wasHidden) {
             cancelPracticeBarTimers();
-            practiceBarCompact = false;
             practiceBarDisplayedName = "";
+            if (practiceBarCollapsedForProcess) {
+                practiceBarCompact = true;
+            } else if (practiceBarCollapseDeadline == 0L) {
+                practiceBarCompact = false;
+                practiceBarCollapseDeadline = SystemClock.elapsedRealtime()
+                        + PRACTICE_BAR_COLLAPSE_DELAY_MS;
+            } else {
+                long remaining = practiceBarCollapseDeadline - SystemClock.elapsedRealtime();
+                if (remaining <= 0L) {
+                    // 展开窗口已在切页/后台期间耗尽：直接保持收起，不再回放展开动画。
+                    practiceBarCompact = true;
+                    practiceBarCollapsedForProcess = true;
+                } else {
+                    // Activity 重建（旋转）等场景：沿用剩余展开窗口。
+                    practiceBarCompact = false;
+                }
+            }
         }
         practiceTopBar.setVisibility(View.VISIBLE);
         int count = practiceBarCourses.size();
@@ -3349,14 +3378,18 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             practiceBarCollapse = () -> {
                 practiceBarCollapse = null;
                 practiceBarCompact = true;
+                practiceBarCollapsedForProcess = true;
                 updatePracticeTopBar();
             };
-            practiceBarHandler.postDelayed(
-                    practiceBarCollapse, PRACTICE_BAR_COLLAPSE_DELAY_MS);
+            practiceBarHandler.postDelayed(practiceBarCollapse,
+                    Math.max(0L, practiceBarCollapseDeadline - SystemClock.elapsedRealtime()));
         }
     }
 
-    /** 宽度随当前文字与系统字号缩放，长课程名最多占用原设计宽度并自动换行。 */
+    /**
+     * 宽度随当前文字与系统字号缩放。先按标准 14sp 基准测宽：宽度放得下时
+     * 保持原字号；放不下时固定为设计最大宽，由 autosize 收缩字号适配单行。
+     */
     private void resizePracticeTopBar(String text) {
         View current = practiceTopBar.getCurrentView();
         if (!(current instanceof TextView)
@@ -3364,7 +3397,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             return;
         }
         TextView textView = (TextView) current;
-        int desiredWidth = (int) Math.ceil(textView.getPaint().measureText(text))
+        // autosize 收缩过字号后 getPaint 反映的是已收缩尺寸，这里复制一份
+        // 并重置为 14sp 基准，保证宽度测量与字号缩放解耦。
+        TextPaint measurePaint = new TextPaint(textView.getPaint());
+        measurePaint.setTextSize(TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP, 14f, getResources().getDisplayMetrics()));
+        int desiredWidth = (int) Math.ceil(measurePaint.measureText(text))
                 + textView.getPaddingLeft() + textView.getPaddingRight();
         int maxWidth = dp(practiceTopBarWidthDp(
                 WindowSizeClass.isTablet(getResources().getConfiguration())));
@@ -3444,7 +3482,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         popup.setOutsideTouchable(true);
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popup.setElevation(dp(8));
-        popup.setAnimationStyle(android.R.style.Animation_Dialog);
+        // 平移+淡入淡出的下拉动画：系统 Dialog 动画带窗口缩放，
+        // 毛玻璃内容重采样会造成打开瞬间“抖动一下”。
+        popup.setAnimationStyle(R.style.PolarisDropdownPopup);
         popup.showAsDropDown(anchor, anchor.getWidth() - popupWidth, dp(8));
     }
 
