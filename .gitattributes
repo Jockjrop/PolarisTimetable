@@ -1,0 +1,2 @@
+# 行尾规范：shell 脚本必须 LF（CI 的 dash 遇到 CRLF 会直接报错）
+*.sh text eol=lf
