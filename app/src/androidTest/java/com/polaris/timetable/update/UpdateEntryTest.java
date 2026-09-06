@@ -72,6 +72,12 @@ public class UpdateEntryTest {
                 .setAutoCheckEnabled(false);
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
                 .getUiAutomation().executeShellCommand("cmd connectivity airplane-mode enable");
+        // CI 模拟器在 Gradle 构建期间闲置会休眠失焦（RootViewWithoutFocusException：
+        // has-window-focus=false 等 10s 超时），且失败形态随窗口焦点漂移。
+        // 测试前点亮+解锁+充电时保持唤醒，把焦点状态固定下来。
+        wakeScreenAndDismissKeyguard();
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .getUiAutomation().executeShellCommand("settings put global stay_on_while_plugged_in 7");
     }
 
     @After
