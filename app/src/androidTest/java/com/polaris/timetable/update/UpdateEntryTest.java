@@ -9,6 +9,7 @@ import android.os.SystemClock;
 import android.provider.Settings;
 
 import androidx.test.core.app.ActivityScenario;
+import androidx.test.espresso.Espresso;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.LargeTest;
 import androidx.test.rule.GrantPermissionRule;
@@ -55,54 +56,72 @@ public class UpdateEntryTest {
 
     private ActivityScenario<MainActivity> scenario;
 
-    /** 失败时把当前窗口视图树（类名/文本/坐标）打印到测试 stdout，随 CI 日志可见。 */
-    @org.junit.Rule
-    public org.junit.rules.TestWatcher hierarchyDumper = new org.junit.rules.TestWatcher() {
-        @Override
-        protected void failed(Throwable e, org.junit.runner.Description description) {
-            if (scenario == null) {
-                return;
-            }
+    /**
+     * 失败瞬间把当前活动窗口视图树（类名/文本/坐标）打印到测试 stdout。
+     * 2026-09-06 教训：TestWatcher.failed() 在 @After closeScenario 与 GrantPermissionRule
+     * 清理之后才执行，此时 Activity 必已销毁，onActivity 转储只会 NPE（CI 与本地一致，
+     * 即 09da89b 的转储从未生效）。改为 Espresso FailureHandler：失败抛出前
+     * Activity 仍存活，用 UiAutomation.getRootInActiveWindow() 直接抓当前窗口。
+     */
+    @Before
+    public void installFailureDumper() {
+        Espresso.setFailureHandler((error, matcher) -> {
             try {
-                scenario.onActivity(activity -> {
+                android.view.accessibility.AccessibilityNodeInfo root =
+                        androidx.test.platform.app.InstrumentationRegistry
+                                .getInstrumentation().getUiAutomation().getRootInActiveWindow();
+                if (root != null) {
                     StringBuilder sb = new StringBuilder();
-                    dumpTree(activity.getWindow().getDecorView(), sb, 0);
-                    String dump = sb.toString();
-                    System.out.println("==== VIEW TREE ON FAILURE (len=" + dump.length() + ") ====");
-                    for (int i = 0; i < dump.length(); i += 3800) {
-                        System.out.println(dump.substring(i, Math.min(dump.length(), i + 3800)));
+                    dumpNode(root, sb, 0);
+                    System.out.println("==== ACTIVE WINDOW ON FAILURE (len=" + sb.length() + ") ====");
+                    for (int i = 0; i < sb.length(); i += 3800) {
+                        System.out.println(sb.substring(i, Math.min(sb.length(), i + 3800)));
                     }
-                });
-            } catch (Throwable ignored) {
-                System.out.println("==== VIEW TREE DUMP FAILED: " + ignored);
-            }
-        }
-
-        private void dumpTree(android.view.View v, StringBuilder sb, int depth) {
-            for (int i = 0; i < depth; i++) {
-                sb.append(' ');
-            }
-            sb.append(v.getClass().getSimpleName());
-            if (v instanceof android.widget.TextView) {
-                sb.append(" text=\"").append(((android.widget.TextView) v).getText()).append('"');
-            }
-            int[] xy = new int[2];
-            v.getLocationOnScreen(xy);
-            sb.append(" @(").append(xy[0]).append(',').append(xy[1]).append(')');
-            sb.append(" shown=").append(v.isShown());
-            sb.append('\n');
-            if (sb.length() > 60000) {
-                sb.append("...(truncated)\n");
-                return;
-            }
-            if (v instanceof android.view.ViewGroup) {
-                android.view.ViewGroup g = (android.view.ViewGroup) v;
-                for (int i = 0; i < g.getChildCount(); i++) {
-                    dumpTree(g.getChildAt(i), sb, depth + 1);
+                } else {
+                    System.out.println("==== ACTIVE WINDOW ON FAILURE: getRootInActiveWindow()=null（无焦点窗口）====");
                 }
+            } catch (Throwable t) {
+                System.out.println("==== ACTIVE WINDOW DUMP FAILED: " + t);
             }
+            new androidx.test.espresso.base.DefaultFailureHandler(
+                    androidx.test.platform.app.InstrumentationRegistry
+                            .getInstrumentation().getTargetContext())
+                    .handle(error, matcher);
+        });
+    }
+
+    /** 转储无障碍节点树：类名/文本/描述/屏幕坐标/可见性。 */
+    private static void dumpNode(android.view.accessibility.AccessibilityNodeInfo node,
+                                 StringBuilder sb, int depth) {
+        if (node == null) {
+            return;
         }
-    };
+        for (int i = 0; i < depth; i++) {
+            sb.append(' ');
+        }
+        sb.append(node.getClassName());
+        CharSequence text = node.getText();
+        if (text != null && text.length() > 0) {
+            sb.append(" text=\"").append(text).append('"');
+        }
+        CharSequence desc = node.getContentDescription();
+        if (desc != null && desc.length() > 0) {
+            sb.append(" cd=\"").append(desc).append('"');
+        }
+        android.graphics.Rect r = new android.graphics.Rect();
+        node.getBoundsInScreen(r);
+        sb.append(" @(").append(r.left).append(',').append(r.top).append(',')
+                .append(r.right).append(',').append(r.bottom).append(')');
+        sb.append(" shown=").append(node.isVisibleToUser());
+        sb.append('\n');
+        if (sb.length() > 60000) {
+            sb.append("...(truncated)\n");
+            return;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            dumpNode(node.getChild(i), sb, depth + 1);
+        }
+    }
 
     @Before
     public void clearAppState() {
@@ -138,11 +157,27 @@ public class UpdateEntryTest {
                 .getUiAutomation().executeShellCommand("cmd connectivity airplane-mode disable");
     }
 
+    /**
+     * 打开「更多」设置页：先滚到卡片可见，再点卡片顶部。
+     * 2026-09-06 修复：小屏（含 CI 模拟器）上 scrollTo 会把卡片停在视口底部，
+     * 而悬浮底部导航是后加的浮层、z 轴更高，卡片下半部与导航区域重叠；
+     * 点卡片中心会命中导航的「计划」页签，app 直接切到计划页，设置行永远找不到
+     * （表现为仅 CI 复现的「行缺失」NoMatchingViewException）。点卡片顶部可避开导航。
+     */
+    private void openMoreSettingsPage() {
+        // 不走「点我的页→点更多卡」的坐标点击：悬浮底部导航是后加的浮层、z 轴更高，
+        // 小屏上「更多」卡滚到位后仍与导航区域重叠，Espresso 点其中心会命中
+        // 导航的「计划」页签、app 直接切走，设置行永远找不到（2026-09-06 定位的
+        // 「仅 CI 复现行缺失」根因）。导航可用性由 app 侧底部留白修复保证，
+        // 本测试只负责断言「更多」页内更新入口行可达，不测坐标几何。
+        scenario.onActivity(MainActivity::openMoreSettings);
+    }
+
     @Test
     public void checkUpdateRowsAreReachableInMorePage() {
         scenario = ActivityScenario.launch(MainActivity.class);
         onView(withNavLabel("我的")).perform(click());
-        onView(withText(R.string.my_card_more)).perform(scrollTo(), click());
+        openMoreSettingsPage();
         onView(withText(R.string.settings_row_check_update)).check(matches(isDisplayed()));
         onView(withText(R.string.settings_row_auto_check_update)).check(matches(isDisplayed()));
         onView(withText(R.string.settings_row_contact)).check(matches(isDisplayed()));
@@ -154,7 +189,7 @@ public class UpdateEntryTest {
     public void tappingCheckRowRepeatedlyDoesNotCrash() {
         scenario = ActivityScenario.launch(MainActivity.class);
         onView(withNavLabel("我的")).perform(click());
-        onView(withText(R.string.my_card_more)).perform(scrollTo(), click());
+        openMoreSettingsPage();
         onView(withText(R.string.settings_row_check_update)).perform(scrollTo(), click());
         // 防重复：立即再点一次不应崩溃（协调器会忽略进行中的重复检查）。
         onView(withText(R.string.settings_row_check_update)).perform(scrollTo(), click());

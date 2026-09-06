@@ -46,6 +46,15 @@ public class MyPageBuilder {
 
         int bottomContentInsetPx();
 
+        /**
+         * 悬浮底部导航的视觉高度（px）：底部留白必须把它算进去。
+         * 2026-09-06 修复：原先「我的」页底部只留 bottomContentInset+48dp，
+         * 比悬浮导航（约 60dp）矮，小屏上滚到底时最后一张卡（「更多」）与导航
+         * 区域重叠，点击被 z 轴更高的导航拦截，误命中相邻页签（表现为点「更多」
+         * 却切到计划页）。仅 CI 小屏复现，大屏因卡片位置更高不重叠。
+         */
+        int navVisualHeightPx();
+
         int pageSurfaceColor();
 
         int inkColor();
@@ -102,8 +111,10 @@ public class MyPageBuilder {
         scrollView.setBackgroundColor(host.pageSurfaceColor());
         LinearLayout page = new LinearLayout(context);
         page.setOrientation(LinearLayout.VERTICAL);
+        // 底部留白 = 系统 inset + 悬浮导航视觉高 + 额外间距：
+        // 保证滚到底时最后一张卡完整落在导航之上，不被遮挡（见 Host.navVisualHeightPx 说明）。
         page.setPadding(0, host.statusBarInsetPx() + dp(context, 34),
-                0, host.bottomContentInsetPx() + dp(context, 48));
+                0, host.bottomContentInsetPx() + host.navVisualHeightPx() + dp(context, 16));
         if (!host.isLandscapeTablet()) {
             int columnWidth = host.contentColumnWidthPx();
             if (columnWidth < context.getResources().getDisplayMetrics().widthPixels) {
