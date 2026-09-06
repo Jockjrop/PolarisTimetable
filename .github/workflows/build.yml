@@ -120,6 +120,15 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: sh tools/ci/run-instrumented.sh
+      # 失败时上传 Espresso 报告（内含失败瞬间的视图层次），供定位 Only-in-CI 的 UI 断言
+      - name: Upload instrumented test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumented-test-report
+          path: app/build/reports/androidTests/connected/
+          if-no-files-found: ignore
+          retention-days: 7
   release:
     # 稳定发布流水线。
     # 缺签名 Secret / 指纹不符 / 版本不一致 / 历史清单查询失败时必须失败；
