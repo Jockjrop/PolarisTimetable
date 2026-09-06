@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -153,6 +154,13 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     /** 计划页滚动容器：固有色在 refreshTheme 中随主题即时刷新。 */
     private ScrollView planPageScroll;
 
+    /** 计划页根布局（非滚动层）：供宿主挂载“下载完成”悬浮角标。 */
+    private ViewGroup planPageRoot;
+    /** 计划页外侧大卡片：悬浮角标的锚点（区别于平板浮层重建后的 planOuterCard）。 */
+    private LinearLayout planPageOuterCard;
+    /** 悬浮角标锚点变化回调（滚动 / 卡片重排时通知宿主重算位置）。 */
+    private Runnable planPageAnchorCallback;
+
     public PlanPageBuilder(Host host) {
         this.host = host;
     }
@@ -182,6 +190,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
                 FrameLayout.LayoutParams.MATCH_PARENT));
         planPageScroll = scrollView;
         planPageContent = page;
+        planPageRoot = root;
 
         // 外侧大卡片收容上下两栏：「考试 / DDL」与「计划」各占一张分栏卡片，
         // 栏头（含「管理」入口）与列表都在卡片内，高度随内容自适应。
@@ -190,6 +199,13 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         planOuterCard = outerCard;
+        planPageOuterCard = outerCard;
+        // “下载完成”悬浮角标锚定外侧大卡片右上角：随滚动与卡片重排实时重算。
+        scrollView.setOnScrollChangeListener(
+                (v, scrollX, scrollY, oldScrollX, oldScrollY) -> notifyPlanAnchorChanged());
+        outerCard.addOnLayoutChangeListener((v, left, top, right, bottom,
+                                             oldLeft, oldTop, oldRight, oldBottom) ->
+                notifyPlanAnchorChanged());
 
         LinearLayout timelineSection = planSectionCard(context);
         outerCard.addView(timelineSection, sectionCardParams(context, 0));
@@ -475,6 +491,8 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         refreshList(context, plans);
         planManageOverlay.animate().alpha(1f).setDuration(200).start();
         planManageFrame.animate().translationX(0f).setDuration(200).start();
+        // 浮层开合影响悬浮角标的可显示性，通知宿主重算。
+        notifyPlanAnchorChanged();
     }
 
     public void closeManagePanel(Context context) {
@@ -484,7 +502,10 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         collapseAddMenus();
         planManageOverlay.animate().alpha(0f).setDuration(180).start();
         planManageFrame.animate().translationX(dp(context, 380)).setDuration(180)
-                .withEndAction(() -> planManageOverlay.setVisibility(View.GONE)).start();
+                .withEndAction(() -> {
+                    planManageOverlay.setVisibility(View.GONE);
+                    notifyPlanAnchorChanged();
+                }).start();
     }
 
     public void refreshList(Context context, List<StudyPlan> plans) {
@@ -1080,6 +1101,47 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     @Override
     public GradientDrawable roundedBg(String hex, int radius) {
         return host.roundedBg(hex, radius);
+    }
+
+    // ===== “下载完成”悬浮角标锚点（宿主挂载与定位用） =====
+
+    /** 设置悬浮角标锚点变化回调（滚动 / 卡片重排 / 浮层开合时通知宿主重算位置）。 */
+    public void setPlanAnchorCallback(Runnable callback) {
+        planPageAnchorCallback = callback;
+    }
+
+    /**
+     * 外侧大卡片右上角锚点：坐标相对计划页根布局（out[0]=x, out[1]=y，
+     * 即卡片右缘 x 与卡片顶缘 y）。卡片不存在或尚未完成布局时返回 false，
+     * 宿主应退回页级默认位置。
+     */
+    public boolean planCardCornerAnchor(int[] out) {
+        if (out == null || planPageRoot == null || planPageOuterCard == null
+                || planPageScroll == null
+                || planPageRoot.getWidth() <= 0 || planPageOuterCard.getWidth() <= 0) {
+            return false;
+        }
+        // 自卡片向上累加各层偏移换算到根布局坐标系，再扣除滚动量得到可视位置。
+        View node = planPageOuterCard;
+        float x = node.getX() + node.getWidth();
+        float y = node.getY();
+        while (node.getParent() instanceof View && node.getParent() != planPageRoot) {
+            node = (View) node.getParent();
+            x += node.getX();
+            y += node.getY();
+        }
+        if (node.getParent() != planPageRoot) {
+            return false;
+        }
+        out[0] = Math.round(x - planPageScroll.getScrollX());
+        out[1] = Math.round(y - planPageScroll.getScrollY());
+        return true;
+    }
+
+    private void notifyPlanAnchorChanged() {
+        if (planPageAnchorCallback != null) {
+            planPageAnchorCallback.run();
+        }
     }
 
     private static int weekDayValue(StudyPlan plan) {

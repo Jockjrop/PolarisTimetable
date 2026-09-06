@@ -20,6 +20,7 @@ import com.polaris.timetable.parser.SchoolParserModel;
 import com.polaris.timetable.storage.ScheduleBackupManager;
 import com.polaris.timetable.storage.ScheduleRepository;
 import com.polaris.timetable.ui.DesignTokens;
+import com.polaris.timetable.ui.PolarisToast;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -164,8 +165,9 @@ public class CourseScheduleDialogs extends DialogKit {
             rows.addAll(parsed);
             host.renderClassTimeRows(rowsContainer, rows, owner, scroll, true);
             dialog.dismiss();
-            Toast.makeText(host, host.getString(R.string.classtime_paste_done, parsed.size()),
-                    Toast.LENGTH_SHORT).show();
+            // 课时粘贴完成：完成类提示改用主题化短提示，替代系统 Toast。
+            PolarisToast.success(host, host.getString(R.string.classtime_paste_done, parsed.size()),
+                    host.isDarkModeActive(), host.bottomContentInset() + host.dp(14));
         });
         apply.setTextColor(Color.WHITE);
         apply.setBackground(host.roundedBg(host.primaryActionFillHex(), DesignTokens.RADIUS_CARD));

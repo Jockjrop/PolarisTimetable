@@ -691,7 +691,7 @@ public class ScheduleBoardView extends FrameLayout {
         }
 
         addHeaderBackground(board);
-        addMonthLabel(board);
+        addMonthLabel(board, week);
         for (int day = 0; day < visibleDayCount; day++) {
             addDayHeader(board, day, visibleDays.get(day), week);
         }
@@ -703,6 +703,7 @@ public class ScheduleBoardView extends FrameLayout {
             addRowLine(board, section, week);
         }
         addLunchHourLines(board, week);
+        addLunchHourLabels(board, week);
         List<Course> visibleCourses = displayCourses(week);
         Map<Course, SlotLayout> layouts = slotLayouts(visibleCourses);
         List<Course> conflictingCourses = CourseConflictDetector.conflictingCoursesForWeek(
@@ -781,9 +782,17 @@ public class ScheduleBoardView extends FrameLayout {
         return mapped == null ? color("#4FA4F3") : mapped;
     }
 
-    private void addMonthLabel(FrameLayout board) {
+    /**
+     * 左上角标签：显示当前周页的月份（取该周周一所在月份，如「9月」），
+     * 随周页切换联动；缓存按周独立，无需额外失效逻辑。
+     */
+    private void addMonthLabel(FrameLayout board, int week) {
         TextView view = new TextView(getContext());
-        view.setText(getContext().getString(R.string.board_time_column));
+        Calendar weekStart = Calendar.getInstance();
+        weekStart.setTimeInMillis(firstWeekStartMillis);
+        weekStart.add(Calendar.DATE, (week - 1) * 7);
+        view.setText(getContext().getString(
+                R.string.board_month_label, weekStart.get(Calendar.MONTH) + 1));
         applyAdaptiveTextColor(view, boardContentOffset, 0, timeWidth, dayHeaderHeight, false);
         view.setTextSize(13);
         view.setTypeface(Typeface.DEFAULT_BOLD);
@@ -820,7 +829,8 @@ public class ScheduleBoardView extends FrameLayout {
         view.setOrientation(LinearLayout.VERTICAL);
         view.setGravity(Gravity.CENTER);
         boolean today = isToday(actualDay, week);
-        if (today && !PolarisVisualTheme.MINIMAL.equals(visualTheme)) {
+        // 今天列统一用胶囊框标记（浅色强调底 + 1dp 描边），极简主题不再排除。
+        if (today) {
             GradientDrawable highlight = new GradientDrawable();
             highlight.setColor(PolarisVisualTheme.accentSurfaceColor(visualTheme, darkMode));
             highlight.setStroke(dp(1), PolarisVisualTheme.outlineColor(visualTheme, darkMode));
@@ -881,20 +891,21 @@ public class ScheduleBoardView extends FrameLayout {
     private void addTimeLabel(FrameLayout board, int section, int week) {
         LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        // 节号与上下课时间作为整体在行内垂直居中，避免行高较高时内容顶死在上沿。
+        box.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL);
 
         TextView number = new TextView(getContext());
         number.setText(String.valueOf(section));
         int top = sectionTop(section, week);
         int rowHeight = sectionRowHeight(section);
-        applyAdaptiveTextColor(number, boardContentOffset, top, timeWidth, rowHeight / 2, false);
+        applyAdaptiveTextColor(number, boardContentOffset, top, timeWidth, rowHeight, false);
         number.setTextSize(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 19 : 17);
         number.setGravity(Gravity.CENTER);
         box.addView(number);
 
         TextView time = new TextView(getContext());
         time.setText(section <= sectionTimes.length ? sectionTimes[section - 1] : "");
-        applyAdaptiveTextColor(time, boardContentOffset, top + rowHeight / 2, timeWidth, rowHeight / 2, true);
+        applyAdaptiveTextColor(time, boardContentOffset, top, timeWidth, rowHeight, true);
         time.setTextSize(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 10 : 9);
         time.setGravity(Gravity.CENTER);
         box.addView(time);
@@ -945,6 +956,43 @@ public class ScheduleBoardView extends FrameLayout {
             params.leftMargin = boardContentOffset + timeWidth;
             params.topMargin = bodyTop(week) + timeAxis.yForMinute(minute);
             board.addView(line, params);
+        }
+    }
+
+    /**
+     * 午休区（未折叠时）时间列的整点标注：每个完整的整点区间（如 13:00–14:00）
+     * 显示「整点到下一整点」两行时间，与节次时间的 start/end 样式一致；
+     * 起止不足整点的边缘时段（如 12:10–13:00、14:00–14:30）不标注，
+     * 即不出现 12:10 / 14:30 这类非整点时间。
+     */
+    private void addLunchHourLabels(FrameLayout board, int week) {
+        if (timeAxis == null || timeAxis.lunchStartMinute < 0
+                || timeAxis.lunchEndMinute <= timeAxis.lunchStartMinute
+                || timeAxis.isLunchBreakCollapsed()) {
+            return;
+        }
+        for (int hour = timeAxis.lunchStartMinute / 60;
+                (hour + 1) * 60 <= timeAxis.lunchEndMinute; hour++) {
+            int bandStart = hour * 60;
+            if (bandStart < timeAxis.lunchStartMinute) {
+                continue;
+            }
+            int top = bodyTop(week) + timeAxis.yForMinute(bandStart);
+            // 高度只取该整点区间本身的跨度，不能再减 bodyTop，否则视图过矮、
+            // 文字整体顶到区间上沿而非上下居中。
+            int height = timeAxis.yForMinute((hour + 1) * 60) - timeAxis.yForMinute(bandStart);
+            if (height <= 0) {
+                continue;
+            }
+            TextView time = new TextView(getContext());
+            time.setText(String.format(java.util.Locale.US, "%02d:00\n%02d:00", hour, hour + 1));
+            applyAdaptiveTextColor(time, boardContentOffset, top, timeWidth, height, true);
+            time.setTextSize(getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 10 : 9);
+            time.setGravity(Gravity.CENTER);
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(timeWidth, height);
+            params.leftMargin = boardContentOffset;
+            params.topMargin = top;
+            board.addView(time, params);
         }
     }
 
@@ -1050,24 +1098,28 @@ public class ScheduleBoardView extends FrameLayout {
             attachCourseBlockGestures(view, course, board, week);
         }
 
+        // 卡片两侧各留 1dp：相邻两天卡片之间的总间隙 2dp（原 4dp），
+        // 7 天模式下把间隙让给卡片本身，减弱列宽被间隙吃掉的紧凑感。
         int slotCount = layout == null ? 1 : Math.max(1, layout.count);
         int slotIndex = layout == null ? 0 : Math.max(0, layout.index);
-        int availableWidth = dayWidth - dp(4);
+        int availableWidth = dayWidth - dp(2);
         CourseTimeResolver.TimeRange timeRange =
                 CourseTimeResolver.timeRange(course, classTimeSettings);
         if (timeRange == null || timeAxis == null) {
             return;
         }
+        // 卡片上下各留 1dp：同一列相邻两张卡片的纵向总间距 2dp（原 6dp），
+        // 卡片更贴合其课程区间，列内连续课程不再被留白拉散。
         int spanHeight = timeAxis.heightForRange(
                 timeRange.startMinutes, timeRange.endMinutes);
-        int availableHeight = Math.max(dp(20), spanHeight - dp(6));
-        int left = boardContentOffset + timeWidth + dayWidth * column + dp(2);
-        int top = bodyTop(week) + timeAxis.yForMinute(timeRange.startMinutes) + dp(3);
+        int availableHeight = Math.max(dp(20), spanHeight - dp(2));
+        int left = boardContentOffset + timeWidth + dayWidth * column + dp(1);
+        int top = bodyTop(week) + timeAxis.yForMinute(timeRange.startMinutes) + dp(1);
         int width;
         int height;
         if (layout != null && layout.vertical) {
             int blockHeight = Math.max(dp(24), availableHeight / slotCount);
-            width = availableWidth - dp(2);
+            width = availableWidth;
             height = Math.max(dp(20), blockHeight - dp(2));
             top += blockHeight * slotIndex;
         } else {
@@ -1253,8 +1305,8 @@ public class ScheduleBoardView extends FrameLayout {
         stroke.setCornerRadius(dp(courseCornerRadius));
         highlight.setBackground(stroke);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                dayWidth - dp(4), sectionRowHeight(section));
-        params.leftMargin = boardContentOffset + timeWidth + dayWidth * day + dp(2);
+                dayWidth - dp(2), sectionRowHeight(section));
+        params.leftMargin = boardContentOffset + timeWidth + dayWidth * day + dp(1);
         params.topMargin = sectionTop(section, dragWeek);
         highlight.setLayoutParams(params);
         highlight.setContentDescription(getContext().getString(R.string.board_cd_drop_target, section));

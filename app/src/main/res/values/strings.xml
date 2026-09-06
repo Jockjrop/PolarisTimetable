@@ -108,11 +108,10 @@
     <string name="course_unnamed">未命名课程</string>
 
     <!-- 课表看板(ScheduleBoardView)。注意:"项目"包含判断与周次正则解析的是课程数据格式,保持字面量。 -->
-    <string name="board_time_column">时间</string>
+    <string name="board_month_label">%1$d月</string>
     <string name="board_practice_title">本周实践</string>
     <string name="board_practice_unnamed">未命名实践</string>
     <string name="board_practice_concentrated">集中实践</string>
-    <string name="board_time_pending">时间待定</string>
     <string name="board_badge_conflict">冲突 · </string>
     <string name="board_cd_practice">本周实践，%1$d项，点击查看</string>
     <string name="board_cd_practice_single">本周实践，%1$s，点击查看</string>
@@ -286,9 +285,12 @@
     <string name="update_download_cancel">取消</string>
     <string name="update_download_install">安装</string>
     <string name="update_download_background">后台下载</string>
-    <string name="update_toast_background_download">已在后台下载，完成后会提醒你安装</string>
-    <string name="update_toast_ready_install">更新下载完成，可在设置中安装</string>
+    <string name="update_toast_background_download">已在后台下载，完成后主页面会出现安装角标</string>
     <string name="update_toast_apk_missing">安装包不可用，请重新下载更新</string>
+    <string name="update_badge_cd">新版本已下载，点击安装</string>
+    <string name="update_install_confirm_title">安装新版本</string>
+    <string name="update_install_confirm_message">新版本已下载并通过完整性校验，是否立即安装？</string>
+    <string name="update_install_confirm_install">立即安装</string>
     <string name="update_check_row_downloading">下载中 %1$d%%</string>
     <string name="update_check_row_verifying">校验安装包…</string>
     <string name="update_install_success">更新安装完成</string>

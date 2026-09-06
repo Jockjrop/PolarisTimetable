@@ -57,6 +57,7 @@ import android.view.WindowManager;
 import android.view.ViewParent;
 import android.view.animation.Animation;
 import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.view.animation.TranslateAnimation;
 import android.widget.Button;
 import android.widget.DatePicker;
@@ -123,8 +124,10 @@ import com.polaris.timetable.ui.CourseConflictSummaryView;
 import com.polaris.timetable.ui.dialog.GlassDialogFactory;
 import com.polaris.timetable.ui.DesignTokens;
 import com.polaris.timetable.ui.PolarisThemeBackgroundView;
+import com.polaris.timetable.ui.PolarisToast;
 import com.polaris.timetable.ui.PolarisVisualTheme;
 import com.polaris.timetable.ui.ScheduleBoardView;
+import com.polaris.timetable.ui.UpdateReadyBadgeView;
 import com.polaris.timetable.ui.WindowSizeClass;
 import com.polaris.timetable.ui.TodayOverviewView;
 import com.polaris.timetable.ui.page.MyPageBuilder;
@@ -185,6 +188,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final int RETURN_WEEK_CARD_GAP_DP = 8;
     private static final long TODAY_OVERVIEW_COLLAPSE_DELAY_MS = 3_000L;
     private static final long PRACTICE_BAR_COLLAPSE_DELAY_MS = 3_000L;
+    /** 更新就绪角标直径（dp）：明显可点但不遮挡课表网格。 */
+    private static final int UPDATE_BADGE_SIZE_DP = 40;
     /** 仅存于进程内：系统杀掉应用后，下次冷启动重新展示 3 秒展开态。 */
     private static boolean todayOverviewCollapsedForProcess;
     private static long todayOverviewCollapseDeadline;
@@ -260,6 +265,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     // 应用内更新协调器为进程级单例，Activity 只持有 UI 引用。
     private UpdateCoordinator updateCoordinator;
     private View updateCheckRow;
+    /** “更新已就绪”悬浮角标：三个主页面常驻，点击弹出安装确认。 */
+    private UpdateReadyBadgeView updateReadyBadge;
+    /** 角标出入场动画令牌：防止连续 show/hide 的 endAction 竞态。 */
+    private int updateBadgeAnimToken;
     private Dialog updateAvailableDialog;
     private Dialog updateDownloadDialog;
     private TextView updateDownloadPercentText;
@@ -372,6 +381,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         // onCreate 中初始化：Activity attach 后才有可用的 base context，字段初始化器阶段不可用。
         updateCoordinator = UpdateCoordinator.acquire(this, this);
         updateCoordinator.onHostCreated();
+        // 冷启动恢复的待安装 APK（跨进程重启复验通过）需要角标重新出现。
+        refreshUpdateReadyBadge();
         if (rootView != null) {
             // 自动检查在冷启动稳定显示主页面约 5 秒后触发。
             rootView.postDelayed(this::maybeAutoUpdateCheck, AUTO_UPDATE_CHECK_DELAY_MS);
@@ -405,6 +416,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         refreshActiveSettingsPage();
         scheduleWeekSwipeHintIfNeeded();
         updateCoordinator.onHostResumed();
+        // 宿主重绑后回放：APK 已就绪但 UI 未恢复时补齐角标显示。
+        refreshUpdateReadyBadge();
     }
 
     @Override
@@ -728,6 +741,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             // 平板横屏：计划管理浮层（遮罩 + 右侧手机宽面板），盖在最上层。
             planPageBuilder.buildManageOverlay(this, rootView);
         }
+        buildUpdateReadyBadge();
+        planPageBuilder.setPlanAnchorCallback(() -> {
+            if (rootView != null) {
+                rootView.post(this::refreshUpdateReadyBadge);
+            }
+        });
         recordBuiltInsets();
         attachWindowInsetsListener();
         setContentView(rootView);
@@ -1778,7 +1797,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             dialog.dismiss();
             renderSchedule();
             refreshActiveSettingsPage();
-            Toast.makeText(this, getString(R.string.classtime_saved_toast), Toast.LENGTH_SHORT).show();
+            toastDone(getString(R.string.classtime_saved_toast));
         }));
         if (onClosed != null) {
             dialog.setOnDismissListener(ignored -> onClosed.run());
@@ -2378,7 +2397,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         dialog.dismiss();
         refreshMyPage();
-        Toast.makeText(this, getString(R.string.profile_saved), Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.profile_saved));
     }
 
     // 触摸仅做按压反馈装饰（返回 false 不消费），点击语义由 OnClickListener 承接，
@@ -2538,14 +2557,25 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(18), 0, dp(8), 0);
         bar.setContentDescription(getString(R.string.save_undo_cd));
+        boolean dark = isDarkModeActive();
         GradientDrawable background = new GradientDrawable();
-        background.setColor(isDarkModeActive() ? color("#EE1F2D43") : color("#EE172033"));
+        // 保存成功条适配明暗双主题：深色沿用深海军蓝玻璃，浅色改为白卡+细描边，
+        // 不再固定深底白字（旧实现与浅色主题页面割裂）。
+        background.setColor(dark ? color("#EE1F2D43") : color("#F4FFFFFF"));
+        if (!dark) {
+            background.setStroke(dp(1), color("#1A172033"));
+        }
         background.setCornerRadius(dp(18));
         bar.setBackground(background);
+        bar.setElevation(dp(6));
+
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
+        iconParams.rightMargin = dp(9);
+        bar.addView(PolarisToast.successIcon(this), iconParams);
 
         TextView saved = new TextView(this);
         saved.setText(R.string.course_saved);
-        saved.setTextColor(Color.WHITE);
+        saved.setTextColor(dark ? Color.WHITE : inkColor());
         saved.setTextSize(15);
         saved.setTypeface(Typeface.DEFAULT_BOLD);
         saved.setGravity(Gravity.CENTER_VERTICAL);
@@ -2554,7 +2584,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         TextView undo = new TextView(this);
         undo.setText(R.string.undo);
-        undo.setTextColor(color("#8CC8FF"));
+        undo.setTextColor(dark ? color("#8CC8FF") : accentColor());
         undo.setTextSize(15);
         undo.setTypeface(Typeface.DEFAULT_BOLD);
         undo.setGravity(Gravity.CENTER);
@@ -2573,7 +2603,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         courseSaveUndoView = bar;
         bar.animate().alpha(1f).translationY(0f).setDuration(180L).start();
         bar.announceForAccessibility(getString(R.string.save_undo_announce));
-        bar.postDelayed(() -> dismissCourseSaveUndo(bar), 6000L);
+        // 6s → 3.6s：保存成功提示收紧展示时间，撤销按钮仍留有充足反应窗口。
+        bar.postDelayed(() -> dismissCourseSaveUndo(bar), 3600L);
     }
 
     private void restoreCoursesFromUndo(
@@ -2590,7 +2621,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updateEmptyScheduleView();
         refreshCourseManageList();
         dismissCourseSaveUndo(undoBar);
-        Toast.makeText(this, R.string.course_save_undone, Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.course_save_undone));
     }
 
     private void dismissCourseSaveUndo(View undoBar) {
@@ -2625,8 +2656,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         config.firstWeekDay = firstWeekDay;
         scheduleRepository.saveConfig(created.id, config);
         switchSchedule(created.id);
-        Toast.makeText(this, getString(R.string.semester_wizard_created_toast, name),
-                Toast.LENGTH_LONG).show();
+        toastDone(getString(R.string.semester_wizard_created_toast, name));
         openPdfPicker();
     }
 
@@ -2841,8 +2871,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         refreshCourseManageList();
         refreshMyPage();
         switchTab(0);
-        Toast.makeText(this, getString(R.string.backup_restored_toast, bundle.schedules.size(),
-                restoredCourseCount), Toast.LENGTH_LONG).show();
+        toastDone(getString(R.string.backup_restored_toast, bundle.schedules.size(),
+                restoredCourseCount));
     }
 
     private String appVersionName() {
@@ -3201,7 +3231,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         renderSchedule();
         updateEmptyScheduleView();
         refreshMyPage();
-        Toast.makeText(this, getString(R.string.shared_import_done, courses.size()), Toast.LENGTH_LONG).show();
+        toastDone(getString(R.string.shared_import_done, courses.size()));
         scheduleDialogs.showImportedFirstWeekDayDialog();
     }
 
@@ -3214,7 +3244,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             visibleDayCount = 7;
         }
         renderSchedule();
-        Toast.makeText(this, getString(R.string.days_visible_toast, visibleDayCount), Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.days_visible_toast, visibleDayCount));
     }
 
 
@@ -3269,8 +3299,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                         updateEmptyScheduleView();
                         refreshCourseManageList();
                         switchTab(0);
-                        Toast.makeText(MainActivity.this,
-                                deletionSuccessMessage(scope), Toast.LENGTH_SHORT).show();
+                        toastDone(deletionSuccessMessage(scope));
                     }
 
                     @Override
@@ -4178,6 +4207,31 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return dp(navVisualHeight() + 12) + Math.max(systemBottomInset, 0);
     }
 
+    // ===== 完成类轻提示（主题化短 Toast，替代系统 Toast 的“完成”场景） =====
+
+    /** 完成类提示：应用主题配色 + 成功图标，时长 1.6s（长文案 2.3s），底部避让悬浮底栏。 */
+    private void toastDone(CharSequence message) {
+        PolarisToast.success(this, message, isDarkModeActive(), toastBottomInsetPx());
+    }
+
+    private void toastDone(int resId) {
+        toastDone(getString(resId));
+    }
+
+    /** 信息类提示（已开始/进行中）：与完成提示同一视觉体系，时长一致。 */
+    private void toastInfo(CharSequence message) {
+        PolarisToast.info(this, message, isDarkModeActive(), toastBottomInsetPx());
+    }
+
+    /** 轻提示底部位置：悬浮底栏上方；「已保存」撤销条在场时再抬高一层避免重叠。 */
+    private int toastBottomInsetPx() {
+        int base = bottomContentInset() + dp(14);
+        if (courseSaveUndoView != null && courseSaveUndoView.getParent() != null) {
+            base += dp(62);
+        }
+        return base;
+    }
+
     private void handleScheduleVerticalScroll(int scrollY, int deltaY, boolean atBottom) {
         if (activeTab != 0 || settingsPage != null && settingsPage.getVisibility() == View.VISIBLE) {
             return;
@@ -4318,6 +4372,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         updatePracticeSidePanel();
         updatePracticeTopBar();
         updatePlanSidePanel();
+        // 页签切换改变角标锚点（课表/计划/我的三处位置不同），同步重算。
+        refreshUpdateReadyBadge();
     }
 
     private void refreshBottomNavView() {
@@ -4668,7 +4724,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         refreshCourseManageList();
         refreshMyPage();
         switchTab(0);
-        Toast.makeText(this, successMessage, Toast.LENGTH_LONG).show();
+        toastDone(successMessage);
     }
 
     @Override
@@ -5121,27 +5177,25 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public void onVersionClicked() {
         copyTextToClipboard(appVersionText());
-        android.widget.Toast.makeText(this, getString(R.string.settings_toast_version_copied), android.widget.Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.settings_toast_version_copied));
     }
 
     @Override
     public void onContactClicked() {
         copyTextToClipboard(CONTACT_EMAIL);
-        android.widget.Toast.makeText(this, getString(R.string.settings_toast_email_copied, CONTACT_EMAIL), android.widget.Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.settings_toast_email_copied, CONTACT_EMAIL));
     }
 
     @Override
     public void onGithubClicked() {
         copyTextToClipboard(PROJECT_HOME_URL);
-        android.widget.Toast.makeText(this, getString(R.string.settings_toast_github_copied, PROJECT_HOME_URL),
-                android.widget.Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.settings_toast_github_copied, PROJECT_HOME_URL));
     }
 
     @Override
     public void onGiteeClicked() {
         copyTextToClipboard(PROJECT_GITEE_URL);
-        android.widget.Toast.makeText(this, getString(R.string.settings_toast_gitee_copied, PROJECT_GITEE_URL),
-                android.widget.Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.settings_toast_gitee_copied, PROJECT_GITEE_URL));
     }
 
     // ===== 应用内更新（UpdateCoordinator.Host + 更新对话框） =====
@@ -5237,11 +5291,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (updateCheckRow != null && updateCheckRow.isAttachedToWindow()) {
             SettingsPageBuilder.updateSettingValueRow(updateCheckRow, updateCoordinator.statusLineText());
         }
-        // 后台下载完成：不打断当前操作，用 Toast 提醒可安装。
-        if (updateDownloadDialog == null || !updateDownloadDialog.isShowing()) {
-            android.widget.Toast.makeText(this, getString(R.string.update_toast_ready_install),
-                    android.widget.Toast.LENGTH_LONG).show();
-        }
+        // 后台下载完成：不再用长时 Toast 打扰，三个主页面浮现绿色“安装”角标，
+        // 点击后经确认框再提交安装会话。
+        refreshUpdateReadyBadge();
     }
 
     @Override
@@ -5252,6 +5304,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (updateCheckRow != null && updateCheckRow.isAttachedToWindow()) {
             SettingsPageBuilder.updateSettingValueRow(updateCheckRow, updateCoordinator.statusLineText());
         }
+        refreshUpdateReadyBadge();
     }
 
     @Override
@@ -5269,12 +5322,15 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 SettingsPageBuilder.updateSettingValueRow(updateCheckRow, updateCoordinator.statusLineText());
             }
         }
+        refreshUpdateReadyBadge();
     }
 
     @Override
     public void onInstallStatusMessage(String message) {
         // PackageInstaller 会话回执（成功/取消/被阻止等）：无弹窗承载时用 Toast 呈现。
         android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+        // 安装提交成功后 readyApkFile 被接管，角标应随之消失。
+        refreshUpdateReadyBadge();
     }
 
     @Override
@@ -5334,17 +5390,15 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             panel.addView(dialogAction(getString(R.string.update_dialog_ignore), v -> {
                 dialog.dismiss();
                 updateCoordinator.ignoreVersion(info.versionCode());
-                android.widget.Toast.makeText(this, getString(R.string.update_toast_ignored),
-                        android.widget.Toast.LENGTH_SHORT).show();
+                toastDone(getString(R.string.update_toast_ignored));
             }));
         }
         panel.addView(dialogAction(getString(R.string.update_dialog_download), v -> {
             dialog.dismiss();
             updateCoordinator.startDownload();
-            // 后台下载：不弹模态进度框，进度显示在“检查更新”行，完成后 Toast 提醒，
-            // 用户可继续正常使用课表与设置。
-            android.widget.Toast.makeText(this, getString(R.string.update_toast_background_download),
-                    android.widget.Toast.LENGTH_SHORT).show();
+            // 后台下载：不弹模态进度框，进度显示在“检查更新”行；
+            // 完成后以主页面绿色角标提示安装，用户可继续正常使用课表与设置。
+            toastInfo(getString(R.string.update_toast_background_download));
         }));
         panel.addView(dialogAction(getString(R.string.update_dialog_later), v -> dialog.dismiss()));
         dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
@@ -5416,10 +5470,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 updateDownloadInstallAction = null;
                 updateDownloadCancelAction = null;
                 updateDownloadBackgroundAction = null;
+                // 弹窗收起后恢复角标的可显示性判定（APK 就绪时重新浮现）。
+                refreshUpdateReadyBadge();
             }
         });
         updateDownloadDialog = dialog;
         dialog.show();
+        // 下载弹窗打开期间角标让位（弹窗内已有“安装”动作）。
+        refreshUpdateReadyBadge();
         if (updateCoordinator.readyApkFile() != null) {
             applyUpdateDownloadState(UpdateDownloadState.READY_TO_INSTALL,
                     updateCoordinator.currentTotal(), updateCoordinator.currentTotal());
@@ -5509,20 +5567,165 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
     }
 
+    // ===== “更新已就绪”悬浮角标（课表 / 计划 / 我的 三页常驻，点击弹出安装确认） =====
+
+    /** 构建角标并挂到根布局顶层（位置由 refreshUpdateReadyBadge 按页签计算）。 */
+    private void buildUpdateReadyBadge() {
+        updateReadyBadge = new UpdateReadyBadgeView(this);
+        updateReadyBadge.setContentDescription(getString(R.string.update_badge_cd));
+        updateReadyBadge.setOnClickListener(v -> showUpdateReadyInstallDialog());
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                dp(UPDATE_BADGE_SIZE_DP), dp(UPDATE_BADGE_SIZE_DP), Gravity.TOP | Gravity.START);
+        updateReadyBadge.setLayoutParams(params);
+        updateReadyBadge.setVisibility(View.GONE);
+        rootView.addView(updateReadyBadge, params);
+    }
+
+    /**
+     * 按当前状态刷新角标：仅在“APK 已就绪 + 处于三个主页面 + 无弹窗/浮层遮挡”
+     * 时显示；APK 安装提交、取消下载、校验失败后自动隐藏。
+     */
+    private void refreshUpdateReadyBadge() {
+        if (updateReadyBadge == null || rootView == null) {
+            return;
+        }
+        boolean ready = updateCoordinator != null && updateCoordinator.readyApkFile() != null;
+        boolean blocked = (updateDownloadDialog != null && updateDownloadDialog.isShowing())
+                || (settingsPage != null && settingsPage.getVisibility() == View.VISIBLE)
+                || planPageBuilder.isManagePanelOpen()
+                || (activeTab != 0 && activeTab != 1 && activeTab != 2);
+        if (!ready || blocked) {
+            hideUpdateReadyBadge();
+            return;
+        }
+        if (rootView.getWidth() <= 0) {
+            rootView.post(this::refreshUpdateReadyBadge);
+            return;
+        }
+        positionUpdateReadyBadge();
+        showUpdateReadyBadge();
+    }
+
+    /** 按页签计算角标中心点：课表=屏幕右侧偏上，计划=卡片右上角外侧，我的=页面右上角。 */
+    private void positionUpdateReadyBadge() {
+        int size = dp(UPDATE_BADGE_SIZE_DP);
+        int rootWidth = rootView.getWidth();
+        float centerX;
+        float centerY;
+        if (activeTab == 1) {
+            int[] anchor = new int[2];
+            if (planPageBuilder.planCardCornerAnchor(anchor)) {
+                // 锚点为外侧大卡片右上角（右缘/顶缘），角标中心略向外偏移并收进屏幕。
+                centerX = Math.min(anchor[0] + dp(2),
+                        rootWidth - systemRightInset - dp(10) - size / 2f);
+                centerY = Math.max(statusBarHeight() + dp(10) + size / 2f, anchor[1] - dp(2));
+            } else {
+                centerX = rootWidth - systemRightInset - dp(18) - size / 2f;
+                centerY = statusBarHeight() + dp(30) + size / 2f;
+            }
+        } else if (activeTab == 0) {
+            centerX = rootWidth - systemRightInset - dp(18) - size / 2f;
+            float headerBottom = topPanelContainer != null
+                    && topPanelContainer.getVisibility() == View.VISIBLE
+                    && topPanelContainer.getBottom() > 0
+                    ? topPanelContainer.getBottom() : 0f;
+            // 顶栏玻璃下沿之下：屏幕右侧偏上的课表区域，不遮挡周选择与今日概览。
+            centerY = headerBottom > 0
+                    ? headerBottom + dp(12) + size / 2f
+                    : statusBarHeight() + dp(120) + size / 2f;
+        } else {
+            centerX = rootWidth - systemRightInset - dp(18) - size / 2f;
+            centerY = statusBarHeight() + dp(30) + size / 2f;
+        }
+        updateReadyBadge.setTranslationX(centerX - size / 2f);
+        updateReadyBadge.setTranslationY(centerY - size / 2f);
+    }
+
+    private void showUpdateReadyBadge() {
+        if (updateReadyBadge.getVisibility() == View.VISIBLE && updateReadyBadge.getAlpha() >= 1f) {
+            return;
+        }
+        updateBadgeAnimToken++;
+        updateReadyBadge.animate().cancel();
+        updateReadyBadge.setAlpha(0f);
+        updateReadyBadge.setScaleX(0.4f);
+        updateReadyBadge.setScaleY(0.4f);
+        updateReadyBadge.setVisibility(View.VISIBLE);
+        updateReadyBadge.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200L)
+                .setInterpolator(new OvershootInterpolator(1.4f))
+                .start();
+    }
+
+    private void hideUpdateReadyBadge() {
+        if (updateReadyBadge == null || updateReadyBadge.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        int token = ++updateBadgeAnimToken;
+        updateReadyBadge.animate().cancel();
+        updateReadyBadge.animate().alpha(0f).scaleX(0.6f).scaleY(0.6f).setDuration(140L)
+                .withEndAction(() -> {
+                    if (updateReadyBadge != null && updateBadgeAnimToken == token) {
+                        updateReadyBadge.setVisibility(View.GONE);
+                    }
+                })
+                .start();
+    }
+
+    /** 角标点击：确认是否立即安装已校验的新版本（安装会话提交前二次确认）。 */
+    private void showUpdateReadyInstallDialog() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        if (updateCoordinator == null || updateCoordinator.readyApkFile() == null) {
+            refreshUpdateReadyBadge();
+            return;
+        }
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(getString(R.string.update_install_confirm_title));
+        panel.addView(updateDialogInfoText(
+                getString(R.string.update_install_confirm_message), mutedColor(), 14f, false));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(compactDialogAction(getString(R.string.update_dialog_later),
+                v -> dialog.dismiss()));
+        actions.addView(compactDialogAction(getString(R.string.update_install_confirm_install),
+                v -> {
+                    dialog.dismiss();
+                    installReadyApkFromBadge();
+                }));
+        panel.addView(actions);
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        transparentDialog(dialog);
+        dialog.show();
+    }
+
+    /** 角标触发的安装提交：与“检查更新”弹窗内的安装动作走同一协调器链路。 */
+    private void installReadyApkFromBadge() {
+        UpdateCoordinator.InstallAction action = updateCoordinator.installReadyApk();
+        if (action == UpdateCoordinator.InstallAction.LAUNCHED) {
+            // PackageInstaller 会话已提交，系统将展示用户确认界面。
+            dismissDialogSafe(updateDownloadDialog);
+        }
+        refreshUpdateReadyBadge();
+    }
+
     private void handleUpdateInstallClicked() {
         UpdateCoordinator.InstallAction action = updateCoordinator.installReadyApk();
         switch (action) {
             case LAUNCHED:
                 // PackageInstaller 会话已提交，系统将展示用户确认界面。
                 dismissDialogSafe(updateDownloadDialog);
+                refreshUpdateReadyBadge();
                 break;
             case NO_INSTALLER:
                 android.widget.Toast.makeText(this, getString(R.string.update_error_no_installer),
                         android.widget.Toast.LENGTH_LONG).show();
+                refreshUpdateReadyBadge();
                 break;
             case NOT_READY:
             default:
                 // 失败原因已由协调器经 onInstallStatusMessage 回报。
+                refreshUpdateReadyBadge();
                 break;
         }
     }
@@ -5800,7 +6003,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
         clipboard.setPrimaryClip(ClipData.newPlainText(
                 getString(R.string.diagnostics_clip_label), lastParseDiagnosticsText));
-        Toast.makeText(this, getString(R.string.diagnostics_copied), Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.diagnostics_copied));
     }
 
     /**
@@ -6133,8 +6336,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         renderSchedule();
         updateEmptyScheduleView();
         refreshCourseManageList();
-        Toast.makeText(this, getString(R.string.manage_updated_color, updated),
-                Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.manage_updated_color, updated));
     }
 
 
@@ -6150,8 +6352,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         renderSchedule();
         updateEmptyScheduleView();
         refreshCourseManageList();
-        Toast.makeText(this, getString(R.string.manage_updated_teacher, updated),
-                Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.manage_updated_teacher, updated));
     }
 
 
@@ -6176,8 +6377,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         updateEmptyScheduleView();
         refreshCourseManageList();
         showCourseSavedUndo(previous);
-        Toast.makeText(this, getString(R.string.manage_deleted, removed),
-                Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.manage_deleted, removed));
     }
 
     private List<CourseGroup> courseGroupsForManage() {
@@ -6767,6 +6967,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             } else {
                 settingsPage.setTranslationX(0f);
             }
+            // 设置面板打开期间隐藏“更新已就绪”角标，避免遮挡面板操作。
+            refreshUpdateReadyBadge();
             return;
         }
         if (scheduleBoard != null) {
@@ -6816,6 +7018,8 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                     })
                     .start();
         }
+        // 设置页打开期间隐藏“更新已就绪”角标，避免遮挡面板操作。
+        refreshUpdateReadyBadge();
     }
 
     void refreshActiveSettingsPage() {
@@ -7187,7 +7391,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         refreshMyPageBehindSettings();
         renderSchedule();
         refreshActiveSettingsPage();
-        Toast.makeText(this, getString(R.string.appearance_applied_toast, appearancePresetName()), Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.appearance_applied_toast, appearancePresetName()));
     }
 
     private void applyVisualTheme(String value) {
@@ -7206,7 +7410,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         refreshPlanTheme();
         renderSchedule();
         refreshActiveSettingsPage();
-        Toast.makeText(this, getString(R.string.theme_switched_toast, scheduleViewState.visualTheme), Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.theme_switched_toast, scheduleViewState.visualTheme));
     }
 
     private void setAppearanceValues(
@@ -7350,7 +7554,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         renderSchedule();
         updateEmptyScheduleView();
         refreshMyPage();
-        Toast.makeText(this, getString(R.string.schedule_deleted_toast), Toast.LENGTH_SHORT).show();
+        toastDone(getString(R.string.schedule_deleted_toast));
     }
 
     void switchSchedule(String scheduleId) {
@@ -7615,7 +7819,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             scheduleViewState.remindersEnabled = false;
             saveConfig();
             refreshActiveSettingsPage();
-            Toast.makeText(this, getString(R.string.reminder_toggle_off_toast), Toast.LENGTH_SHORT).show();
+            toastDone(getString(R.string.reminder_toggle_off_toast));
             return;
         }
         if (!CourseReminderScheduler.hasOverlayPermission(this)) {
@@ -7648,7 +7852,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         saveConfig();
         refreshActiveSettingsPage();
         if (CourseReminderScheduler.canScheduleExactAlarms(this)) {
-            Toast.makeText(this, getString(R.string.reminder_enabled_toast), Toast.LENGTH_SHORT).show();
+            toastDone(getString(R.string.reminder_enabled_toast));
         } else {
             reminderDialogs.showExactReminderAccessDialog();
         }
