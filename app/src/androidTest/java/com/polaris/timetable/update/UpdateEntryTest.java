@@ -37,8 +37,9 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * 应用内更新入口测试（计划 14.4，冒烟层）：
- * “更多 → 关于 → 检查更新/自动检查更新”可达，连点不崩溃；
- * 自动检查开关默认关闭由 UpdatePreferences 默认值单测保证，这里覆盖 UI 可达性。
+ * “更多 → 更新 → 检查更新/自动检查更新”可达，连点不崩溃；
+ * 自动检查默认开启由 UpdatePreferences 默认值单测保证，这里显式关闭并断网，
+ * 覆盖 UI 可达性而不受远端发布状态影响。
  * 前台确认页启动路径为端到端回归：模拟系统回传 PENDING_USER_ACTION 广播，
  * 断言确认页真的被启动到前台（修复“点安装没反应”的回归防护）。
  * 检查结果依赖网络环境，不做网络态断言，避免仪器测试抖动。
@@ -63,6 +64,13 @@ public class UpdateEntryTest {
                 .getSharedPreferences(UpdatePreferences.FILE_NAME,
                         android.content.Context.MODE_PRIVATE)
                 .edit().clear().commit();
+        // 自动检查默认开启（1.27.9）：显式关闭，避免启动 5s 后的自动检查在
+        // 远端存在旧发布时弹出「发现新版本」对话框遮挡被测页面；
+        // 同时开飞行模式让手动检查静默失败——本类只测入口可达性，不做网络态断言。
+        new UpdatePreferences(UpdatePreferences.sharedPreferenceStore(targetContext()))
+                .setAutoCheckEnabled(false);
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .getUiAutomation().executeShellCommand("cmd connectivity airplane-mode enable");
     }
 
     @After
@@ -70,6 +78,8 @@ public class UpdateEntryTest {
         if (scenario != null) {
             scenario.close();
         }
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .getUiAutomation().executeShellCommand("cmd connectivity airplane-mode disable");
     }
 
     @Test
