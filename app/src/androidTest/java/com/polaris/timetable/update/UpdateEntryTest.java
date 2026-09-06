@@ -55,6 +55,55 @@ public class UpdateEntryTest {
 
     private ActivityScenario<MainActivity> scenario;
 
+    /** 失败时把当前窗口视图树（类名/文本/坐标）打印到测试 stdout，随 CI 日志可见。 */
+    @org.junit.Rule
+    public org.junit.rules.TestWatcher hierarchyDumper = new org.junit.rules.TestWatcher() {
+        @Override
+        protected void failed(Throwable e, org.junit.runner.Description description) {
+            if (scenario == null) {
+                return;
+            }
+            try {
+                scenario.onActivity(activity -> {
+                    StringBuilder sb = new StringBuilder();
+                    dumpTree(activity.getWindow().getDecorView(), sb, 0);
+                    String dump = sb.toString();
+                    System.out.println("==== VIEW TREE ON FAILURE (len=" + dump.length() + ") ====");
+                    for (int i = 0; i < dump.length(); i += 3800) {
+                        System.out.println(dump.substring(i, Math.min(dump.length(), i + 3800)));
+                    }
+                });
+            } catch (Throwable ignored) {
+                System.out.println("==== VIEW TREE DUMP FAILED: " + ignored);
+            }
+        }
+
+        private void dumpTree(android.view.View v, StringBuilder sb, int depth) {
+            for (int i = 0; i < depth; i++) {
+                sb.append(' ');
+            }
+            sb.append(v.getClass().getSimpleName());
+            if (v instanceof android.widget.TextView) {
+                sb.append(" text=\"").append(((android.widget.TextView) v).getText()).append('"');
+            }
+            int[] xy = new int[2];
+            v.getLocationOnScreen(xy);
+            sb.append(" @(").append(xy[0]).append(',').append(xy[1]).append(')');
+            sb.append(" shown=").append(v.isShown());
+            sb.append('\n');
+            if (sb.length() > 60000) {
+                sb.append("...(truncated)\n");
+                return;
+            }
+            if (v instanceof android.view.ViewGroup) {
+                android.view.ViewGroup g = (android.view.ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    dumpTree(g.getChildAt(i), sb, depth + 1);
+                }
+            }
+        }
+    };
+
     @Before
     public void clearAppState() {
         ScheduleRepositoryTestSupport.clearAll(
