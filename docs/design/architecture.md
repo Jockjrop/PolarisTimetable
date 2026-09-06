@@ -163,17 +163,16 @@ app/src/main/java/com/polaris/timetable/
 
 负责本地保存。
 
-可选方案：
+当前方案：
 
-- 第一阶段：不保存或只保存简单设置。
-- 第二阶段：用 `SharedPreferences` 保存设置。
-- 第四阶段：用 JSON 文件保存课表和学期。
+- `SharedPreferences` 保存设置。
+- JSON 文件保存课表和学期。
 
 设计原则：
 
 - 先简单可靠。
 - 不急于引入数据库。
-- 保存数据版本号，方便后续迁移。
+- 保存数据版本号，用于数据迁移。
 
 ### util
 
@@ -184,9 +183,9 @@ app/src/main/java/com/polaris/timetable/
 - dp/sp 转换。
 - 节次时间映射。
 
-## 5. MainActivity 未来职责
+## 5. MainActivity 目标职责
 
-重构后的 `MainActivity` 应只负责：
+重构后的 `MainActivity` 只负责：
 
 - 管理页面生命周期。
 - 接收文件选择结果。
@@ -238,7 +237,7 @@ app/src/main/java/com/polaris/timetable/
 
 ## 7. 线程与状态
 
-当前用 `new Thread()` 解析 PDF，然后 `runOnUiThread()` 更新 UI。短期可继续使用。
+当前用 `new Thread()` 解析 PDF，然后 `runOnUiThread()` 更新 UI。
 
 建议改进：
 
@@ -247,15 +246,4 @@ app/src/main/java/com/polaris/timetable/
 - 解析失败：保留错误信息和诊断日志。
 - Activity 销毁时避免更新已失效 UI。
 
-不建议当前阶段引入 RxJava、Coroutine 或大型状态库。
-
-## 8. 未来可选迁移方案
-
-未来如果项目规模变大，可以单独评估：
-
-- Kotlin：提高模型表达和空安全。
-- Jetpack ViewModel：增强横竖屏状态保留。
-- Room：管理多学期和编辑历史。
-- Compose：重建 UI。
-
-这些都不是当前设计落地的前置条件，不应现在执行。
+不引入 RxJava、Coroutine 或大型状态库。

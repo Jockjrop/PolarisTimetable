@@ -99,7 +99,7 @@ class CourseMeeting {
 - `startSection` / `endSection`：第几节到第几节。
 - `startMinuteOfDay` / `endMinuteOfDay`：具体时间模式下的当天分钟区间；非具体时间模式为 `-1`。
 - `weekRule`：结构化周次。
-- `sourceBounds`：来源坐标，后续可在调试页高亮 PDF 区域。
+- `sourceBounds`：来源坐标，用于调试定位来源 PDF 区域。
 - `rawText`：该上课安排的原始文本。
 
 ## 5. Semester
@@ -125,8 +125,8 @@ class Semester {
 说明：
 
 - 示例 PDF 文本包含 `2025-2026学年第2学期`，可作为 `name` 和 `academicYear` 来源。
-- `startDateMillis` 第一阶段可由用户设置或默认空。
-- `currentWeek` 目前代码写死为 18，未来应进入 `Semester` 或 `UserSettings`。
+- `startDateMillis` 由用户设置或默认空。
+- `currentWeek` 由运行时按开学日期与当天日期计算，不作为持久化字段。
 
 ## 6. WeekRule
 
@@ -194,7 +194,7 @@ class ParseResult {
 
 - `success` 不等于没有错误。可以部分成功。
 - `confidence` 可由星期列、节次、课程名、周次、地点教师等子项加权得到。
-- `diagnosticsText` 第一阶段可直接保存文本日志，后续再结构化。
+- `diagnosticsText` 保存文本形式的诊断日志。
 
 ## 8. ParseError
 
@@ -259,7 +259,7 @@ class ScheduleState {
 说明：
 
 - 用它替代 `MainActivity` 中分散的 `courses`、`currentWeek`、`currentTitle`、`currentSubtitle`。
-- 第一阶段可以先作为设计文档存在，不立即引入状态管理框架。
+- 不引入额外状态管理框架。
 
 ## 10. UserSettings
 
@@ -289,11 +289,11 @@ class UserSettings {
 
 ## 11. 与当前 Course.java 的兼容策略
 
-短期不删除当前 `Course.java`。建议分三步迁移：
+旧 `Course.java` 保留为 UI 展示 DTO，模型按三层结构组织：
 
-1. 保持当前 `Course` 作为 UI 展示 DTO。
-2. 新增 `model` 包中的设计模型。
-3. 在 parser 输出新模型稳定后，再提供转换方法给旧 UI 使用。
+1. `Course` 作为 UI 展示 DTO。
+2. `model` 包承载结构化设计模型。
+3. parser 输出新模型，通过转换方法供给 UI 使用。
 
 兼容转换：
 
@@ -303,4 +303,4 @@ class UserSettings {
 - `WeekRule.displayText()` 填入旧 `weeks` 字符串。
 - `rawText` 填入旧 `raw`。
 
-这样可以先改解析和模型，不影响当前课表绘制。
+解析与模型改动不影响课表绘制。
