@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -78,7 +79,6 @@ public class SettingsPageBuilder {
         String backgroundDisplayValue();
         boolean showPracticeBanner();
         boolean collapseLunchBreak();
-        String appearancePresetName();
         boolean shellBlurEnabled();
         int headerOpacity();
         int navOpacity();
@@ -95,7 +95,6 @@ public class SettingsPageBuilder {
         void onBoardBackgroundClicked(View anchor);
         void onShowPracticeChanged(boolean value);
         void onCollapseLunchChanged(boolean value);
-        void onAppearancePresetClicked(View anchor);
         void onShellBlurChanged(boolean value);
         void onHeaderOpacityClicked(View anchor);
         void onNavOpacityClicked(View anchor);
@@ -109,10 +108,12 @@ public class SettingsPageBuilder {
         String semesterNameDisplay();
         String schoolNameDisplay();
         String accountName();
+        String avatarImageUri();
         String versionText();
         String contactEmail();
         String githubDisplay();
         String giteeDisplay();
+        String officialWebsiteDisplay();
         // 应用内更新：检查行副标题与自动检查开关状态
         String updateCheckStatusText();
         boolean autoCheckUpdateEnabled();
@@ -120,9 +121,11 @@ public class SettingsPageBuilder {
         // 安全/更多动作
         void onSemesterNameClicked();
         void onSchoolClicked();
+        void editAccountProfile();
         void onExportBackupClicked();
         void onRestoreBackupClicked();
         void onVersionClicked();
+        void onOfficialWebsiteClicked();
         void onContactClicked();
         void onGithubClicked();
         void onGiteeClicked();
@@ -355,10 +358,7 @@ public class SettingsPageBuilder {
         displayCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_collapse_lunch), host.collapseLunchBreak(), host::onCollapseLunchChanged));
         panel.addView(displayCard);
 
-        panel.addView(sectionHeader(context, context.getString(R.string.settings_section_appearance)));
-        LinearLayout presetCard = settingsGroup(context);
-        presetCard.addView(settingValueRow(context, context.getString(R.string.settings_row_appearance_preset), host.appearancePresetName(),
-                host::onAppearancePresetClicked));
+        LinearLayout advancedCard = settingsGroup(context);
 
         LinearLayout advancedContainer = new LinearLayout(context);
         advancedContainer.setOrientation(LinearLayout.VERTICAL);
@@ -373,8 +373,8 @@ public class SettingsPageBuilder {
                             ? context.getString(R.string.settings_advanced_expanded)
                             : context.getString(R.string.settings_advanced_collapsed));
                 });
-        presetCard.addView(advancedToggle[0]);
-        panel.addView(presetCard);
+        advancedCard.addView(advancedToggle[0]);
+        panel.addView(advancedCard);
 
         advancedContainer.addView(sectionHeader(context, context.getString(R.string.settings_section_ui_detail)));
         advancedContainer.addView(buildAdvancedShellSettings(context));
@@ -418,14 +418,7 @@ public class SettingsPageBuilder {
 
     public LinearLayout createSecuritySettingsPanel(Context context) {
         LinearLayout panel = settingsPagePanel(context, "安全设置");
-        panel.addView(sectionHeader(context, context.getString(R.string.settings_section_schedule_info)));
-        LinearLayout scheduleInfoCard = settingsGroup(context);
-        scheduleInfoCard.addView(settingValueRow(context, context.getString(R.string.settings_row_semester), host.semesterNameDisplay(),
-                v -> host.onSemesterNameClicked()));
-        scheduleInfoCard.addView(settingValueRow(context, context.getString(R.string.settings_row_school), host.schoolNameDisplay(),
-                v -> host.onSchoolClicked()));
-        panel.addView(scheduleInfoCard);
-
+        // 学期/学校两行已迁入「我的」页用户信息栏，此处仅保留账户与备份。
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_account)));
         LinearLayout accountCard = settingsGroup(context);
         accountCard.addView(settingValueRow(context, context.getString(R.string.settings_row_login),
@@ -446,18 +439,43 @@ public class SettingsPageBuilder {
         return panel;
     }
 
-    public LinearLayout createMoreSettingsPanel(Context context) {
-        LinearLayout panel = settingsPagePanel(context, "更多");
-        panel.addView(sectionHeader(context, context.getString(R.string.settings_section_about)));
-        LinearLayout aboutCard = settingsGroup(context);
-        aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_version), host.versionText(), v -> host.onVersionClicked()));
+    /** 「我的」页-用户信息 入口对应的设置页：名称/头像置前，其后为学期与学校。 */
+    public LinearLayout createUserSettingsPanel(Context context) {
+        LinearLayout panel = settingsPagePanel(context, context.getString(R.string.settings_title_user_info));
+        LinearLayout card = settingsGroup(context);
+        card.addView(settingValueRow(context, context.getString(R.string.my_row_username),
+                host.accountName(), v -> host.editAccountProfile()));
+        card.addView(settingValueRow(context, context.getString(R.string.my_row_avatar),
+                TextUtils.isEmpty(host.avatarImageUri())
+                        ? context.getString(R.string.my_row_avatar_default)
+                        : context.getString(R.string.my_row_avatar_set),
+                v -> host.editAccountProfile()));
+        card.addView(settingValueRow(context, context.getString(R.string.settings_row_semester),
+                host.semesterNameDisplay(), v -> host.onSemesterNameClicked()));
+        card.addView(settingValueRow(context, context.getString(R.string.settings_row_school),
+                host.schoolNameDisplay(), v -> host.onSchoolClicked()));
+        panel.addView(card);
+        return panel;
+    }
+
+    public LinearLayout createMoreSettingsPanel(Context context) {        LinearLayout panel = settingsPagePanel(context, "更多");
+        // 「更新」区：检查入口与自动检查开关集中在上半区。
+        panel.addView(sectionHeader(context, context.getString(R.string.settings_section_update)));
+        LinearLayout updateCard = settingsGroup(context);
         // 检查更新行：副标题由 Host 按检查状态提供；tag 供宿主定位并局部刷新该行。
         View checkUpdateRow = settingValueRow(context, context.getString(R.string.settings_row_check_update),
                 host.updateCheckStatusText(), v -> host.onCheckUpdateClicked());
         checkUpdateRow.setTag("update_check_row");
-        aboutCard.addView(checkUpdateRow);
-        aboutCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_auto_check_update),
+        updateCard.addView(checkUpdateRow);
+        updateCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_auto_check_update),
                 host.autoCheckUpdateEnabled(), host::onAutoCheckUpdateChanged));
+        panel.addView(updateCard);
+        // 「关于」区：版本与官方入口（原「关于」卡内其余项 + 官方网站）。
+        panel.addView(sectionHeader(context, context.getString(R.string.settings_section_about)));
+        LinearLayout aboutCard = settingsGroup(context);
+        aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_version), host.versionText(), v -> host.onVersionClicked()));
+        aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_official_website),
+                host.officialWebsiteDisplay(), v -> host.onOfficialWebsiteClicked()));
         aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_contact), host.contactEmail(), v -> host.onContactClicked()));
         aboutCard.addView(settingValueRow(context, context.getString(R.string.settings_row_github),
                 host.githubDisplay(), v -> host.onGithubClicked()));

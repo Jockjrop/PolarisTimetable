@@ -8,6 +8,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -126,6 +127,9 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
 
         /** 系统右侧安全区（px，横屏侧边导航栏/挖孔）。 */
         int systemRightInsetPx();
+
+        /** 页面水平轻扫：leftward=左滑进下一页，右滑回上一页（课表↔计划↔我的）。 */
+        void onPageSwipe(boolean leftward);
     }
 
     private final Host host;
@@ -172,7 +176,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
      */
     public View buildPlanPage(Context context) {
         FrameLayout root = new FrameLayout(context);
-        ScrollView scrollView = new ScrollView(context);
+        ScrollView scrollView = new SwipeScrollView(context, leftward -> host.onPageSwipe(leftward));
         scrollView.setBackgroundColor(host.pageSurfaceColor());
         LinearLayout page = new LinearLayout(context);
         page.setOrientation(LinearLayout.VERTICAL);
@@ -1150,5 +1154,108 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
 
     private static int dp(Context context, int value) {
         return Math.round(context.getResources().getDisplayMetrics().density * value);
+    }
+
+    /** 捕获水平拖动切换相邻页签。在 onInterceptTouchEvent 判定水平主导后
+     * 接管事件流（子 View 收到 CANCEL，不会误触行点击），垂直滚动不受影响。 */
+    private static class SwipeScrollView extends ScrollView {
+        interface SwipeListener {
+            void onHorizontalSwipe(boolean leftward);
+        }
+
+        private static final int SWIPE_DISTANCE_DP = 72;
+
+        private final OnSwipeRouter router;
+
+        SwipeScrollView(Context context, SwipeListener listener) {
+            super(context);
+            float distancePx = SWIPE_DISTANCE_DP * context.getResources().getDisplayMetrics().density;
+            router = new OnSwipeRouter(listener, distancePx);
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent event) {
+            if (router.onIntercept(event)) {
+                return true;
+            }
+            return super.onInterceptTouchEvent(event);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (router.onTouch(event)) {
+                return true;
+            }
+            return super.onTouchEvent(event);
+        }
+
+        private static final class OnSwipeRouter {
+            private float downX;
+            private float downY;
+            private boolean swipingHorizontal;
+            private boolean firedThisGesture;
+            private final SwipeListener listener;
+            private final float distancePx;
+
+            private OnSwipeRouter(SwipeListener listener, float distancePx) {
+                this.listener = listener;
+                this.distancePx = distancePx;
+            }
+
+            /**
+             * DOWN 记录起点（onIntercept 与 onTouch 两条路径都会先经过它），
+             * MOVE 判定水平主导；起点落在空白区时事件流由 ScrollView 自己
+             * 承接（不走 onIntercept），因此两条路径必须共用同一检测。
+             */
+            private boolean detect(MotionEvent event) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    downX = event.getX();
+                    downY = event.getY();
+                    swipingHorizontal = false;
+                    firedThisGesture = false;
+                    return false;
+                }
+                if (event.getActionMasked() != MotionEvent.ACTION_MOVE) {
+                    return false;
+                }
+                if (firedThisGesture) {
+                    return true;
+                }
+                if (!swipingHorizontal) {
+                    float dx = event.getX() - downX;
+                    float dy = event.getY() - downY;
+                    if (Math.abs(dx) > distancePx && Math.abs(dx) > Math.abs(dy) * 1.5f) {
+                        swipingHorizontal = true;
+                    }
+                }
+                return swipingHorizontal;
+            }
+
+            private boolean onIntercept(MotionEvent event) {
+                return detect(event);
+            }
+
+            private boolean onTouch(MotionEvent event) {
+                if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                    detect(event);
+                    if (swipingHorizontal && !firedThisGesture
+                            && Math.abs(event.getX() - downX) > distancePx) {
+                        listener.onHorizontalSwipe(event.getX() - downX < 0);
+                        firedThisGesture = true;
+                    }
+                    return swipingHorizontal;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    detect(event);
+                    return false;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_UP
+                        || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    swipingHorizontal = false;
+                    firedThisGesture = false;
+                }
+                return swipingHorizontal;
+            }
+        }
     }
 }

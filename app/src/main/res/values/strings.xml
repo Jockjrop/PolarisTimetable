@@ -171,12 +171,12 @@
     <string name="settings_section_class_time">上课时间</string>
     <string name="settings_section_schedule_data">课表数据</string>
     <string name="settings_section_display">显示</string>
-    <string name="settings_section_appearance">外观</string>
     <string name="settings_section_ui_detail">界面细节</string>
     <string name="settings_section_board_frame">课表框架</string>
     <string name="settings_section_schedule_info">课表信息</string>
     <string name="settings_section_account">账号</string>
     <string name="settings_section_backup">数据备份</string>
+    <string name="settings_section_update">更新</string>
     <string name="settings_section_about">关于</string>
     <string name="settings_row_schedule_name">课表名称</string>
     <string name="settings_row_current_week">当前周</string>
@@ -212,7 +212,6 @@
     <string name="settings_common_not_set">未设置</string>
     <string name="settings_row_show_practice">显示本周实践</string>
     <string name="settings_row_collapse_lunch">折叠午休时间</string>
-    <string name="settings_row_appearance_preset">外观预设</string>
     <string name="settings_row_advanced">高级设置</string>
     <string name="settings_advanced_collapsed">已收起</string>
     <string name="settings_advanced_expanded">已展开</string>
@@ -237,13 +236,14 @@
     <string name="settings_row_restore_backup">恢复备份</string>
     <string name="settings_restore_backup_desc">从备份文件完整还原</string>
     <string name="settings_row_version">版本信息</string>
-    <string name="settings_toast_version_copied">版本信息已复制</string>
     <string name="settings_row_contact">联系我们</string>
     <string name="settings_toast_email_copied">邮箱已复制：%1$s</string>
     <string name="settings_row_github">GitHub 项目地址</string>
     <string name="settings_toast_github_copied">GitHub 地址已复制：%1$s</string>
     <string name="settings_row_gitee">Gitee 项目地址</string>
     <string name="settings_toast_gitee_copied">Gitee 地址已复制：%1$s</string>
+    <string name="settings_row_official_website">官方网站</string>
+    <string name="settings_toast_website_unavailable">未找到可打开的浏览器</string>
 
     <!-- 应用内更新系统：入口行、状态、弹窗与错误文案。
          错误文案不得包含异常堆栈、缓存路径或内部类名。 -->
@@ -316,12 +316,32 @@
     <string name="update_error_no_installer">系统没有可用的安装器</string>
     <string name="update_error_storage_write">更新文件写入失败</string>
 
+    <!-- 版本信息行点击弹窗：展示上一版本到当前版本的更新内容（随发版同步维护）。 -->
+    <string name="release_notes_title">版本 %1$s 更新内容</string>
+    <string-array name="release_notes_current">
+        <item>「更多」页拆分为「更新」与「关于」两区：更新区含检查更新与自动检查更新（默认开启）；关于区新增官方网站入口，点击用浏览器打开</item>
+        <item>版本信息点击改为展示上一版本到当前版本的更新内容</item>
+        <item>计划页与我的页支持左右滑动切换相邻页面（带方向滑入动效）：计划页向右滑回课表、向左滑进我的，我的页向右滑回计划</item>
+        <item>我的页新增「用户信息」入口（第四项）：点开是「用户信息栏」，用户名称与用户头像置前，学期与学校自安全设置迁入</item>
+        <item>看板月份标签细化：本周跟随今天所在月份，其他周取该周周日所在月份</item>
+        <item>移除外观预设项；高级设置中课程格子高度默认值调整为 66dp</item>
+        <item>极简风格深色模式改为纯黑底，卡片、分组、按压、网格线与弹窗配色同步适配</item>
+    </string-array>
+
     <!-- 我的页与账户/背景/头像弹窗。
          注意:设置入口卡片标题(课表设置等)复用页面路由标识;"管理员"是持久化默认账户名,均保持字面量。 -->
     <string name="my_card_schedule">课表设置</string>
     <string name="my_card_global">全局设置</string>
     <string name="my_card_security">安全设置</string>
     <string name="my_card_more">更多</string>
+    <string name="my_card_user_info">用户信息</string>
+    <string name="settings_themed_desc_user">账户与身份信息</string>
+    <string name="settings_title_user_info">用户信息栏</string>
+    <string name="my_section_user_info">用户信息栏</string>
+    <string name="my_row_username">用户名称</string>
+    <string name="my_row_avatar">用户头像</string>
+    <string name="my_row_avatar_set">点击更换</string>
+    <string name="my_row_avatar_default">默认头像</string>
     <string name="settings_title_schedule">课表设置</string>
     <string name="settings_title_global">全局设置</string>
     <string name="settings_title_security">安全设置</string>
@@ -756,7 +776,6 @@
     <string name="toggle_off">关</string>
     <string name="setting_toggle_value">%1$s\n%2$s</string>
     <string name="profile_save_apply">保存并应用</string>
-    <string name="appearance_applied_toast">已应用“%1$s”外观</string>
     <string name="theme_switched_toast">已切换为“%1$s”</string>
     <string name="first_week_day_title">设置第一周的第一天</string>
     <string name="first_week_day_message">请选择本学期第一周的第一天。若跳过，将使用默认日期 %1$s。</string>

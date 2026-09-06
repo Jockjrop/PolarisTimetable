@@ -705,7 +705,7 @@ public class ScheduleRepository {
         public boolean showPracticeBanner = true;
         public boolean collapseLunchBreak = true;
         public boolean collapseXautMiddleSections = true;
-        public int courseCellHeight = 76;
+        public int courseCellHeight = 66;
         public int courseCornerRadius = 9;
         public int courseBlockOpacity = 100;
         public int timetableHeaderOpacity = 78;

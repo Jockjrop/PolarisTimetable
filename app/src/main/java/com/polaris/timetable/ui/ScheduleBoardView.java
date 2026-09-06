@@ -127,7 +127,7 @@ public class ScheduleBoardView extends FrameLayout {
     private Drawable currentBackgroundDrawable;
     private boolean backgroundDrawableApplied;
     private int appliedBoardBgColor = Integer.MIN_VALUE;
-    private int configuredSectionHeight = 76;
+    private int configuredSectionHeight = 66;
     private int courseCornerRadius = 9;
     private int courseBlockOpacity = 100;
     private int timetableHeaderOpacity;
@@ -783,16 +783,28 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     /**
-     * 左上角标签：显示当前周页的月份（取该周周一所在月份，如「9月」），
-     * 随周页切换联动；缓存按周独立，无需额外失效逻辑。
+     * 左上角标签：显示当前周页的月份，随周页切换联动。
+     * 本周（含今天）取今天所在月份，跨月周内随日期推进自然翻页；
+     * 其他周取该周周日所在月份，即该周结束时进入的「新月份」——与
+     * 本周标签在周日当天取到的值一致，浏览前后翻页不跳变。
+     * 缓存按周独立，无需额外失效逻辑。
      */
     private void addMonthLabel(FrameLayout board, int week) {
         TextView view = new TextView(getContext());
         Calendar weekStart = Calendar.getInstance();
         weekStart.setTimeInMillis(firstWeekStartMillis);
         weekStart.add(Calendar.DATE, (week - 1) * 7);
-        view.setText(getContext().getString(
-                R.string.board_month_label, weekStart.get(Calendar.MONTH) + 1));
+        Calendar today = Calendar.getInstance();
+        Calendar weekEnd = (Calendar) weekStart.clone();
+        weekEnd.add(Calendar.DATE, 7);
+        int month;
+        if (!today.before(weekStart) && today.before(weekEnd)) {
+            month = today.get(Calendar.MONTH) + 1;
+        } else {
+            weekStart.add(Calendar.DATE, 6);
+            month = weekStart.get(Calendar.MONTH) + 1;
+        }
+        view.setText(getContext().getString(R.string.board_month_label, month));
         applyAdaptiveTextColor(view, boardContentOffset, 0, timeWidth, dayHeaderHeight, false);
         view.setTextSize(13);
         view.setTypeface(Typeface.DEFAULT_BOLD);
@@ -808,7 +820,7 @@ public class ScheduleBoardView extends FrameLayout {
         }
         View header = new View(getContext());
         int fill = PolarisVisualTheme.MINIMAL.equals(visualTheme)
-                ? (darkMode ? color("#101827") : color("#F8FBFF"))
+                ? (darkMode ? color("#15181D") : color("#F8FBFF"))
                 : PolarisVisualTheme.cardColor(visualTheme, darkMode);
         int alpha = Math.round(255f * timetableHeaderOpacity / 100f);
         int sourceAlpha = Color.alpha(fill);

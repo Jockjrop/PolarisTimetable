@@ -405,7 +405,7 @@ public final class CourseEditorDialog {
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(16), dp(18), dp(14));
-        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        panel.setBackground(roundedBg(darkMode ? "#15181D" : "#F8FBFF", 22));
 
         TextView heading = text(activity.getString(R.string.editor_title_delete), inkColor, 20, true);
         panel.addView(heading);
@@ -550,7 +550,7 @@ public final class CourseEditorDialog {
         LinearLayout group = new LinearLayout(activity);
         group.setOrientation(LinearLayout.VERTICAL);
         group.setPadding(dp(14), dp(12), dp(14), dp(14));
-        group.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 18));
+        group.setBackground(roundedBg(darkMode ? "#15181D" : "#F8FBFF", 18));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = dp(8);
@@ -859,7 +859,7 @@ public final class CourseEditorDialog {
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(16), dp(18), dp(14));
-        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        panel.setBackground(roundedBg(darkMode ? "#15181D" : "#F8FBFF", 22));
         TextView heading = text(title, inkColor, 20, true);
         LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -873,7 +873,7 @@ public final class CourseEditorDialog {
         item.setGravity(Gravity.CENTER_VERTICAL);
         item.setPadding(dp(14), 0, dp(14), 0);
         item.setMinHeight(dp(48));
-        item.setBackground(roundedBg(darkMode ? "#141E30" : "#F2F0FA", 14));
+        item.setBackground(roundedBg(darkMode ? "#101318" : "#F2F0FA", 14));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = dp(6);
@@ -968,7 +968,7 @@ public final class CourseEditorDialog {
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(14), dp(18), dp(14));
-        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        panel.setBackground(roundedBg(darkMode ? "#15181D" : "#F8FBFF", 22));
         panel.addView(text(activity.getString(R.string.editor_title_color), mutedColor, 13, false));
         String normalized = normalizeColor(currentColor);
         String[] colorLabels = colorLabels();
@@ -1009,7 +1009,7 @@ public final class CourseEditorDialog {
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(14), dp(18), dp(14));
-        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        panel.setBackground(roundedBg(darkMode ? "#15181D" : "#F8FBFF", 22));
         panel.addView(text(activity.getString(R.string.editor_title_type), mutedColor, 13, false));
         for (CourseType type : CourseType.values()) {
             LinearLayout item = new LinearLayout(activity);
@@ -1044,7 +1044,7 @@ public final class CourseEditorDialog {
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(14), dp(18), dp(14));
-        panel.setBackground(roundedBg(darkMode ? "#182235" : "#F8FBFF", 22));
+        panel.setBackground(roundedBg(darkMode ? "#15181D" : "#F8FBFF", 22));
         panel.addView(text(activity.getString(R.string.editor_title_placement), mutedColor, 13, false));
         String[] labels = {
                 activity.getString(R.string.editor_placement_fixed),

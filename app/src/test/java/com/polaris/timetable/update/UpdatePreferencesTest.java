@@ -68,7 +68,7 @@ public class UpdatePreferencesTest {
     @Test
     public void defaultsMatchPlan() {
         UpdatePreferences prefs = new UpdatePreferences(new MapStore());
-        assertFalse(prefs.isAutoCheckEnabled());
+        assertTrue(prefs.isAutoCheckEnabled());
         assertEquals(0L, prefs.lastSuccessfulCheckAt());
         assertEquals(0, prefs.ignoredVersionCode());
         assertNull(prefs.pendingApkPath());

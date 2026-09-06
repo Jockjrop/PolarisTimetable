@@ -202,7 +202,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final String CONTACT_EMAIL = "polaris_io@163.com";
     private static final String PROJECT_HOME_URL = "https://github.com/Jockjrop/PolarisTimetable";
     private static final String PROJECT_GITEE_URL = "https://gitee.com/Jockjrop/polaris-course-schedule";
-    private static final String[] APPEARANCE_PRESETS = {"标准", "紧凑", "沉浸"};
+    private static final String OFFICIAL_WEBSITE_URL = "https://timetable.polaris-io.ccwu.cc/";
     private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
     private final CourseStructureMapper courseStructureMapper = new CourseStructureMapper();
@@ -329,7 +329,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             "#F06292", "#90A4AE"
     };
     private View backgroundSettingRow;
-    private View appearancePresetSettingRow;
     private boolean bottomNavHidden;
     boolean scheduleExportInProgress;
     private boolean pdfImportInProgress;
@@ -4640,8 +4639,38 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
+    public void openUserInfo() {
+        LinearLayout panel = new SettingsPageBuilder(this).createUserSettingsPanel(this);
+        showSettingsPage(getString(R.string.settings_title_user_info), panel);
+    }
+
+    @Override
     public void editAccountProfile() {
         showAccountProfileEditor();
+    }
+
+    /**
+     * 计划/我的页水平滑动切换相邻页签：页序 课表→计划→我的，
+     * 从左侧往右滑（rightward）回上一页（课表方向），从右侧往左滑（leftward）
+     * 进下一页（我的方向）；课表页保留周翻页手势不参与。
+     * 切换带方向动效：新页沿滑动方向滑入淡入。
+     */
+    @Override
+    public void onPageSwipe(boolean leftward) {
+        int target = activeTab + (leftward ? 1 : -1);
+        if (target < 0 || target > 2) {
+            return;
+        }
+        switchTab(target);
+        View incoming = target == 0 ? scheduleBoard : target == 1 ? planPage : myPage;
+        if (incoming == null) {
+            return;
+        }
+        incoming.setAlpha(0f);
+        incoming.setTranslationX(dp(leftward ? 64 : -64));
+        incoming.animate().alpha(1f).translationX(0f).setDuration(220L)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
     }
 
     // ===== PlanPageBuilder.Host 实现:计划页专属的取色与入口（其余方法复用既有公共实现） =====
@@ -5045,12 +5074,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
-    public void onAppearancePresetClicked(View anchor) {
-        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_appearance_preset), APPEARANCE_PRESETS,
-                appearancePresetName(), this::applyAppearancePreset);
-    }
-
-    @Override
     public void onShellBlurChanged(boolean value) {
         scheduleViewState.shellBarsBlurEnabled = value;
         saveGlobalAppearance();
@@ -5176,8 +5199,56 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onVersionClicked() {
-        copyTextToClipboard(appVersionText());
-        toastDone(getString(R.string.settings_toast_version_copied));
+        showCurrentReleaseNotes();
+    }
+
+    @Override
+    public String officialWebsiteDisplay() {
+        return OFFICIAL_WEBSITE_URL.replace("https://", "").replace("/", "");
+    }
+
+    @Override
+    public void onOfficialWebsiteClicked() {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(OFFICIAL_WEBSITE_URL)));
+        } catch (android.content.ActivityNotFoundException e) {
+            toastInfo(getString(R.string.settings_toast_website_unavailable));
+        }
+    }
+
+    /**
+     * 版本信息行点击：展示上一版本到当前版本的更新内容。内容来自内置
+     * release_notes_current（随发版同步维护，与 docs/releases 同源）。
+     */
+    private void showCurrentReleaseNotes() {
+        String[] notes = getResources().getStringArray(R.array.release_notes_current);
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = dialogPanel(getString(R.string.release_notes_title, appVersionName()));
+        ScrollView notesScroll = new ScrollView(this);
+        TextView notesView = new TextView(this);
+        StringBuilder builder = new StringBuilder();
+        for (String note : notes) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append("· ").append(note);
+        }
+        notesView.setText(builder.toString());
+        notesView.setTextColor(inkColor());
+        notesView.setTextSize(14f);
+        notesScroll.addView(notesView);
+        LinearLayout.LayoutParams notesParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(260));
+        notesParams.setMargins(0, dp(4), 0, dp(4));
+        notesScroll.setLayoutParams(notesParams);
+        panel.addView(notesScroll);
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(compactDialogAction(getString(R.string.update_download_cancel), v -> dialog.dismiss()));
+        panel.addView(actions);
+        dialog.setContentView(glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET));
+        transparentDialog(dialog);
+        dialog.show();
     }
 
     @Override
@@ -6896,10 +6967,11 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         fixedHeader.setPadding(0, statusBarHeight() + dp(8), 0, dp(8));
         fixedHeader.setBackgroundColor(settingsHeaderSurfaceColor());
 
+        // 返回键在左侧，左向箭头（‹）表示「点击回到我的页」；标题紧随其后。
         TextView back = new TextView(this);
         back.setText("‹");
         back.setTextColor(inkColor());
-        back.setTextSize(28);
+        back.setTextSize(30);
         back.setTypeface(Typeface.DEFAULT_BOLD);
         back.setGravity(Gravity.CENTER);
         back.setOnClickListener(v -> closeSettingsPage());
@@ -7352,48 +7424,6 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return new SettingsPageBuilder(this).buildAdvancedScheduleFrameSettings(this);
     }
 
-    @Override
-    public String appearancePresetName() {
-        if (matchesAppearancePreset(78, 86, 60, 58, 76, 9, 70)) {
-            return "标准";
-        }
-        if (matchesAppearancePreset(90, 94, 56, 22, 64, 7, 88)) {
-            return "紧凑";
-        }
-        if (matchesAppearancePreset(55, 64, 64, 32, 82, 14, 62)) {
-            return "沉浸";
-        }
-        return "自定义";
-    }
-
-    private boolean matchesAppearancePreset(
-            int headerOpacity, int navOpacity, int navHeight, int navRadius,
-            int cellHeight, int cellRadius, int cellOpacity) {
-        return scheduleViewState.timetableHeaderOpacity == headerOpacity
-                && scheduleViewState.bottomNavOpacity == navOpacity
-                && scheduleViewState.bottomNavHeight == navHeight
-                && bottomNavRadius() == navRadius
-                && scheduleViewState.courseCellHeight == cellHeight
-                && scheduleViewState.courseCornerRadius == cellRadius
-                && scheduleViewState.courseBlockOpacity == cellOpacity;
-    }
-
-    private void applyAppearancePreset(String preset) {
-        if ("紧凑".equals(preset)) {
-            setAppearanceValues(90, 94, 56, 22, 64, 7, 88);
-        } else if ("沉浸".equals(preset)) {
-            setAppearanceValues(55, 64, 64, 32, 82, 14, 62);
-        } else {
-            setAppearanceValues(78, 86, 60, 58, 76, 9, 70);
-        }
-        saveGlobalAppearance();
-        applyShellAppearance();
-        refreshMyPageBehindSettings();
-        renderSchedule();
-        refreshActiveSettingsPage();
-        toastDone(getString(R.string.appearance_applied_toast, appearancePresetName()));
-    }
-
     private void applyVisualTheme(String value) {
         String nextTheme = PolarisVisualTheme.normalize(value);
         if (nextTheme.equals(scheduleViewState.visualTheme)) {
@@ -7411,18 +7441,6 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         renderSchedule();
         refreshActiveSettingsPage();
         toastDone(getString(R.string.theme_switched_toast, scheduleViewState.visualTheme));
-    }
-
-    private void setAppearanceValues(
-            int headerOpacity, int navOpacity, int navHeight, int navRadius,
-            int cellHeight, int cellRadius, int cellOpacity) {
-        scheduleViewState.timetableHeaderOpacity = headerOpacity;
-        scheduleViewState.bottomNavOpacity = navOpacity;
-        scheduleViewState.bottomNavHeight = navHeight;
-        scheduleViewState.bottomNavRectCornerRadius = navRadius;
-        scheduleViewState.courseCellHeight = cellHeight;
-        scheduleViewState.courseCornerRadius = cellRadius;
-        scheduleViewState.courseBlockOpacity = cellOpacity;
     }
 
     private void applyShellAppearance() {
@@ -7998,9 +8016,6 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         for (ScheduleRepository.ScheduleEntry entry : schedules) {
             copyGlobalAppearanceToSchedule(entry.id);
         }
-        if (appearancePresetSettingRow != null) {
-            updateSettingValueRow(appearancePresetSettingRow, appearancePresetName());
-        }
     }
 
     void copyGlobalAppearanceToSchedule(String scheduleId) {
@@ -8133,7 +8148,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             return PolarisVisualTheme.pageColor(scheduleViewState.visualTheme, isDarkModeActive());
         }
         if (isDarkModeActive()) {
-            return color("#0D1422");
+            return color("#000000");
         }
         if ("纯白".equals(scheduleViewState.timetableBackground)) {
             return color("#F8FBFF");

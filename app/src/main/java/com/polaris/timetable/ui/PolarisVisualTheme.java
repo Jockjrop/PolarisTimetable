@@ -29,7 +29,8 @@ public final class PolarisVisualTheme {
     public static int pageColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {
-            return dark ? color("#0D1422") : color("#EAF3FB");
+            // 极简深色为纯黑（AMOLED）：表面层次全部交给卡片/分组的深灰阶梯。
+            return dark ? color("#000000") : color("#EAF3FB");
         }
         if (dark) {
             if (AURORA.equals(theme)) {
@@ -52,7 +53,7 @@ public final class PolarisVisualTheme {
     public static int boardSurfaceColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {
-            return dark ? color("#101827") : color("#EAF3FB");
+            return dark ? color("#000000") : color("#EAF3FB");
         }
         if (dark) {
             if (GALAXY.equals(theme)) {
@@ -75,7 +76,7 @@ public final class PolarisVisualTheme {
     public static int cardColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {
-            return dark ? color("#182235") : color("#F8FBFF");
+            return dark ? color("#15181D") : color("#F8FBFF");
         }
         if (dark) {
             if (AURORA.equals(theme)) {
@@ -98,7 +99,7 @@ public final class PolarisVisualTheme {
     public static int groupColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {
-            return dark ? color("#141E30") : color("#F2F0FA");
+            return dark ? color("#101318") : color("#F2F0FA");
         }
         if (dark) {
             return GALAXY.equals(theme) ? color("#C60E203B") : color("#C3172940");
@@ -108,7 +109,7 @@ public final class PolarisVisualTheme {
 
     public static int pressColor(String value, boolean dark) {
         if (MINIMAL.equals(normalize(value))) {
-            return dark ? color("#22304A") : color("#EAF1FA");
+            return dark ? color("#1D222B") : color("#EAF1FA");
         }
         if (dark) {
             return GALAXY.equals(normalize(value)) ? color("#2A4168") : color("#2B3B59");
@@ -246,7 +247,7 @@ public final class PolarisVisualTheme {
 
     public static int gridLineColor(String value, boolean dark) {
         if (MINIMAL.equals(normalize(value))) {
-            return dark ? color("#465B7A") : color("#D1DCEE");
+            return dark ? color("#3E4C63") : color("#D1DCEE");
         }
         if (dark) {
             return GALAXY.equals(normalize(value)) ? color("#3552769E") : color("#3D61738F");

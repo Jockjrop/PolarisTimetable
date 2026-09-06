@@ -1,5 +1,5 @@
 <resources>
-    <color name="page_bg">#0D1422</color>
+    <color name="page_bg">#000000</color>
     <color name="widget_surface">#FF000000</color>
     <color name="widget_surface_border">#33465B7A</color>
     <color name="widget_text_main">#F4F7FB</color>

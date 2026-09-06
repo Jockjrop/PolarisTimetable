@@ -209,7 +209,7 @@ public class CourseDetailDialog {
 
     private GradientDrawable panelBg() {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(isDarkMode() ? color("#182235") : color("#F8FBFF"));
+        drawable.setColor(isDarkMode() ? color("#15181D") : color("#F8FBFF"));
         drawable.setCornerRadius(dp(24));
         return drawable;
     }
@@ -229,14 +229,14 @@ public class CourseDetailDialog {
 
     private GradientDrawable cellBg() {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(isDarkMode() ? color("#141E30") : color("#EEF6FF"));
+        drawable.setColor(isDarkMode() ? color("#101318") : color("#EEF6FF"));
         drawable.setCornerRadius(dp(14));
         return drawable;
     }
 
     private GradientDrawable chipBg() {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(isDarkMode() ? color("#22304A") : color("#E9F1FB"));
+        drawable.setColor(isDarkMode() ? color("#1D222B") : color("#E9F1FB"));
         drawable.setCornerRadius(dp(12));
         return drawable;
     }

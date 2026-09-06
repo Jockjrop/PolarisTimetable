@@ -100,7 +100,8 @@ public final class UpdatePreferences {
     }
 
     public boolean isAutoCheckEnabled() {
-        return store.getBoolean(KEY_AUTO_CHECK_ENABLED, false);
+        // 默认开启：仅每日至多一次匿名版本检查，可随时在「更多-更新」关闭。
+        return store.getBoolean(KEY_AUTO_CHECK_ENABLED, true);
     }
 
     public void setAutoCheckEnabled(boolean enabled) {

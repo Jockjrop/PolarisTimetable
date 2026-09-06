@@ -359,6 +359,7 @@ public class UpdateCoordinatorTest {
 
     @Test
     public void autoCheckDisabledDoesNothing() {
+        prefs.setAutoCheckEnabled(false);
         runCheck();
         assertTrue(host.dialogs.isEmpty());
         assertEquals(0L, prefs.lastSuccessfulCheckAt());

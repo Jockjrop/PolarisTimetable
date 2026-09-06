@@ -82,7 +82,13 @@ public class MyPageBuilder {
 
         void openMoreSettings();
 
+        /** 「用户信息」入口：打开用户信息栏（名称/头像/学期/学校）。 */
+        void openUserInfo();
+
         void editAccountProfile();
+
+        /** 页面水平轻扫：leftward=左滑向课表方向，右滑向我的方向。 */
+        void onPageSwipe(boolean leftward);
     }
 
     private final Host host;
@@ -92,7 +98,7 @@ public class MyPageBuilder {
     }
 
     public ScrollView build(Context context) {
-        ScrollView scrollView = new ScrollView(context);
+        ScrollView scrollView = new SwipeScrollView(context, leftward -> host.onPageSwipe(leftward));
         scrollView.setBackgroundColor(host.pageSurfaceColor());
         LinearLayout page = new LinearLayout(context);
         page.setOrientation(LinearLayout.VERTICAL);
@@ -112,12 +118,14 @@ public class MyPageBuilder {
             page.addView(mySettingCard(context, context.getString(R.string.my_card_schedule), "schedule", v -> host.openScheduleSettings()));
             page.addView(mySettingCard(context, context.getString(R.string.my_card_global), "settings", v -> host.openGlobalSettings()));
             page.addView(mySettingCard(context, context.getString(R.string.my_card_security), "shield", v -> host.openSecuritySettings()));
+            page.addView(mySettingCard(context, context.getString(R.string.my_card_user_info), "user", v -> host.openUserInfo()));
             page.addView(mySettingCard(context, context.getString(R.string.my_card_more), "more", v -> host.openMoreSettings()));
         } else {
             page.addView(themedProfileHeader(context));
             page.addView(themedMySettingCard(context, context.getString(R.string.my_card_schedule), "schedule", v -> host.openScheduleSettings()));
             page.addView(themedMySettingCard(context, context.getString(R.string.my_card_global), "settings", v -> host.openGlobalSettings()));
             page.addView(themedMySettingCard(context, context.getString(R.string.my_card_security), "shield", v -> host.openSecuritySettings()));
+            page.addView(themedMySettingCard(context, context.getString(R.string.my_card_user_info), "user", v -> host.openUserInfo()));
             page.addView(themedMySettingCard(context, context.getString(R.string.my_card_more), "more", v -> host.openMoreSettings()));
         }
         TextView versionLine = new TextView(context);
@@ -269,6 +277,9 @@ public class MyPageBuilder {
         if ("more".equals(iconType)) {
             return context.getString(R.string.settings_themed_desc_more);
         }
+        if ("user".equals(iconType)) {
+            return context.getString(R.string.settings_themed_desc_user);
+        }
         return context.getString(R.string.settings_themed_desc_security);
     }
 
@@ -410,9 +421,18 @@ public class MyPageBuilder {
                 drawMoreIcon(canvas, width, height);
             } else if ("plan".equals(type)) {
                 drawPlanIcon(canvas, width, height);
+            } else if ("user".equals(type)) {
+                drawUserIcon(canvas, width, height);
             } else {
                 drawShieldIcon(canvas, width, height);
             }
+        }
+
+        private void drawUserIcon(Canvas canvas, float width, float height) {
+            // 人形：头 + 肩部圆弧
+            float centerX = width / 2f;
+            canvas.drawCircle(centerX, height * 0.32f, Math.min(width, height) * 0.15f, paint);
+            canvas.drawArc(width * 0.22f, height * 0.5f, width * 0.78f, height * 1.02f, 180f, 180f, false, paint);
         }
 
         private void drawScheduleIcon(Canvas canvas, float width, float height) {
@@ -488,6 +508,111 @@ public class MyPageBuilder {
             canvas.drawLine(checkX, checkY, checkX + dp(getContext(), 4), checkY + dp(getContext(), 4), paint);
             canvas.drawLine(checkX + dp(getContext(), 4), checkY + dp(getContext(), 4),
                     checkX + dp(getContext(), 10), checkY - dp(getContext(), 5), paint);
+        }
+    }
+
+    /**
+     * 捕获水平拖动切换相邻页签。在 onInterceptTouchEvent 判定水平主导后
+     * 接管事件流（子 View 收到 CANCEL，不会误触行点击），垂直滚动不受影响。
+     */
+    private static class SwipeScrollView extends ScrollView {
+        interface SwipeListener {
+            void onHorizontalSwipe(boolean leftward);
+        }
+
+        private static final int SWIPE_DISTANCE_DP = 72;
+
+        private final OnSwipeRouter router;
+
+        SwipeScrollView(Context context, SwipeListener listener) {
+            super(context);
+            float distancePx = SWIPE_DISTANCE_DP * context.getResources().getDisplayMetrics().density;
+            router = new OnSwipeRouter(listener, distancePx);
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent event) {
+            if (router.onIntercept(event)) {
+                return true;
+            }
+            return super.onInterceptTouchEvent(event);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (router.onTouch(event)) {
+                return true;
+            }
+            return super.onTouchEvent(event);
+        }
+
+        private static final class OnSwipeRouter {
+            private float downX;
+            private float downY;
+            private boolean swipingHorizontal;
+            private boolean firedThisGesture;
+            private final SwipeListener listener;
+            private final float distancePx;
+
+            private OnSwipeRouter(SwipeListener listener, float distancePx) {
+                this.listener = listener;
+                this.distancePx = distancePx;
+            }
+
+            /**
+             * DOWN 记录起点（onIntercept 与 onTouch 两条路径都会先经过它），
+             * MOVE 判定水平主导；起点落在空白区时事件流由 ScrollView 自己
+             * 承接（不走 onIntercept），因此两条路径必须共用同一检测。
+             */
+            private boolean detect(MotionEvent event) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    downX = event.getX();
+                    downY = event.getY();
+                    swipingHorizontal = false;
+                    firedThisGesture = false;
+                    return false;
+                }
+                if (event.getActionMasked() != MotionEvent.ACTION_MOVE) {
+                    return false;
+                }
+                if (firedThisGesture) {
+                    return true;
+                }
+                if (!swipingHorizontal) {
+                    float dx = event.getX() - downX;
+                    float dy = event.getY() - downY;
+                    if (Math.abs(dx) > distancePx && Math.abs(dx) > Math.abs(dy) * 1.5f) {
+                        swipingHorizontal = true;
+                    }
+                }
+                return swipingHorizontal;
+            }
+
+            private boolean onIntercept(MotionEvent event) {
+                return detect(event);
+            }
+
+            private boolean onTouch(MotionEvent event) {
+                if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                    detect(event);
+                    if (swipingHorizontal && !firedThisGesture
+                            && Math.abs(event.getX() - downX) > distancePx) {
+                        listener.onHorizontalSwipe(event.getX() - downX < 0);
+                        firedThisGesture = true;
+                    }
+                    return swipingHorizontal;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    detect(event);
+                    return false;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_UP
+                        || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    swipingHorizontal = false;
+                    firedThisGesture = false;
+                }
+                return swipingHorizontal;
+            }
         }
     }
 }
