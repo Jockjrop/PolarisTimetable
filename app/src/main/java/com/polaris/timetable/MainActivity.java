@@ -201,7 +201,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final int ACTION_PANEL_OPACITY_PERCENT = 70;
     private static final String UI_ONBOARDING_PREFERENCES = "polaris_ui_onboarding";
     private static final String WEEK_SWIPE_HINT_SHOWN = "week_swipe_hint_shown_v1";
-    private static final String CONTACT_EMAIL = "polaris_io@163.com";
+    private static final String CONTACT_EMAIL = "support@polaris-io.ccwu.cc";
     private static final String PROJECT_HOME_URL = "https://github.com/Jockjrop/PolarisTimetable";
     private static final String PROJECT_GITEE_URL = "https://gitee.com/Jockjrop/polaris-course-schedule";
     private static final String OFFICIAL_WEBSITE_URL = "https://timetable.polaris-io.ccwu.cc/";
@@ -5014,8 +5014,16 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onContactClicked() {
-        copyTextToClipboard(CONTACT_EMAIL);
-        toastDone(getString(R.string.settings_toast_email_copied, CONTACT_EMAIL));
+        // 「反馈与支持」：mailto 调起系统邮件 App 并预填收件地址；
+        // 设备无邮件客户端时回退为复制邮箱，保留原有可用性。
+        Intent intent = new Intent(Intent.ACTION_SENDTO);
+        intent.setData(Uri.parse("mailto:" + CONTACT_EMAIL));
+        try {
+            startActivity(intent);
+        } catch (ActivityNotFoundException noMailer) {
+            copyTextToClipboard(CONTACT_EMAIL);
+            toastDone(getString(R.string.settings_toast_email_copied, CONTACT_EMAIL));
+        }
     }
 
     @Override

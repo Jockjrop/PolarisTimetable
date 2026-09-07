@@ -236,7 +236,7 @@
     <string name="settings_row_restore_backup">恢复备份</string>
     <string name="settings_restore_backup_desc">从备份文件完整还原</string>
     <string name="settings_row_version">版本信息</string>
-    <string name="settings_row_contact">联系我们</string>
+    <string name="settings_row_contact">反馈与支持</string>
     <string name="settings_toast_email_copied">邮箱已复制：%1$s</string>
     <string name="settings_row_github">GitHub 项目地址</string>
     <string name="settings_toast_github_copied">GitHub 地址已复制：%1$s</string>
