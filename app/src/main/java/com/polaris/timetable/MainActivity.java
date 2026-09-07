@@ -111,6 +111,7 @@ import com.polaris.timetable.storage.AcademicEventRepository;
 import com.polaris.timetable.storage.PlanRepository;
 import com.polaris.timetable.storage.ScheduleBackupManager;
 import com.polaris.timetable.storage.ScheduleRepository;
+import com.polaris.timetable.time.ClassTimeTableController;
 import com.polaris.timetable.time.CourseTimeResolver;
 import com.polaris.timetable.validation.CourseConflictDetector;
 import com.polaris.timetable.ui.BackdropBlurView;
@@ -126,7 +127,9 @@ import com.polaris.timetable.ui.DesignTokens;
 import com.polaris.timetable.ui.PolarisThemeBackgroundView;
 import com.polaris.timetable.ui.PolarisToast;
 import com.polaris.timetable.ui.PolarisVisualTheme;
+import com.polaris.timetable.ui.PracticePanelController;
 import com.polaris.timetable.ui.ScheduleBoardView;
+import com.polaris.timetable.ui.TodayOverviewController;
 import com.polaris.timetable.ui.UpdateReadyBadgeView;
 import com.polaris.timetable.ui.WindowSizeClass;
 import com.polaris.timetable.ui.TodayOverviewView;
@@ -162,7 +165,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host, PdfImportReviewFlow.Host, UpdateCoordinator.Host {
+public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host, PdfImportReviewFlow.Host, UpdateCoordinator.Host, TodayOverviewController.Host, PracticePanelController.Host {
     private static final String TAG = "MainActivity";
 
     private static final int PICK_PDF = 1001;
@@ -186,13 +189,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final int RETURN_WEEK_CARD_WIDTH_DP = 64;
     private static final long AUTO_UPDATE_CHECK_DELAY_MS = 5000L;
     private static final int RETURN_WEEK_CARD_GAP_DP = 8;
-    private static final long TODAY_OVERVIEW_COLLAPSE_DELAY_MS = 3_000L;
     private static final long PRACTICE_BAR_COLLAPSE_DELAY_MS = 3_000L;
     /** 更新就绪角标直径（dp）：明显可点但不遮挡课表网格。 */
     private static final int UPDATE_BADGE_SIZE_DP = 40;
-    /** 仅存于进程内：系统杀掉应用后，下次冷启动重新展示 3 秒展开态。 */
-    private static boolean todayOverviewCollapsedForProcess;
-    private static long todayOverviewCollapseDeadline;
     /** 仅存于进程内：实践卡收起一次后保持收起，后台清除（进程结束）后冷启动才重新展开。 */
     private static boolean practiceBarCollapsedForProcess;
     private static long practiceBarCollapseDeadline;
@@ -252,7 +251,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private FrameLayout practiceSidePanel;
     private LinearLayout practiceSidePanelContent;
     /** 横屏平板：右侧顶部的今日概览独立面板（右侧空间充足时显示）。 */
-    private View todayOverviewPanel;
+    private FrameLayout todayOverviewPanel;
     private LinearLayout todayOverviewPanelContent;
     /** 横屏平板：右侧下方剩余空间的本周计划面板。 */
     private FrameLayout planSidePanel;
@@ -281,9 +280,119 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private final AppearanceDialogs appearanceDialogs = new AppearanceDialogs(this);
     private final ReminderDialogs reminderDialogs = new ReminderDialogs(this);
     final ScheduleViewState scheduleViewState = new ScheduleViewState();
+    private final ClassTimeTableController classTimeTableController =
+            new ClassTimeTableController(scheduleViewState);
+    private final TodayOverviewController todayOverviewController =
+            new TodayOverviewController(this);
+    private final PracticePanelController practicePanelController =
+            new PracticePanelController(this);
 
     boolean isImportLink(Uri uri) {
         return ScheduleShareCodec.isImportLink(uri);
+    }
+
+    // ===== TodayOverviewController.Host / PracticePanelController.Host 实现 =====
+
+    @Override
+    public TodayOverviewView todayOverviewView() {
+        return todayOverviewView;
+    }
+
+    @Override
+    public LinearLayout topPanel() {
+        return topPanel;
+    }
+
+    @Override
+    public CourseConflictSummaryView conflictSummaryView() {
+        return conflictSummaryView;
+    }
+
+    @Override
+    public FrameLayout todayOverviewPanel() {
+        return todayOverviewPanel;
+    }
+
+    @Override
+    public LinearLayout todayOverviewPanelContent() {
+        return todayOverviewPanelContent;
+    }
+
+    @Override
+    public FrameLayout contentHost() {
+        return contentHost;
+    }
+
+    @Override
+    public void setTodayOverviewPanel(FrameLayout panel) {
+        todayOverviewPanel = panel;
+    }
+
+    @Override
+    public void setTodayOverviewPanelContent(LinearLayout content) {
+        todayOverviewPanelContent = content;
+    }
+
+    @Override
+    public List<Course> courses() {
+        return courses;
+    }
+
+    @Override
+    public int activeTab() {
+        return activeTab;
+    }
+
+    @Override
+    public boolean settingsPageOpen() {
+        return settingsPage != null && settingsPage.getVisibility() == View.VISIBLE;
+    }
+
+    @Override
+    public int rightPanelSpacePx() {
+        return rightPanelSpace();
+    }
+
+    @Override
+    public int bottomNavOpacityPercent() {
+        return scheduleViewState.bottomNavOpacity;
+    }
+
+    @Override
+    public void refreshPracticeAndPlanSidePanels() {
+        practicePanelController.updatePracticeSidePanel();
+        updatePlanSidePanel();
+    }
+
+    @Override
+    public FrameLayout practiceSidePanel() {
+        return practiceSidePanel;
+    }
+
+    @Override
+    public LinearLayout practiceSidePanelContent() {
+        return practiceSidePanelContent;
+    }
+
+    @Override
+    public Context context() {
+        return this;
+    }
+
+    @Override
+    public String string(int resId) {
+        return getString(resId);
+    }
+
+    @Override
+    public String string(int resId, Object... args) {
+        return getString(resId, args);
+    }
+
+    @Override
+    public int scheduleOverlayTopInsetPx() {
+        return scheduleOverlayTopInset(
+                WindowSizeClass.isTablet(getResources().getConfiguration()));
     }
 
     private int activeTab = 0;
@@ -338,30 +447,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private boolean weekSwipeHintScheduled;
     private View weekSwipeHintView;
     private View courseSaveUndoView;
-    private final Handler todayOverviewHandler = new Handler(Looper.getMainLooper());
     private final Handler practiceBarHandler = new Handler(Looper.getMainLooper());
-    private final Runnable todayOverviewAutoCollapse = () -> {
-        todayOverviewCollapseDeadline = 0L;
-        todayOverviewCollapsedForProcess = true;
-        applyTodayOverviewCollapseState(true);
-        updatePracticeTopBar();
-    };
-    private final Runnable todayOverviewTicker = new Runnable() {
-        @Override
-        public void run() {
-            updateTodayOverview();
-            long untilNextMinute = 60_000L - (System.currentTimeMillis() % 60_000L) + 250L;
-            todayOverviewHandler.postDelayed(this, untilNextMinute);
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (!todayOverviewCollapsedForProcess && todayOverviewCollapseDeadline == 0L) {
-            todayOverviewCollapseDeadline = SystemClock.elapsedRealtime()
-                    + TODAY_OVERVIEW_COLLAPSE_DELAY_MS;
-        }
+        todayOverviewController.ensureCollapseDeadline();
         applyEdgeToEdgeWindow(getWindow());
         scheduleRepository = new ScheduleRepository(this);
         planRepository = new PlanRepository(this);
@@ -410,7 +501,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (scheduleBoard != null) {
             scheduleBoard.post(this::renderSchedule);
         }
-        startTodayOverviewTicker();
+        todayOverviewController.startTodayOverviewTicker();
         updatePracticeTopBar();
         refreshActiveSettingsPage();
         scheduleWeekSwipeHintIfNeeded();
@@ -445,14 +536,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (updateCoordinator != null) {
             updateCoordinator.onHostPaused();
         }
-        todayOverviewHandler.removeCallbacks(todayOverviewTicker);
+        todayOverviewController.cancelTicker();
         cancelPracticeBarTimers();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
-        todayOverviewHandler.removeCallbacks(todayOverviewAutoCollapse);
+        todayOverviewController.cancelAutoCollapse();
         cancelPracticeBarTimers();
         planPageBuilder.cancelAutoCollapse();
         scheduleExportExecutor.shutdownNow();
@@ -617,8 +708,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             todayOverviewView.setVisualTheme(scheduleViewState.visualTheme);
             todayOverviewView.setOnCourseClickListener(this::showCourseDetail);
         }
-        todayOverviewView.setCollapsed(todayOverviewCollapsedForProcess, false);
-        updateTodayOverview();
+        todayOverviewView.setCollapsed(todayOverviewController.isCollapsedForProcess(), false);
+        todayOverviewController.updateTodayOverview();
 
         conflictSummaryView = new CourseConflictSummaryView(this);
         conflictSummaryView.setCompact(wideTopPanel);
@@ -628,7 +719,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         conflictParams.topMargin = dp(5);
         topPanel.addView(conflictSummaryView, conflictParams);
         updateConflictSummary();
-        applyTopPanelCollapseDensity();
+        todayOverviewController.applyTopPanelCollapseDensity();
 
         myPage = buildMyPage();
         planPage = planPageBuilder.buildPlanPage(this);
@@ -674,7 +765,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     Gravity.END | Gravity.TOP));
             if (separateTodayPanel) {
                 // 今日概览独立面板：右侧顶部，实践面板上方。
-                buildTodayOverviewPanel();
+                todayOverviewController.buildTodayOverviewPanel();
             }
             // 本周计划面板：毛玻璃容器（内容可滚动，占满右侧剩余空间）。
             planSidePanel = (FrameLayout) glassLayer(floatingPanelBg(scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
@@ -754,11 +845,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             // 我的页初始为居中内容列模式。
             applyMyPageMode(false);
         }
-        updateTodayOverviewPanel();
-        updatePracticeSidePanel();
+        todayOverviewController.updateTodayOverviewPanel();
+        practicePanelController.updatePracticeSidePanel();
         updatePracticeTopBar();
         updatePlanSidePanel();
-        scheduleTodayOverviewAutoCollapse();
+        todayOverviewController.scheduleTodayOverviewAutoCollapse();
         switchTab(activeTab);
         scheduleBoard.post(this::renderSchedule);
         scheduleWeekSwipeHintIfNeeded();
@@ -982,7 +1073,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (todayOverviewView != null) {
             todayOverviewView.setVisualTheme(scheduleViewState.visualTheme);
         }
-        updateTodayOverview();
+        todayOverviewController.updateTodayOverview();
         updateConflictSummary();
         updateEmptyScheduleView();
         updateReturnCurrentWeekAction();
@@ -997,8 +1088,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 topPanelContainer.setLayoutParams(topParams);
             }
         }
-        updateTodayOverviewPanel();
-        updatePracticeSidePanel();
+        todayOverviewController.updateTodayOverviewPanel();
+        practicePanelController.updatePracticeSidePanel();
         updatePracticeTopBar();
         updatePlanSidePanel();
     }
@@ -1106,7 +1197,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return false;
     }
 
-    private CourseTimeResolver.Settings courseTimeSettings() {
+    public CourseTimeResolver.Settings courseTimeSettings() {
         return new CourseTimeResolver.Settings(
                 scheduleViewState.firstClassStartTime,
                 scheduleViewState.classDurationMinutes,
@@ -1115,79 +1206,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 scheduleViewState.afternoonStartTime,
                 scheduleViewState.lateAfternoonStartTime,
                 scheduleViewState.classTimeConfig);
-    }
-
-    private void updateTodayOverview() {
-        if (todayOverviewView == null) {
-            return;
-        }
-        CourseTimeResolver.TodayOverview overview = CourseTimeResolver.resolveToday(
-                courses,
-                courseTimeSettings(),
-                firstWeekStartMillis(),
-                scheduleViewState.semesterWeeks,
-                Calendar.getInstance());
-        todayOverviewView.setOverview(overview, isDarkModeActive());
-    }
-
-    private void startTodayOverviewTicker() {
-        todayOverviewHandler.removeCallbacks(todayOverviewTicker);
-        todayOverviewTicker.run();
-    }
-
-    private void scheduleTodayOverviewAutoCollapse() {
-        todayOverviewHandler.removeCallbacks(todayOverviewAutoCollapse);
-        if (todayOverviewCollapsedForProcess) {
-            applyTodayOverviewCollapseState(false);
-            return;
-        }
-        long remaining = todayOverviewCollapseDeadline - SystemClock.elapsedRealtime();
-        if (remaining <= 0L) {
-            todayOverviewAutoCollapse.run();
-        } else {
-            todayOverviewHandler.postDelayed(todayOverviewAutoCollapse, remaining);
-        }
-    }
-
-    private void applyTodayOverviewCollapseState(boolean animate) {
-        if (todayOverviewView == null) {
-            return;
-        }
-        todayOverviewView.setCollapsed(todayOverviewCollapsedForProcess, animate);
-        applyTopPanelCollapseDensity();
-        todayOverviewView.post(() -> {
-            updatePracticeSidePanel();
-            updatePlanSidePanel();
-        });
-    }
-
-    /** 折叠后同步收紧顶栏留白，避免只隐藏一行文字却仍占用原高度。 */
-    private void applyTopPanelCollapseDensity() {
-        boolean compact = todayOverviewCollapsedForProcess;
-        if (topPanel != null) {
-            topPanel.setPadding(dp(12), dp(compact ? 8 : 10),
-                    dp(12), dp(compact ? 6 : 10));
-        }
-        updateTopPanelChildMargin(todayOverviewView, compact ? 2 : 5);
-        updateTopPanelChildMargin(conflictSummaryView, compact ? 2 : 5);
-        if (todayOverviewPanelContent != null) {
-            int padding = dp(compact ? 6 : 10);
-            todayOverviewPanelContent.setPadding(padding, padding, padding, padding);
-        }
-    }
-
-    private void updateTopPanelChildMargin(View child, int topMarginDp) {
-        if (child == null || child.getParent() != topPanel
-                || !(child.getLayoutParams() instanceof LinearLayout.LayoutParams)) {
-            return;
-        }
-        LinearLayout.LayoutParams params =
-                (LinearLayout.LayoutParams) child.getLayoutParams();
-        int margin = dp(topMarginDp);
-        if (params.topMargin != margin) {
-            params.topMargin = margin;
-            child.setLayoutParams(params);
-        }
     }
 
     private void updateConflictSummary() {
@@ -1225,11 +1243,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     /** 右侧实践面板是否需要至少 150dp 空间。 */
-    private boolean hasPracticePanelSpace() {
+    public boolean hasPracticePanelSpace() {
         return isLandscapeTablet() && rightPanelSpace() >= dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH);
     }
 
-    private int practicePanelWidth() {
+    public int practicePanelWidth() {
         if (todayOverviewPanel != null && todayOverviewPanel.getVisibility() == View.VISIBLE) {
             // 与今日概览面板同宽。
             return todayOverviewPanel.getWidth() > 0
@@ -1237,145 +1255,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     : Math.min(dp(DesignTokens.PANEL_MAX_WIDTH), rightPanelSpace());
         }
         return Math.max(dp(DesignTokens.TABLET_PRACTICE_MIN_WIDTH), Math.min(dp(DesignTokens.TABLET_PRACTICE_MAX_WIDTH), rightPanelSpace()));
-    }
-
-    private List<Course> practiceCoursesForCurrentWeek() {
-        List<Course> result = new ArrayList<>();
-        for (Course course : courses) {
-            if (course != null && (course.courseType == CourseType.PRACTICE
-                    || course.isBannerOnlyCourse())
-                    && CourseTimeResolver.isActiveInWeek(course, currentWeek)) {
-                result.add(course);
-            }
-        }
-        return result;
-    }
-
-    /** 右侧实践面板数据：课表中全部实践课程，不按当前周过滤（1.27.7）。 */
-    private List<Course> practiceCoursesForPanel() {
-        List<Course> result = new ArrayList<>();
-        for (Course course : courses) {
-            if (course != null && (course.courseType == CourseType.PRACTICE
-                    || course.isBannerOnlyCourse())) {
-                result.add(course);
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 刷新课表右侧的实践面板（1.27.7 改回）：仅横屏平板且右侧空间充足、
-     * 课表 tab 且设置面板未打开时显示；内容为全部实践课程，超高可滚动。
-     * 位置排在今日概览面板下方、计划面板上方。
-     */
-    private void updatePracticeSidePanel() {
-        if (practiceSidePanel == null) {
-            return;
-        }
-        boolean panelEnabled = isLandscapeTablet() && scheduleViewState.showPracticeBanner
-                && hasPracticePanelSpace();
-        boolean visible = panelEnabled && activeTab == 0
-                && (settingsPage == null
-                || settingsPage.getVisibility() != View.VISIBLE);
-        List<Course> practices = panelEnabled ? practiceCoursesForPanel()
-                : new ArrayList<>();
-        if (!visible || practices.isEmpty()) {
-            practiceSidePanel.setVisibility(View.GONE);
-            return;
-        }
-        practiceSidePanelContent.removeAllViews();
-
-        TextView title = new TextView(this);
-        title.setText(getString(R.string.side_panel_practice_title));
-        title.setTextColor(inkColor());
-        title.setTextSize(14);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(dp(14), dp(10), dp(14), dp(6));
-        practiceSidePanelContent.addView(title);
-
-        ScrollView practiceScroll = new ScrollView(this);
-        practiceScroll.setVerticalScrollBarEnabled(practices.size() > 4);
-        practiceScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        LinearLayout practiceList = new LinearLayout(this);
-        practiceList.setOrientation(LinearLayout.VERTICAL);
-        for (Course course : practices) {
-            practiceList.addView(buildPracticePanelItem(course));
-        }
-        practiceScroll.addView(practiceList, new ScrollView.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
-        practiceSidePanelContent.addView(practiceScroll, new LinearLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                Math.min(dp(340), practices.size() * dp(66))));
-
-        FrameLayout.LayoutParams params =
-                (FrameLayout.LayoutParams) practiceSidePanel.getLayoutParams();
-        params.width = practicePanelWidth();
-        int topInset = scheduleOverlayTopInset(
-                WindowSizeClass.isTablet(getResources().getConfiguration()));
-        if (todayOverviewPanel != null && todayOverviewPanel.getVisibility() == View.VISIBLE) {
-            // 实践面板排在今日概览面板下方；未布局时用估算高度兜底。
-            int todayBottom;
-            if (todayOverviewPanel.getHeight() > 0) {
-                todayBottom = todayOverviewPanel.getTop() + todayOverviewPanel.getHeight();
-            } else {
-                FrameLayout.LayoutParams todayParams =
-                        (FrameLayout.LayoutParams) todayOverviewPanel.getLayoutParams();
-                todayBottom = todayParams.topMargin + dp(90);
-            }
-            topInset = todayBottom + dp(10);
-        }
-        params.topMargin = topInset;
-        params.rightMargin = dp(12);
-        practiceSidePanel.setLayoutParams(params);
-        practiceSidePanel.setVisibility(View.VISIBLE);
-    }
-
-    /**
-     * 刷新右侧顶部的今日概览独立面板：仅横屏平板且右侧空间充足、
-     * 课表 tab 且设置面板未打开时显示。
-     */
-    private void updateTodayOverviewPanel() {
-        if (todayOverviewPanel == null) {
-            return;
-        }
-        boolean visible = isLandscapeTablet() && rightPanelSpace() >= dp(DesignTokens.TABLET_SEPARATE_TODAY_MIN)
-                && activeTab == 0
-                && (settingsPage == null
-                || settingsPage.getVisibility() != View.VISIBLE);
-        if (!visible) {
-            todayOverviewPanel.setVisibility(View.GONE);
-            return;
-        }
-        FrameLayout.LayoutParams params =
-                (FrameLayout.LayoutParams) todayOverviewPanel.getLayoutParams();
-        params.width = Math.min(dp(DesignTokens.PANEL_MAX_WIDTH), rightPanelSpace());
-        // 与左侧顶栏顶部平齐。
-        params.topMargin = statusBarHeight() + dp(8);
-        params.rightMargin = dp(12);
-        todayOverviewPanel.setLayoutParams(params);
-        todayOverviewPanel.setVisibility(View.VISIBLE);
-    }
-
-    private View buildTodayOverviewPanel() {
-        todayOverviewView.setLarge(true);
-        // 毛玻璃容器（BackdropBlurView 按内容定尺寸）+ 大号今日概览内容。
-        FrameLayout host = (FrameLayout) glassLayer(floatingPanelBg(scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_SIDE_PANEL), DesignTokens.RADIUS_SIDE_PANEL);
-        todayOverviewPanelContent = new LinearLayout(this);
-        todayOverviewPanelContent.setOrientation(LinearLayout.VERTICAL);
-        int contentPadding = dp(todayOverviewCollapsedForProcess ? 6 : 10);
-        todayOverviewPanelContent.setPadding(
-                contentPadding, contentPadding, contentPadding, contentPadding);
-        todayOverviewPanelContent.addView(todayOverviewView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        host.addView(todayOverviewPanelContent, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
-        todayOverviewPanel = host;
-        contentHost.addView(host, new FrameLayout.LayoutParams(
-                dp(360), LinearLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.END | Gravity.TOP));
-        host.setVisibility(View.GONE);
-        return host;
     }
 
     /**
@@ -1485,56 +1364,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         int bottomReserve = bottomContentInset() + dp(30);
         params.height = Math.max(dp(140), screenHeight - topInset - bottomReserve);
         planSidePanel.setLayoutParams(params);
-    }
-
-    private View buildPracticePanelItem(Course course) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(8), dp(14), dp(8));
-        card.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_CARD));
-        card.setClickable(true);
-        card.setFocusable(true);
-        card.setOnClickListener(v -> new CourseDetailDialog(
-                this, isDarkModeActive(), dialogBlurSource(), courseTimeSettings())
-                .show(course, this::showCourseEditor));
-
-        TextView name = new TextView(this);
-        name.setText(course.name == null || course.name.trim().isEmpty()
-                ? getString(R.string.board_practice_unnamed) : course.name.trim());
-        name.setTextColor(inkColor());
-        name.setTextSize(14);
-        name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        card.addView(name);
-
-        StringBuilder meta = new StringBuilder(course.isBannerOnlyCourse()
-                ? getString(R.string.board_practice_concentrated) : courseTimeInlineText(course));
-        if (course.location != null && !course.location.trim().isEmpty()) {
-            meta.append(" · ").append(course.location.trim());
-        }
-        if (course.teacher != null && !course.teacher.trim().isEmpty()) {
-            meta.append(getString(R.string.practice_meta_teacher, course.teacher.trim()));
-        }
-        TextView metaView = new TextView(this);
-        metaView.setText(meta.toString());
-        metaView.setTextColor(mutedColor());
-        metaView.setTextSize(13);
-        metaView.setSingleLine(false);
-        metaView.setMaxLines(2);
-        metaView.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        metaParams.topMargin = dp(2);
-        card.addView(metaView, metaParams);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(dp(8), 0, dp(8), dp(8));
-        card.setLayoutParams(params);
-        return card;
     }
 
     private void showCurrentWeekConflicts() {
@@ -1747,7 +1576,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         hint.setLineSpacing(dp(3), 1f);
         panel.addView(hint);
 
-        final List<int[]> rows = new ArrayList<>(loadClassTimeRows());
+        final List<int[]> rows = new ArrayList<>(classTimeTableController.loadClassTimeRows());
         final LinearLayout rowsContainer = new LinearLayout(this);
         rowsContainer.setOrientation(LinearLayout.VERTICAL);
         final ScrollView scroll = new ScrollView(this);
@@ -1770,7 +1599,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     for (SchoolParserModel model : SchoolParserModel.values()) {
                         if (model.label.equals(value)) {
                             rows.clear();
-                            rows.addAll(rowsFromSchoolModel(model));
+                            rows.addAll(ClassTimeTableController.rowsFromSchoolModel(model));
                             renderClassTimeRows(rowsContainer, rows, dialog, scroll, true);
                             break;
                         }
@@ -1779,7 +1608,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         TextView paste = compactDialogAction(getString(R.string.classtime_paste_action), v ->
                 scheduleDialogs.showClassTimePasteDialog(rows, rowsContainer, dialog, scroll));
         TextView addRow = compactDialogAction(getString(R.string.classtime_add_row), v -> {
-            rows.add(nextClassTimeRow(rows));
+            rows.add(ClassTimeTableController.nextClassTimeRow(rows));
             renderClassTimeRows(rowsContainer, rows, dialog, scroll, true);
         });
         actions.addView(example);
@@ -1791,7 +1620,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             if (!validateClassTimeRows(rows)) {
                 return;
             }
-            applyClassTimeRows(rows);
+            classTimeTableController.applyClassTimeRows(rows);
             saveConfig();
             dialog.dismiss();
             renderSchedule();
@@ -1824,10 +1653,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             label.setGravity(Gravity.CENTER);
             row.addView(label, new LinearLayout.LayoutParams(dp(54), dp(42)));
 
-            TextView startPill = classTimePill(timeTextMinute(rows.get(index)[0]), v ->
+            TextView startPill = classTimePill(ClassTimeTableController.timeTextMinute(rows.get(index)[0]), v ->
                     appearanceDialogs.showTimeDialog(getString(R.string.classtime_section_start_title, index + 1),
-                            timeTextMinute(rows.get(index)[0]), value -> {
-                                rows.get(index)[0] = minutesFromTimeText(value);
+                            ClassTimeTableController.timeTextMinute(rows.get(index)[0]), value -> {
+                                rows.get(index)[0] = ClassTimeTableController.minutesFromTimeText(value);
                                 renderClassTimeRows(container, rows, owner, scroll, false);
                             }));
             row.addView(startPill, new LinearLayout.LayoutParams(0, dp(42), 1f));
@@ -1839,10 +1668,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             dash.setGravity(Gravity.CENTER);
             row.addView(dash, new LinearLayout.LayoutParams(dp(22), dp(42)));
 
-            TextView endPill = classTimePill(timeTextMinute(rows.get(index)[1]), v ->
+            TextView endPill = classTimePill(ClassTimeTableController.timeTextMinute(rows.get(index)[1]), v ->
                     appearanceDialogs.showTimeDialog(getString(R.string.classtime_section_end_title, index + 1),
-                            timeTextMinute(rows.get(index)[1]), value -> {
-                                rows.get(index)[1] = minutesFromTimeText(value);
+                            ClassTimeTableController.timeTextMinute(rows.get(index)[1]), value -> {
+                                rows.get(index)[1] = ClassTimeTableController.minutesFromTimeText(value);
                                 renderClassTimeRows(container, rows, owner, scroll, false);
                             }));
             row.addView(endPill, new LinearLayout.LayoutParams(0, dp(42), 1f));
@@ -1944,117 +1773,24 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return rows;
     }
 
-    private List<int[]> loadClassTimeRows() {
-        List<int[]> rows = new ArrayList<>();
-        Map<Integer, int[]> anchors = CourseTimeResolver.parseSectionAnchors(scheduleViewState.classTimeConfig);
-        CourseTimeResolver.Settings settings = courseTimeSettings();
-        int count = Math.max(1, Math.min(20, scheduleViewState.courseSectionCount));
-        for (int section = 1; section <= count; section++) {
-            int[] anchored = anchors.get(section);
-            if (anchored != null) {
-                rows.add(new int[]{anchored[0], anchored[1]});
-                continue;
-            }
-            CourseTimeResolver.TimeRange range =
-                    CourseTimeResolver.sectionTimeRange(settings, section);
-            if (range == null) {
-                continue;
-            }
-            rows.add(new int[]{range.startMinutes, range.endMinutes});
-        }
-        if (rows.isEmpty()) {
-            rows.add(new int[]{8 * 60, 8 * 60 + 50});
-        }
-        return rows;
-    }
-
-    private List<int[]> rowsFromSchoolModel(SchoolParserModel model) {
-        List<int[]> rows = new ArrayList<>();
-        if (model != null) {
-            Map<Integer, int[]> anchors =
-                    CourseTimeResolver.parseSectionAnchors(model.defaultClassTimeConfig);
-            int count = model.defaultSectionCount();
-            for (int section = 1; section <= count; section++) {
-                int[] anchored = anchors.get(section);
-                rows.add(anchored == null
-                        ? new int[]{8 * 60 + (section - 1) * 60, 8 * 60 + (section - 1) * 60 + 50}
-                        : new int[]{anchored[0], anchored[1]});
-            }
-        }
-        if (rows.isEmpty()) {
-            rows.add(new int[]{8 * 60, 8 * 60 + 50});
-        }
-        return rows;
-    }
-
-    private int[] nextClassTimeRow(List<int[]> rows) {
-        int[] last = rows.get(rows.size() - 1);
-        int duration = Math.max(20, last[1] - last[0]);
-        int start = last[1] + 10;
-        return new int[]{start, start + duration};
-    }
-
     private boolean validateClassTimeRows(List<int[]> rows) {
-        if (rows.isEmpty()) {
-            Toast.makeText(this, getString(R.string.classtime_error_min_one), Toast.LENGTH_SHORT).show();
-            return false;
-        }
-        boolean overlap = false;
-        for (int i = 0; i < rows.size(); i++) {
-            int[] row = rows.get(i);
-            if (row[1] <= row[0]) {
-                Toast.makeText(this, getString(R.string.classtime_error_end_before_start, i + 1),
+        ClassTimeTableController.Validation validation = ClassTimeTableController.validate(rows);
+        switch (validation.error) {
+            case EMPTY:
+                Toast.makeText(this, getString(R.string.classtime_error_min_one), Toast.LENGTH_SHORT).show();
+                return false;
+            case END_BEFORE_START:
+                Toast.makeText(this, getString(R.string.classtime_error_end_before_start, validation.errorRow),
                         Toast.LENGTH_SHORT).show();
                 return false;
-            }
-            if (i > 0 && row[0] < rows.get(i - 1)[1]) {
-                overlap = true;
-            }
+            default:
+                break;
         }
-        if (overlap) {
+        if (validation.overlap) {
             Toast.makeText(this, getString(R.string.classtime_warn_overlap_saved),
                     Toast.LENGTH_LONG).show();
         }
         return true;
-    }
-
-    private void applyClassTimeRows(List<int[]> rows) {
-        StringBuilder text = new StringBuilder();
-        for (int i = 0; i < rows.size(); i++) {
-            if (i > 0) {
-                text.append("\n");
-            }
-            text.append(i + 1).append(" ")
-                    .append(timeTextMinute(rows.get(i)[0])).append("-")
-                    .append(timeTextMinute(rows.get(i)[1]));
-        }
-        scheduleViewState.classTimeConfig = text.toString();
-        scheduleViewState.firstClassStartTime = timeTextMinute(rows.get(0)[0]);
-        scheduleViewState.classDurationMinutes = Math.max(20, Math.min(120, rows.get(0)[1] - rows.get(0)[0]));
-        scheduleViewState.courseSectionCount = rows.size();
-    }
-
-    private String classTimeTableSummary() {
-        List<int[]> rows = loadClassTimeRows();
-        if (rows.isEmpty()) {
-            return getString(R.string.classtime_summary_unset);
-        }
-        return getString(R.string.classtime_summary_value, rows.size(),
-                timeTextMinute(rows.get(0)[0]) + "–" + timeTextMinute(rows.get(0)[1]));
-    }
-
-    private boolean hasClassTimeTable(String value) {
-        return value != null && !CourseTimeResolver.parseSectionAnchors(value).isEmpty();
-    }
-
-    private int minutesFromTimeText(String value) {
-        int[] time = timeFromText(value);
-        return time[0] * 60 + time[1];
-    }
-
-    private String timeTextMinute(int minutes) {
-        int bounded = Math.max(0, Math.min(24 * 60 - 1, minutes));
-        return twoDigits(bounded / 60) + ":" + twoDigits(bounded % 60);
     }
 
     void applySchoolTimeDefaults(SchoolParserModel model) {
@@ -3247,7 +2983,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
 
-    private void showCourseEditor(Course course) {
+    public void showCourseEditor(Course course) {
         if (courseSaveUndoView != null) {
             dismissCourseSaveUndo(courseSaveUndoView);
         }
@@ -3434,12 +3170,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
      * 3s 完整课程名后收紧为“实践”入口；之后切页、回前台都直接保持收起，
      * 直到后台清除（进程结束）后冷启动才重新走一次展开-收起。
      */
-    private void updatePracticeTopBar() {
+    public void updatePracticeTopBar() {
         if (practiceTopBar == null || practiceBarHandler == null) {
             return;
         }
         boolean bannerEnabled = scheduleViewState.showPracticeBanner;
-        practiceBarCourses = practiceCoursesForCurrentWeek();
+        practiceBarCourses = PracticePanelController.forCurrentWeek(courses, currentWeek);
         // 1.27.7：右侧实践面板可见时（面板含全部实践），顶栏不再重复放实践入口；
         // 面板因空间不足未显示时，顶栏入口仍作为兜底。
         boolean panelActive = practiceSidePanel != null
@@ -4367,8 +4103,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         } else {
             planPageBuilder.cancelAutoCollapse();
         }
-        updateTodayOverviewPanel();
-        updatePracticeSidePanel();
+        todayOverviewController.updateTodayOverviewPanel();
+        practicePanelController.updatePracticeSidePanel();
         updatePracticeTopBar();
         updatePlanSidePanel();
         // 页签切换改变角标锚点（课表/计划/我的三处位置不同），同步重算。
@@ -4860,7 +4596,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public String classTimeSummary() {
-        return classTimeTableSummary();
+        List<int[]> rows = classTimeTableController.loadClassTimeRows();
+        if (rows.isEmpty()) {
+            return getString(R.string.classtime_summary_unset);
+        }
+        return getString(R.string.classtime_summary_value, rows.size(),
+                ClassTimeTableController.timeTextMinute(rows.get(0)[0]) + "–"
+                        + ClassTimeTableController.timeTextMinute(rows.get(0)[1]));
     }
 
     @Override
@@ -5062,7 +4804,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleViewState.showPracticeBanner = value;
         saveGlobalAppearance();
         renderSchedule();
-        updatePracticeSidePanel();
+        practicePanelController.updatePracticeSidePanel();
         updatePracticeTopBar();
     }
 
@@ -6027,7 +5769,7 @@ private View glassDialogContent(ScrollView scrollView, LinearLayout panel, int r
             dialogBlurSource(), radius);
     }
 
-    private View dialogBlurSource() {
+    public View dialogBlurSource() {
         if (!scheduleViewState.shellBarsBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return null;
         }
@@ -6608,7 +6350,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return cell;
     }
 
-    private String courseTimeInlineText(Course course) {
+    public String courseTimeInlineText(Course course) {
         if (course.isBannerOnlyCourse()) {
             return getString(R.string.banner_no_fixed_time_short);
         }
@@ -7484,7 +7226,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             }
             returnCurrentWeekButton.bringToFront();
         }
-        updateTodayOverview();
+        todayOverviewController.updateTodayOverview();
         updateConflictSummary();
         if (bottomNavView != null) {
             bottomNavView.applyTabColors(
@@ -7722,10 +7464,10 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         scheduleBoard.setCurrentWeek(nextWeek);
         updateReturnCurrentWeekAction();
         updateHeader();
-        updateTodayOverview();
+        todayOverviewController.updateTodayOverview();
         updateConflictSummary();
         updateWeekSelector();
-        updatePracticeSidePanel();
+        practicePanelController.updatePracticeSidePanel();
         updatePracticeTopBar();
         updatePlanSidePanel();
     }
@@ -7751,10 +7493,10 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         currentWeek = nextWeek;
         updateReturnCurrentWeekAction();
         updateHeader();
-        updateTodayOverview();
+        todayOverviewController.updateTodayOverview();
         updateConflictSummary();
         updateWeekSelector();
-        updatePracticeSidePanel();
+        practicePanelController.updatePracticeSidePanel();
         updatePracticeTopBar();
         updatePlanSidePanel();
     }
@@ -8095,7 +7837,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return CourseTimeResolver.inferSemesterWeeks(source, 20, 20);
     }
 
-    private long firstWeekStartMillis() {
+    public long firstWeekStartMillis() {
         return CourseTimeResolver.firstWeekStartMillis(scheduleViewState.firstWeekDay);
     }
 
@@ -8305,7 +8047,7 @@ private GradientDrawable liquidGlassBg(int opacityPercent) {
     return GlassDialogFactory.liquidGlassBg(glassConfig(), opacityPercent);
     }
 
-private View glassLayer(GradientDrawable background, int radius) {
+public View glassLayer(GradientDrawable background, int radius) {
     return GlassDialogFactory.glassLayer(glassConfig(), contentHost, background, radius);
     }
 
@@ -8333,13 +8075,13 @@ private void updateGlassLayer(View layer, GradientDrawable background, int radiu
         int top = topPanelContainer == null ? statusBarHeight() : topPanelContainer.getTop();
         scheduleBoard.setOverlayInsets(top + contentHeight + dp(8), bottomContentInset());
         // 顶栏高度变化后，同步右侧面板的垂直位置（今日概览在上、实践与计划在下）。
-        updateTodayOverviewPanel();
-        updatePracticeSidePanel();
+        todayOverviewController.updateTodayOverviewPanel();
+        practicePanelController.updatePracticeSidePanel();
         updatePracticeTopBar();
         updatePlanSidePanel();
     }
 
-private GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
+public GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
     return GlassDialogFactory.floatingPanelBg(glassConfig(), opacityPercent, radius);
     }
 
