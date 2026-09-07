@@ -134,6 +134,7 @@ import com.polaris.timetable.ui.TodayOverviewController;
 import com.polaris.timetable.ui.UpdateReadyBadgeView;
 import com.polaris.timetable.ui.WindowSizeClass;
 import com.polaris.timetable.ui.TodayOverviewView;
+import com.polaris.timetable.ui.WeekNavigationController;
 import com.polaris.timetable.ui.page.MyPageBuilder;
 import com.polaris.timetable.ui.page.PlanPageBuilder;
 import com.polaris.timetable.ui.page.SettingsPageBuilder;
@@ -167,7 +168,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host, PdfImportReviewFlow.Host, UpdateCoordinator.Host, TodayOverviewController.Host, PracticePanelController.Host {
+public class MainActivity extends AppCompatActivity implements BottomNavView.Host, MyPageBuilder.Host, SettingsPageBuilder.Host, PlanPageBuilder.Host, AiImportFlow.Host, PdfImportReviewFlow.Host, UpdateCoordinator.Host, TodayOverviewController.Host, PracticePanelController.Host, WeekNavigationController.Host {
     private static final String TAG = "MainActivity";
 
     private static final int PICK_PDF = 1001;
@@ -290,6 +291,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             new TodayOverviewController(this);
     private final PracticePanelController practicePanelController =
             new PracticePanelController(this);
+    private final WeekNavigationController weekNavigationController =
+            new WeekNavigationController(this);
 
     boolean isImportLink(Uri uri) {
         return ScheduleShareCodec.isImportLink(uri);
@@ -471,7 +474,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         sessionViewModel = new ViewModelProvider(this).get(ScheduleSessionViewModel.class);
         activeTab = Math.max(0, Math.min(2, sessionViewModel.activeTab));
         currentWeek = sessionViewModel.currentWeek > 0
-                ? Math.max(1, Math.min(scheduleViewState.semesterWeeks, sessionViewModel.currentWeek))
+                ? WeekNavigationController.clampWeek(sessionViewModel.currentWeek, scheduleViewState.semesterWeeks)
                 : currentWeekFromDate();
         loadActiveCourses();
         reloadStudyPlans();
@@ -2180,20 +2183,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private void returnToCurrentWeek() {
-        int targetWeek = currentWeekFromDate();
-        if (targetWeek == currentWeek) {
+        if (!weekNavigationController.returnToCurrentWeek()) {
+            // 无变化路径与抽取前一致：仅刷新「回到本周」悬浮按钮可见性。
             updateReturnCurrentWeekAction();
-            return;
-        }
-        int delta = targetWeek - currentWeek;
-        if (scheduleBoard != null) {
-            scheduleBoard.captureCurrentBoardForTransition();
-        }
-        currentWeek = targetWeek;
-        updateHeader();
-        renderSchedule();
-        if (scheduleBoard != null) {
-            scheduleBoard.playWeekTransition(delta);
         }
     }
 
@@ -7387,19 +7379,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
 
     private void changeWeek(int delta) {
-        int nextWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeek + delta));
-        if (nextWeek == currentWeek) {
-            return;
-        }
-        if (scheduleBoard != null) {
-            scheduleBoard.captureCurrentBoardForTransition();
-        }
-        currentWeek = nextWeek;
-        updateHeader();
-        renderSchedule();
-        if (scheduleBoard != null) {
-            scheduleBoard.playWeekTransition(delta);
-        }
+        weekNavigationController.changeWeek(delta);
     }
 
     /**
@@ -7472,20 +7452,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
     private void switchToWeek(int week) {
-        int nextWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, week));
-        if (nextWeek == currentWeek) {
-            return;
-        }
-        currentWeek = nextWeek;
-        scheduleBoard.setCurrentWeek(nextWeek);
-        updateReturnCurrentWeekAction();
-        updateHeader();
-        todayOverviewController.updateTodayOverview();
-        updateConflictSummary();
-        updateWeekSelector();
-        practicePanelController.updatePracticeSidePanel();
-        updatePracticeTopBar();
-        updatePlanSidePanel();
+        weekNavigationController.switchToWeek(week);
     }
 
     /**
@@ -7499,14 +7466,57 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
      * the "我的" page, whose refresh would close the open settings page.
      */
     private void onBoardWeekChanged(int delta) {
-        if (delta == 0) {
-            return;
+        weekNavigationController.onBoardWeekChanged(delta);
+    }
+
+    // ===== WeekNavigationController.Host 实现 =====
+
+    @Override
+    public int currentWeek() {
+        return currentWeek;
+    }
+
+    @Override
+    public int todayWeek() {
+        return currentWeekFromDate();
+    }
+
+    // semesterWeeks() 已由上方既有 Host 实现提供，WeekNavigationController.Host 复用。
+
+    @Override
+    public void applyCurrentWeek(int week) {
+        currentWeek = week;
+    }
+
+    @Override
+    public void positionBoardAt(int week) {
+        if (scheduleBoard != null) {
+            scheduleBoard.setCurrentWeek(week);
         }
-        int nextWeek = Math.max(1, Math.min(scheduleViewState.semesterWeeks, currentWeek + delta));
-        if (nextWeek == currentWeek) {
-            return;
+    }
+
+    @Override
+    public void captureBoardForTransition() {
+        if (scheduleBoard != null) {
+            scheduleBoard.captureCurrentBoardForTransition();
         }
-        currentWeek = nextWeek;
+    }
+
+    @Override
+    public void playWeekTransition(int delta) {
+        if (scheduleBoard != null) {
+            scheduleBoard.playWeekTransition(delta);
+        }
+    }
+
+    @Override
+    public void refreshAnimatedWeekSwitch() {
+        updateHeader();
+        renderSchedule();
+    }
+
+    @Override
+    public void refreshWeekDependentUi() {
         updateReturnCurrentWeekAction();
         updateHeader();
         todayOverviewController.updateTodayOverview();
