@@ -8,6 +8,7 @@ import android.Manifest;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.lifecycle.ViewModelProvider;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
@@ -143,6 +144,7 @@ import com.polaris.timetable.update.UpdateInstaller;
 import com.polaris.timetable.update.UpdateJsonParser;
 import com.polaris.timetable.ui.shell.BottomNavView;
 import com.polaris.timetable.ui.WeekdayLabels;
+import com.polaris.timetable.state.ScheduleSessionViewModel;
 import com.polaris.timetable.state.ScheduleViewState;
 
 import java.io.File;
@@ -258,6 +260,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private LinearLayout planSidePanelContent;
     /** 平板横屏：左侧滑出的手机宽度计划管理浮层视图由 {@link PlanPageBuilder} 持有。 */
     private final PlanPageBuilder planPageBuilder = new PlanPageBuilder(this);
+    /** 会话级视图状态：跨重建（深浅色/字号/语言等）存活，onPause 写通、onCreate 恢复。 */
+    private ScheduleSessionViewModel sessionViewModel;
     int currentWeek = 18;
     int visibleDayCount = 7;
     private final CourseScheduleDialogs scheduleDialogs = new CourseScheduleDialogs(this);
@@ -462,7 +466,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleViewState.darkMode = scheduleRepository.loadGlobalDarkMode();
         applyAccountProfile(scheduleRepository.loadAccountProfile());
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
-        currentWeek = currentWeekFromDate();
+        // 会话级状态恢复：ViewModel 跨重建存活（旋转走 configChanges 不经此路径）。
+        // currentWeek==0 表示新会话，回退当前日期周；恢复值须夹在有效周范围内。
+        sessionViewModel = new ViewModelProvider(this).get(ScheduleSessionViewModel.class);
+        activeTab = Math.max(0, Math.min(2, sessionViewModel.activeTab));
+        currentWeek = sessionViewModel.currentWeek > 0
+                ? Math.max(1, Math.min(scheduleViewState.semesterWeeks, sessionViewModel.currentWeek))
+                : currentWeekFromDate();
         loadActiveCourses();
         reloadStudyPlans();
         reloadAcademicEvents();
@@ -538,6 +548,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }
         todayOverviewController.cancelTicker();
         cancelPracticeBarTimers();
+        // 会话级状态写通：重建时旧 Activity 的 onPause 必然早于新 Activity 的 onCreate，
+        // 在此统一回写可覆盖全部 currentWeek/activeTab 赋值点，无需逐处同步。
+        if (sessionViewModel != null) {
+            sessionViewModel.currentWeek = currentWeek;
+            sessionViewModel.activeTab = activeTab;
+        }
         super.onPause();
     }
 
