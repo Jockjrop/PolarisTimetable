@@ -101,6 +101,10 @@ CI 可通过环境变量提供签名：`POLARIS_RELEASE_STORE_FILE`、`POLARIS_R
 - [测试说明](docs/qa/test-plan.md)
 - [版本历史](CHANGELOG.md)
 
+## 官网仓库
+
+官网是纯静态单页，位于 `web/` 目录但维护为**独立 Git 仓库**（主仓库通过 `.gitignore` 忽略该目录）：修改 `web/` 内文件请在其目录内单独提交与推送，不要用 `git add -f` 强行加入主仓库。本地 `web.zip` 为历史快照，以 `web/` 仓库为准。
+
 ## 隐私
 
 完整隐私声明见 [PRIVACY.md](PRIVACY.md)。核心承诺：

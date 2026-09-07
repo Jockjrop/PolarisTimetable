@@ -1,0 +1,26 @@
+#!/bin/sh
+# Polaris pre-commit 守卫：拦截签名材料与本地产物入库（含 git add -f 场景）。
+# 启用方式：git config core.hooksPath githooks（clone 后执行一次即可）。
+
+FORBIDDEN='(^(keystore\.properties|.*\.jks|.*\.keystore)$|/keystore\.properties$|/.*\.jks$|/.*\.keystore$)'
+
+# --cached 只看暂存区（对 amend / 部分提交同样生效）
+PATTERN=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "$FORBIDDEN")
+if [ -n "$PATTERN" ]; then
+  echo ""
+  echo "[pre-commit] 拒绝提交：以下暂存文件是签名材料/密钥，禁止入库："
+  echo "$PATTERN" | sed 's/^/  - /'
+  echo "若确属误报，请检查 .gitignore 与文件命名后重试。"
+  exit 1
+fi
+
+# 额外拦截本地产物目录被强制加入
+JUNK=$(git diff --cached --name-only --diff-filter=A | grep -E '(^|/)(NVIDIA Corporation|tmp|output)/')
+if [ -n "$JUNK" ]; then
+  echo ""
+  echo "[pre-commit] 拒绝提交：以下文件属于本地产物目录，不入库："
+  echo "$JUNK" | sed 's/^/  - /'
+  exit 1
+fi
+
+exit 0

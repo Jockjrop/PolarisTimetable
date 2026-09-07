@@ -34,3 +34,5 @@ test pdf/
 videos/
 web/
 web.zip
+# NVIDIA GPU 工具自动生成的日志目录（不入库）
+NVIDIA Corporation/
