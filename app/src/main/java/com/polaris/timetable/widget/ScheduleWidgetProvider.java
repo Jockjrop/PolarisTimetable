@@ -15,6 +15,7 @@ import android.widget.RemoteViews;
 
 import com.polaris.timetable.MainActivity;
 import com.polaris.timetable.R;
+import com.polaris.timetable.reminder.CourseReminderScheduler;
 import com.polaris.timetable.storage.ScheduleRepository;
 import com.polaris.timetable.Course;
 
@@ -189,8 +190,37 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         long nextEnd = ScheduleWidgetData.nextCourseEndAfter(courses, config, Calendar.getInstance());
         long nextStart = ScheduleWidgetData.nextCourseStartAfter(courses, config, Calendar.getInstance());
         long nextBoundary = earliestFuture(nextEnd, nextStart);
+        if (nextBoundary <= System.currentTimeMillis()) {
+            // 当天课程全部结束后未来边界缺失，alarm 链会断到跨天为止；补一个
+            // 次日 00:02 的兜底刷新，让新一天列表与标题自续，不依赖可能被
+            // 后台策略延迟的 DATE_CHANGED 系统广播。
+            nextBoundary = ScheduleWidgetData.nextDayBoundaryAfter(Calendar.getInstance());
+        }
         if (nextBoundary > System.currentTimeMillis()) {
-            alarmManager.setWindow(AlarmManager.RTC, nextBoundary, 60_000L, refreshIntent);
+            scheduleBoundaryAlarm(context, alarmManager, nextBoundary, refreshIntent);
+        }
+    }
+
+    /**
+     * 边界闹钟用唤醒型并允许 Doze：设备锁屏睡眠期间课程开始/结束（以及跨天兜底）
+     * 也能按时触发，避免解锁后才补刷。精确闹钟权限不可用时降级为非精确调度。
+     */
+    private static void scheduleBoundaryAlarm(
+            Context context,
+            AlarmManager alarmManager,
+            long triggerAtMillis,
+            PendingIntent refreshIntent) {
+        if (CourseReminderScheduler.canScheduleExactAlarms(context)) {
+            try {
+                alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP, triggerAtMillis, refreshIntent);
+            } catch (SecurityException permissionRevoked) {
+                alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP, triggerAtMillis, refreshIntent);
+            }
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, triggerAtMillis, refreshIntent);
         }
     }
 

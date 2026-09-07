@@ -106,6 +106,24 @@ final class ScheduleWidgetData {
     }
 
     /**
+     * 次日兜底刷新点（次日 00:02）。当天课程全部结束后，未来课程边界要等跨天才出现，
+     * 原 alarm 链会在此断掉、只靠系统日期变更广播续期（非唤醒、可能被后台策略延迟）；
+     * 在该时刻安排一次刷新让新一天的课程列表与标题自续更新。
+     */
+    static long nextDayBoundaryAfter(Calendar now) {
+        if (now == null) {
+            return -1L;
+        }
+        Calendar boundary = (Calendar) now.clone();
+        boundary.add(Calendar.DATE, 1);
+        boundary.set(Calendar.HOUR_OF_DAY, 0);
+        boundary.set(Calendar.MINUTE, 2);
+        boundary.set(Calendar.SECOND, 0);
+        boundary.set(Calendar.MILLISECOND, 0);
+        return boundary.getTimeInMillis();
+    }
+
+    /**
      * 下一个课程时间边界（开始或结束）的时间戳；无未来边界返回 -1。
      * 供 provider 安排下一次刷新，使"进行中"高亮在课程开始/结束时刻准时切换。
      */

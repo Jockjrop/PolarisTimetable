@@ -179,6 +179,27 @@ public class ScheduleWidgetDataTest {
                 Arrays.asList(morning, afternoon), config, now));
     }
 
+    @Test
+    public void nextDayBoundaryAfter_returnsTwoMinutesPastMidnightTomorrow() {
+        Calendar now = dateTime(2026, Calendar.MARCH, 2, 22, 30);
+        Calendar expected = dateTime(2026, Calendar.MARCH, 3, 0, 2);
+
+        assertEquals(expected.getTimeInMillis(), ScheduleWidgetData.nextDayBoundaryAfter(now));
+    }
+
+    @Test
+    public void nextDayBoundaryAfter_handlesMonthAndYearRollover() {
+        Calendar monthEnd = dateTime(2026, Calendar.MARCH, 31, 23, 10);
+        Calendar expectedMonthEnd = dateTime(2026, Calendar.APRIL, 1, 0, 2);
+        assertEquals(expectedMonthEnd.getTimeInMillis(),
+                ScheduleWidgetData.nextDayBoundaryAfter(monthEnd));
+
+        Calendar yearEnd = dateTime(2026, Calendar.DECEMBER, 31, 23, 10);
+        Calendar expectedYearEnd = dateTime(2027, Calendar.JANUARY, 1, 0, 2);
+        assertEquals(expectedYearEnd.getTimeInMillis(),
+                ScheduleWidgetData.nextDayBoundaryAfter(yearEnd));
+    }
+
     private ScheduleRepository.Config config() {
         ScheduleRepository.Config config = new ScheduleRepository.Config();
         config.firstWeekDay = "2026/3/3";

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- updatePeriodMillis 周期兜底（系统最小 30 分钟）：课程边界闹钟链之外的最后防线，
+     覆盖闹钟被后台策略清除等异常场景；日常即时刷新仍由闹钟与应用内广播驱动。 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:description="@string/schedule_widget_description"
@@ -9,7 +11,7 @@
     android:minWidth="110dp"
     android:previewLayout="@layout/widget_schedule_large"
     android:resizeMode="horizontal|vertical"
-    android:updatePeriodMillis="0"
+    android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen"
     android:widgetFeatures="reconfigurable"
     android:configure="com.polaris.timetable.widget.ScheduleWidgetConfigActivity"
