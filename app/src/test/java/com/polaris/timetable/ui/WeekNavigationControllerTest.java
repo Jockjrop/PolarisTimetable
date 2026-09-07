@@ -103,6 +103,20 @@ public class WeekNavigationControllerTest {
         assertEquals(1, WeekNavigationController.clampWeek(5, -2));
     }
 
+    // ===== returnArrowPointsLeft =====
+
+    @Test
+    public void returnArrowPointsLeft_whenBrowsingFutureWeeks() {
+        // 浏览的周在 todayWeek 之后：本周页面在左侧，箭头向左。
+        assertTrue(WeekNavigationController.returnArrowPointsLeft(8, 3));
+    }
+
+    @Test
+    public void returnArrowPointsRight_whenBrowsingPastWeeks() {
+        // 浏览的周在 todayWeek 之前：本周页面在右侧，箭头向右。
+        assertFalse(WeekNavigationController.returnArrowPointsLeft(2, 6));
+    }
+
     // ===== changeWeek =====
 
     @Test

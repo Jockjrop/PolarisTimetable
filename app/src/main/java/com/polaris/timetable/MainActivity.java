@@ -2200,6 +2200,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (show) {
             returnCurrentWeekButton.setTranslationY(bottomNavHidden
                     ? dp(navVisualHeight() + 18) : 0f);
+            if (returnCurrentWeekIcon != null) {
+                // 周切换后重绘箭头，方向随浏览周与本周的相对位置刷新。
+                returnCurrentWeekIcon.invalidate();
+            }
             returnCurrentWeekButton.bringToFront();
         }
     }
@@ -3860,13 +3864,20 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 iconPaint.setStrokeCap(Paint.Cap.ROUND);
                 iconPaint.setStrokeJoin(Paint.Join.ROUND);
                 iconPaint.setColor(inkColor());
+                // 箭头指向本周所在方向：浏览未来周时本周页面在左（←），
+                // 浏览过去周时本周页面在右（→），与课表横向翻页方向一致。
+                boolean pointLeft = WeekNavigationController.returnArrowPointsLeft(
+                        currentWeek, currentWeekFromDate());
+                float tip = pointLeft ? centerX - arm : centerX + arm;
+                float tail = pointLeft ? centerX + arm : centerX - arm;
+                float barbX = pointLeft ? centerX - density : centerX + density;
                 iconPath.reset();
-                iconPath.moveTo(centerX + arm, centerY);
-                iconPath.lineTo(centerX - arm, centerY);
-                iconPath.moveTo(centerX - arm, centerY);
-                iconPath.lineTo(centerX - density, centerY - arm);
-                iconPath.moveTo(centerX - arm, centerY);
-                iconPath.lineTo(centerX - density, centerY + arm);
+                iconPath.moveTo(tail, centerY);
+                iconPath.lineTo(tip, centerY);
+                iconPath.moveTo(tip, centerY);
+                iconPath.lineTo(barbX, centerY - arm);
+                iconPath.moveTo(tip, centerY);
+                iconPath.lineTo(barbX, centerY + arm);
                 canvas.drawPath(iconPath, iconPaint);
             }
         };

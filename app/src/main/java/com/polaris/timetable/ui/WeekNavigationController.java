@@ -54,6 +54,15 @@ public final class WeekNavigationController {
         return Math.max(1, Math.min(max, week));
     }
 
+    /**
+     * 「回到本周」悬浮按钮的箭头方向：true = 指向左。板面为标准翻页，
+     * 页码随周号递增（向左翻去更早的周）：浏览的周在今天所在周之后时，
+     * 本周页面在左侧，箭头向左；浏览过去周时本周在右侧，箭头向右。
+     */
+    public static boolean returnArrowPointsLeft(int currentWeek, int todayWeek) {
+        return currentWeek > todayWeek;
+    }
+
     /** 按钮翻周：目标 = 当前 + delta 钳制；返回是否发生变更。动画使用传入的原始 delta。 */
     public boolean changeWeek(int delta) {
         int from = host.currentWeek();
