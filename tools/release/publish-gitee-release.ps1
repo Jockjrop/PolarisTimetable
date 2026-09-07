@@ -52,7 +52,9 @@ if ($apkItem.Name -ne $githubManifest.apk.fileName -or
 }
 
 # 一个 tag 只允许一个 Release；重复运行时复用已有 Release。
-$releases = @(Invoke-GiteeJson 'Get' '/releases?per_page=100&page=1' $null)
+# Invoke-RestMethod 可把顶层 JSON 数组整体作为单个对象输出（嵌套数组），
+# 必须先拍平，否则 release 变量是数组、id 校验误判（v1.27.10 恢复实测）。
+$releases = @(ConvertTo-GiteeCollection (Invoke-GiteeJson 'Get' '/releases?per_page=100&page=1' $null))
 $matchingReleases = @($releases | Where-Object { $_.tag_name -eq $Tag })
 $releaseAction = Get-GiteeReleaseAction $matchingReleases.Count
 $release = $matchingReleases[0]

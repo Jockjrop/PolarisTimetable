@@ -123,6 +123,16 @@ function Test-GiteeBrowserDownloadUrl([object]$Url) {
     return $uri.Host -in @('gitee.com', 'foruda.gitee.com')
 }
 
+function ConvertTo-GiteeCollection {
+    # Gitee 列表端点（tags/releases/attach_files）返回顶层 JSON 数组时，
+    # Invoke-RestMethod 可能把整个数组作为一个对象输出（Build #71 / v1.27.10 恢复实测），
+    # 调用方拿到的是「元素仍为数组」的嵌套结构。此处统一拍平为对象列表，
+    # 与 Resolve-GiteeApiTagCommit 内部使用的拍平规则一致；漏拍平会让
+    # release 对象变成数组，其 id 也随之成为数组而误触类型校验。
+    param([AllowEmptyCollection()][object[]]$Items)
+    return @($Items | ForEach-Object { foreach ($entry in $_) { $entry } })
+}
+
 function Get-GiteeReleaseAction([int]$MatchingReleaseCount) {
     if ($MatchingReleaseCount -eq 0) { return 'Create' }
     if ($MatchingReleaseCount -eq 1) { return 'Reuse' }
@@ -136,8 +146,23 @@ function Assert-GiteeReleaseForReuse {
         [Parameter(Mandatory = $true)][string]$ExpectedCommitSha
     )
 
+    # Gitee API 部分场景会把 release id 返回为数字字符串；数值与数字字符串均放行，
+    # 其余类型（含嵌套拍平失败遗留的数组）一律拒绝。
     $id = $Release.id
-    if ($null -eq $id -or $id -isnot [int] -and $id -isnot [long] -or [long]$id -le 0) {
+    $idValue = [long]0
+    if ($id -is [int] -or $id -is [long]) {
+        $idValue = [long]$id
+    } elseif ($id -is [string]) {
+        $parsed = [long]0
+        if (-not [long]::TryParse($id.Trim(), [Globalization.NumberStyles]::Integer,
+                [Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
+            throw 'Gitee 已有 Release 的 id 非法'
+        }
+        $idValue = $parsed
+    } else {
+        throw 'Gitee 已有 Release 的 id 非法'
+    }
+    if ($idValue -le 0) {
         throw 'Gitee 已有 Release 的 id 非法'
     }
     if ($Release.tag_name -isnot [string] -or $Release.tag_name -cne $Tag) {
@@ -305,4 +330,4 @@ function Assert-TagCommitMatch([string]$GitHubCommit, [string]$GiteeCommit) {
 
 Export-ModuleMember -Function Assert-ReleaseVersionGate, Assert-MatchingAsset, `
     Get-GiteeReleaseAction, Assert-GiteeReleaseForReuse, Resolve-GiteeApiTagCommit, Invoke-GiteeApiRequest, `
-    Assert-TagCommitMatch, ConvertTo-UtcPublishedAt, Test-GiteeBrowserDownloadUrl
+    Assert-TagCommitMatch, ConvertTo-UtcPublishedAt, Test-GiteeBrowserDownloadUrl, ConvertTo-GiteeCollection

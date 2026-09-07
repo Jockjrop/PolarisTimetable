@@ -93,7 +93,15 @@ try {
     if (-not (Assert-GiteeReleaseForReuse -Release $reusableRelease -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit)) {
         throw 'Gitee Release 完整 target_commitish 未验证'
     }
+    # Gitee API 部分场景返回数字字符串 id，必须放行。
+    $stringIdRelease = [pscustomobject]@{ id = '1129520'; tag_name = 'v1.27.2'; prerelease = $false; target_commitish = $expectedTagCommit }
+    if (-not (Assert-GiteeReleaseForReuse -Release $stringIdRelease -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit)) {
+        throw 'Gitee Release 数字字符串 id 未放行'
+    }
     Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = 0; tag_name = 'v1.27.2'; prerelease = $false }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee Release 非法 id'
+    Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = $null; tag_name = 'v1.27.2'; prerelease = $false }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee Release 空 id'
+    Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = 'abc'; tag_name = 'v1.27.2'; prerelease = $false }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee Release 非数字 id'
+    Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = @(1, 2); tag_name = 'v1.27.2'; prerelease = $false }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee Release 数组 id'
     Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = 42; tag_name = 'v1.27.1'; prerelease = $false }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee Release tag 不一致'
     Expect-Failure { Assert-GiteeReleaseForReuse -Release ([pscustomobject]@{ id = 42; tag_name = 'v1.27.2'; prerelease = $true }) -Tag v1.27.2 -ExpectedCommitSha $expectedTagCommit } 'Gitee prerelease 不可复用'
     if (-not (Test-GiteeBrowserDownloadUrl 'https://gitee.com/Jockjrop/repo/releases/download/v1.27.2/a.apk') -or
@@ -117,6 +125,17 @@ try {
     $apiCommit = Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags (,$apiTags)
     if ($apiCommit -isnot [string] -or $apiCommit -cne $expectedTagCommit) {
         throw 'Gitee 多 tag API 响应未解析为目标 scalar string'
+    }
+    # 列表拍平：嵌套数组（Invoke-RestMethod 整体输出形态）必须展开为对象列表。
+    $flattened = @(ConvertTo-GiteeCollection (,$apiTags))
+    if ($flattened.Count -ne $apiTags.Count -or $flattened[6] -cne $validTag) {
+        throw 'Gitee 嵌套列表拍平失败'
+    }
+    if (@(ConvertTo-GiteeCollection $apiTags).Count -ne $apiTags.Count) {
+        throw 'Gitee 平铺列表拍平不应改变元素'
+    }
+    if (@(ConvertTo-GiteeCollection @()).Count -ne 0) {
+        throw 'Gitee 空列表拍平失败'
     }
     Assert-TagCommitMatch -GitHubCommit $expectedTagCommit -GiteeCommit $apiCommit
     Expect-Failure { Resolve-GiteeApiTagCommit -Tag v1.27.2 -Tags @() } 'Gitee tag 不存在'
@@ -220,13 +239,15 @@ try {
     $mockApi = {
         param($request)
         $mockState.Calls.Add($request)
+        # 三个列表端点均按 Invoke-RestMethod 真实行为返回嵌套数组（顶层 JSON 数组
+        # 被整体作为单个对象输出）；releases 的 id 用数字字符串，覆盖 Gitee 实测形态。
         if ($request.Method -eq 'Get' -and $request.Path -like '/tags*') {
-            return [pscustomobject]@{ name = 'v1.27.2'; commit = [pscustomobject]@{ sha = $expectedTagCommit } }
+            return ,[pscustomobject]@{ name = 'v1.27.2'; commit = [pscustomobject]@{ sha = $expectedTagCommit } }
         }
         if ($request.Method -eq 'Get' -and $request.Path -match '^/releases\?') {
-            return [pscustomobject]@{ id = [long]42; tag_name = 'v1.27.2'; name = 'v1.27.2'; body = '- Recovery test note'; prerelease = $false; target_commitish = $expectedTagCommit }
+            return ,([pscustomobject]@{ id = '42'; tag_name = 'v1.27.2'; name = 'v1.27.2'; body = '- Recovery test note'; prerelease = $false; target_commitish = $expectedTagCommit })
         }
-        if ($request.Method -eq 'Get' -and $request.Path -like '/releases/42/attach_files?*') { return $mockState.Assets.ToArray() }
+        if ($request.Method -eq 'Get' -and $request.Path -like '/releases/42/attach_files?*') { return ,($mockState.Assets.ToArray()) }
         if ($request.Method -eq 'Post' -and $request.Path -eq '/releases') { throw '已有 Release 场景不应创建 Release' }
         if ($request.Method -eq 'Post' -and $request.Path -eq '/releases/42/attach_files') {
             $file = $request.Form.file
