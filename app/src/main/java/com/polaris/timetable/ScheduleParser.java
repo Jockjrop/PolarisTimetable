@@ -428,6 +428,9 @@ public class ScheduleParser {
         List<CourseSeed> seeds = new ArrayList<>();
         for (int i = 0; i < blocks.size(); i++) {
             TextBlock block = blocks.get(i);
+            if (isTableChrome(block.text)) {
+                continue;
+            }
             Matcher matcher = SECTION_PATTERN.matcher(block.text);
             if (!matcher.find()) {
                 matcher = LOOSE_SECTION_PATTERN.matcher(block.text);
@@ -1124,6 +1127,9 @@ public class ScheduleParser {
             return true;
         }
         if (isCourseMeta(clean)) {
+            return true;
+        }
+        if (LOOSE_SECTION_PATTERN.matcher(clean).matches()) {
             return true;
         }
         if ("时间".equals(clean) || "课程".equals(clean) || "节次".equals(clean)) {

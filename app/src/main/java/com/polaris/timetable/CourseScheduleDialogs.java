@@ -278,7 +278,10 @@ public class CourseScheduleDialogs extends DialogKit {
         message.setText(host.getString(R.string.backup_confirm_message, summary.createdAt,
                 sourceVersion,
                 summary.scheduleCount,
-                summary.courseCount));
+                summary.courseCount,
+                summary.studyPlanCount,
+                summary.academicEventCount,
+                host.getString(R.string.backup_image_boundary)));
 
         message.setTextColor(host.mutedColor());
         message.setTextSize(15);

@@ -28,6 +28,22 @@
 - 普通课程不重复。
 - 低置信度项目有警告而不是静默失败。
 
+### 三校匿名 PDF 回归
+
+固定样例位于测试 APK 的 `app/src/androidTest/assets/pdfregression/`：
+
+- `xupt_anonymous.pdf`：西邮格式，验证课程名、节次、周次、地点、教师。
+- `xaut_anonymous.pdf`：西理工格式，使用 `SchoolParserModel.XAUT`，验证同上字段。
+- `hdu_anonymous.pdf`：杭电格式，使用 `SchoolParserModel.HDU`，验证同上字段。
+
+三校各自独立测试；样例缺失或字段漂移时测试失败，不再依赖设备外部文件或跳过后续学校。运行：
+
+```powershell
+.\gradlew.bat :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.parser.PdfRegressionTest
+```
+
+样例只包含匿名课程、地点和教师文本，不包含真实姓名、学号或头像；生成脚本为 `tools/qa/generate_pdf_regression_fixtures.py`。需要重生成时先安装 ReportLab，再运行 `python tools/qa/generate_pdf_regression_fixtures.py`。
+
 ### 非文字 PDF 测试
 
 测试场景：
@@ -240,6 +256,8 @@
 - 点击课程不崩溃。
 - 横竖屏不崩溃。
 - 低端小屏不出现明显遮挡。
+- 备份恢复成功统计：`ScheduleBackupManagerTest.backupRestoreController_restoresAndReportsAllCounts` 验证恢复课表、课程、学习计划和考试/DDL/实践事件后，控制器返回的数量与实际存储一致。
+- 备份恢复写入失败：`ScheduleBackupManagerTest.restoreTo_commitFailureLeavesExistingStateUntouched` 模拟提交先更新内存、后写盘失败，验证内存恢复状态明确标记为“磁盘未确认”，并从重新打开的偏好实例确认操作前快照仍在。
 
 ## 应用内更新系统回归项（1.27.0）
 
@@ -250,9 +268,9 @@
 | 单元测试：清单解析 | `UpdateJsonParserTest`——合法清单、未知字段、必填缺失、类型错误、schema 过新、协议字段越界、URL/文件名/哈希/说明边界（17 组） |
 | 单元测试：版本策略 | `UpdatePolicyTest`——versionCode 单调比较、minSdk 兼容、忽略版本（手动绕过/required 不可忽略）、24h 节流与时钟回拨 |
 | 单元测试：下载 | `UpdateDownloadControllerTest`——正常下载原子改名、声明长度不符、截断流、SHA-256 不匹配、取消、HTTP 错误、重定向白名单/次数、单任务约束、.part 清理 |
-| 单元测试：偏好 | `UpdatePreferencesTest`——默认关闭、偏好键读写与待安装/会话状态清理 |
+| 单元测试：偏好 | `UpdatePreferencesTest`——默认开启、偏好键读写与待安装/会话状态清理 |
 | 单元测试：网络仓库 | `UpdateRepositoryTest`——200/404/429/500 分类、重定向恰好 5 次/第 6 次拒绝、空 Location、相对/HTTP/越权重定向、超大响应透传 INVALID_METADATA、超时映射 |
 | 单元测试：协调器 | `UpdateCoordinatorTest`——手动/自动检查、忽略版本、required 不可忽略、阻塞延后与恢复交付、宿主重绑回放、安装网关成功/失败、PackageInstaller 状态收敛 |
 | 仪器测试 | `UpdateEntryTest`（检查行可达、防重复连点、注入假仓库且不访问公网）、`UpdateInstallerTest`（接收器注册且不导出、PackageInstaller 会话创建/查询/放弃） |
 | 手动回归 | 手动检查无更新/失败态文案；下载弹窗进度与取消；未授权未知来源引导；深色/大字体/平板横屏下弹窗不溢出 |
-| 发布流水线 | 打标签后 instrumented job 跑更新 smoke；release job 在签名 Secret 缺失时失败，并核对指纹、包名、版本和历史清单，生成并自检 latest.json；Draft 的三项资产复验通过后才发布为 latest |
+| 发布流水线 | PR 运行主界面 smoke；main 与版本标签运行完整 instrumented suite（含三校 PDF 导入、计划/编辑入口、旋转和存储驱动课表渲染）；build job 的全量单测覆盖编辑与存储逻辑；release job 仅在 build 与 instrumented 均成功后继续，并核对签名、指纹、包名、版本、历史清单和三项发布资产 |

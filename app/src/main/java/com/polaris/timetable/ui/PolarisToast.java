@@ -18,6 +18,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.lang.ref.WeakReference;
+
 /**
  * 应用内主题化轻提示：完成类提示（已保存 / 已导入 / 已复制 / 已应用等）统一使用，
  * 替代系统 Toast。设计约束：
@@ -51,7 +53,8 @@ public final class PolarisToast {
 
     /** 本组件专用 Handler：不做 removeCallbacksAndMessages(null) 之外的全局清理。 */
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static View current;
+    /** 只保留弱引用，避免提示动画或宿主 Activity 被全局状态长期持有。 */
+    private static WeakReference<View> current = new WeakReference<>(null);
 
     private PolarisToast() {
     }
@@ -95,7 +98,7 @@ public final class PolarisToast {
                 ? DURATION_LONG_MS
                 : DURATION_DEFAULT_MS;
         View pill = buildPill(host, text == null ? "" : text, icon, dark, bottomMarginPx);
-        current = pill;
+        current = new WeakReference<>(pill);
         content.addView(pill);
         pill.setAlpha(0f);
         pill.setTranslationY(dp(host, 10));
@@ -153,10 +156,11 @@ public final class PolarisToast {
     }
 
     private static void dismiss(View pill) {
-        if (current != pill) {
+        View active = current.get();
+        if (active != pill) {
             return;
         }
-        current = null;
+        current.clear();
         float dy = pill.getResources().getDisplayMetrics().density * 8;
         pill.animate().cancel();
         pill.animate().alpha(0f).translationY(dy).setDuration(130L)
@@ -169,13 +173,14 @@ public final class PolarisToast {
     }
 
     private static void removeCurrent() {
-        if (current != null) {
-            current.animate().cancel();
-            if (current.getParent() instanceof ViewGroup) {
-                ((ViewGroup) current.getParent()).removeView(current);
+        View active = current.get();
+        if (active != null) {
+            active.animate().cancel();
+            if (active.getParent() instanceof ViewGroup) {
+                ((ViewGroup) active.getParent()).removeView(active);
             }
         }
-        current = null;
+        current.clear();
     }
 
     private static boolean resolveDark(Activity host) {
@@ -196,6 +201,7 @@ public final class PolarisToast {
         private final Paint circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glyphStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glyphFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path checkPath = new Path();
         private final boolean success;
 
         StatusIconView(Context context, Icon icon) {
@@ -218,11 +224,11 @@ public final class PolarisToast {
             float radius = Math.min(w, h) / 2f;
             canvas.drawCircle(w / 2f, h / 2f, radius, circlePaint);
             if (success) {
-                Path check = new Path();
-                check.moveTo(w * 0.28f, h * 0.52f);
-                check.lineTo(w * 0.44f, h * 0.68f);
-                check.lineTo(w * 0.74f, h * 0.34f);
-                canvas.drawPath(check, glyphStroke);
+                checkPath.reset();
+                checkPath.moveTo(w * 0.28f, h * 0.52f);
+                checkPath.lineTo(w * 0.44f, h * 0.68f);
+                checkPath.lineTo(w * 0.74f, h * 0.34f);
+                canvas.drawPath(checkPath, glyphStroke);
             } else {
                 canvas.drawCircle(w / 2f, h / 2f, radius * 0.24f, glyphFill);
             }

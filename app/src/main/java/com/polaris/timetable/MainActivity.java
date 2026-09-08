@@ -109,6 +109,7 @@ import com.polaris.timetable.sharing.ScheduleShareCodec;
 import com.polaris.timetable.sharing.ScheduleShareFile;
 import com.polaris.timetable.statistics.ScheduleStatistics;
 import com.polaris.timetable.storage.AcademicEventRepository;
+import com.polaris.timetable.storage.BackupRestoreController;
 import com.polaris.timetable.storage.PlanRepository;
 import com.polaris.timetable.storage.ScheduleBackupManager;
 import com.polaris.timetable.storage.ScheduleRepository;
@@ -212,6 +213,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private final PdfImportReviewFlow pdfImportReviewFlow = new PdfImportReviewFlow(this, this);
     private final ExecutorService scheduleExportExecutor = Executors.newSingleThreadExecutor();
     ScheduleRepository scheduleRepository;
+    private BackupRestoreController backupRestoreController;
     private PlanRepository planRepository;
     private final List<StudyPlan> studyPlans = new ArrayList<>();
     private AcademicEventRepository academicEventRepository;
@@ -462,6 +464,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         todayOverviewController.ensureCollapseDeadline();
         applyEdgeToEdgeWindow(getWindow());
         scheduleRepository = new ScheduleRepository(this);
+        backupRestoreController = new BackupRestoreController(scheduleRepository);
         planRepository = new PlanRepository(this);
         academicEventRepository = new AcademicEventRepository(this);
         importCoordinator = new PdfImportCoordinator(this);
@@ -2592,13 +2595,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
 
     void applyBackupRestore(ScheduleBackupManager.BackupBundle bundle) {
-        int restoredCourseCount;
+        BackupRestoreController.RestoreResult result;
         try {
-            ScheduleBackupManager.restoreTo(scheduleRepository, bundle);
-            restoredCourseCount = 0;
-            for (ScheduleBackupManager.ScheduleBackup backup : bundle.schedules) {
-                restoredCourseCount += backup.structuredCourses.size();
-            }
+            result = backupRestoreController.restore(bundle);
         } catch (Exception exception) {
             Toast.makeText(this, getString(R.string.backup_restore_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
@@ -2610,16 +2609,19 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
         currentWeek = currentWeekFromDate();
         loadActiveCourses();
+        reloadStudyPlans();
+        reloadAcademicEvents();
         applyShellAppearance();
         rescheduleCourseReminders();
         updateHeader();
         renderSchedule();
         updateEmptyScheduleView();
         refreshCourseManageList();
+        refreshPlanList();
         refreshMyPage();
         switchTab(0);
-        toastDone(getString(R.string.backup_restored_toast, bundle.schedules.size(),
-                restoredCourseCount));
+        toastDone(getString(R.string.backup_restored_toast, result.scheduleCount,
+                result.courseCount, result.studyPlanCount, result.academicEventCount));
     }
 
     private String appVersionName() {

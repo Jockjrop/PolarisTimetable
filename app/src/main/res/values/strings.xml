@@ -173,7 +173,6 @@
     <string name="settings_section_display">显示</string>
     <string name="settings_section_ui_detail">界面细节</string>
     <string name="settings_section_board_frame">课表框架</string>
-    <string name="settings_section_schedule_info">课表信息</string>
     <string name="settings_section_account">账号</string>
     <string name="settings_section_backup">数据备份</string>
     <string name="settings_section_update">更新</string>
@@ -232,9 +231,9 @@
     <string name="settings_row_local_data">本机数据</string>
     <string name="settings_local_data_value">课程保存在本机</string>
     <string name="settings_row_export_backup">导出备份</string>
-    <string name="settings_export_backup_desc">保存全部课表和设置</string>
+    <string name="settings_export_backup_desc">保存课表、计划、考试/DDL等事件和设置</string>
     <string name="settings_row_restore_backup">恢复备份</string>
-    <string name="settings_restore_backup_desc">从备份文件完整还原</string>
+    <string name="settings_restore_backup_desc">还原课表、计划、考试/DDL等事件和设置</string>
     <string name="settings_row_version">版本信息</string>
     <string name="settings_row_contact">反馈与支持</string>
     <string name="settings_toast_email_copied">邮箱已复制：%1$s</string>
@@ -340,7 +339,6 @@
     <string name="my_card_user_info">用户信息</string>
     <string name="settings_themed_desc_user">账户与身份信息</string>
     <string name="settings_title_user_info">用户信息栏</string>
-    <string name="my_section_user_info">用户信息栏</string>
     <string name="my_row_username">用户名称</string>
     <string name="my_row_avatar">用户头像</string>
     <string name="my_row_avatar_set">点击更换</string>
@@ -566,7 +564,7 @@
     <string name="share_file_failed">生成课表分享文件失败：%1$s</string>
     <string name="backup_dir_failed">无法创建备份目录</string>
     <string name="backup_share_subject">Polaris课程表备份 · %1$s</string>
-    <string name="backup_share_text">使用 Polaris课程表 的「恢复备份」导入，即可完整还原课表与设置。</string>
+    <string name="backup_share_text">使用 Polaris课程表 的「恢复备份」导入，即可还原课表、计划、考试/DDL等事件和设置。背景图与头像仅保存图片 URI。</string>
     <string name="backup_clip_label">Polaris备份文件</string>
     <string name="backup_chooser_title">导出备份</string>
     <string name="backup_picker_missing">未找到可选择文件的应用</string>
@@ -574,10 +572,11 @@
     <string name="backup_read_failed">备份文件读取失败：%1$s</string>
     <string name="backup_share_failed">生成备份文件失败：%1$s</string>
     <string name="backup_version_unknown">未知版本</string>
-    <string name="backup_confirm_message">备份创建于 %1$s（来源 %2$s）\n包含 %3$d 个课表 · 共 %4$d 门课程\n\n恢复将覆盖本机当前所有课表和设置，且无法撤销。建议先导出当前数据作为备份。</string>
+    <string name="backup_confirm_message">备份创建于 %1$s（来源 %2$s）\n包含 %3$d 个课表 · 共 %4$d 门课程\n包含 %5$d 项学习计划 · %6$d 个考试/DDL/实践事件\n\n恢复将覆盖本机当前所有课表、计划、考试/DDL等事件和设置，且无法撤销。建议先导出当前数据作为备份。\n\n%7$s</string>
+    <string name="backup_image_boundary">图片边界：背景图和头像只备份图片 URI，不复制图片内容；换机或权限失效后需重新选择图片。</string>
     <string name="backup_confirm_action">恢复并覆盖本机数据</string>
     <string name="backup_restore_failed">恢复失败：%1$s</string>
-    <string name="backup_restored_toast">已从备份恢复：%1$d 个课表 · %2$d 门课程</string>
+    <string name="backup_restored_toast">已从备份恢复：%1$d 个课表 · %2$d 门课程 · %3$d 项计划 · %4$d 个考试/DDL/实践事件</string>
     <string name="export_busy">课表文件正在生成，请稍候</string>
     <string name="export_dialog_title">导出课表</string>
     <string name="export_dialog_message">选择周次导出单周课表，或把全学期课程合并到一张课表中导出。</string>

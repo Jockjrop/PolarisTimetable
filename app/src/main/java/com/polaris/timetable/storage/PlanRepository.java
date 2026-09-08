@@ -12,6 +12,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 学习计划存储：与课表共用 SharedPreferences 文件，按 scheduleId 隔离。
@@ -56,6 +57,12 @@ public class PlanRepository {
     }
 
     public void savePlans(String scheduleId, List<StudyPlan> plans) {
+        SharedPreferences.Editor editor = preferences.edit();
+        stagePlans(editor, scheduleId, plans);
+        editor.apply();
+    }
+
+    void stagePlans(SharedPreferences.Editor editor, String scheduleId, List<StudyPlan> plans) {
         JSONArray array = new JSONArray();
         if (plans != null) {
             for (StudyPlan plan : plans) {
@@ -64,9 +71,18 @@ public class PlanRepository {
                 }
             }
         }
-        preferences.edit()
-                .putString(planKey(scheduleId), array.toString())
-                .apply();
+        editor.putString(planKey(scheduleId), array.toString());
+    }
+
+    static void clearBackupKeys(SharedPreferences.Editor editor, Set<String> keys) {
+        if (keys == null) {
+            return;
+        }
+        for (String key : keys) {
+            if (key != null && key.startsWith(KEY_PLANS_PREFIX)) {
+                editor.remove(key);
+            }
+        }
     }
 
     private String planKey(String scheduleId) {
@@ -75,7 +91,7 @@ public class PlanRepository {
         return KEY_PLANS_PREFIX + safeId;
     }
 
-    private JSONObject toJson(StudyPlan plan) {
+    static JSONObject toJson(StudyPlan plan) {
         JSONObject object = new JSONObject();
         try {
             object.put("id", plan.id);
@@ -93,7 +109,7 @@ public class PlanRepository {
         return object;
     }
 
-    private StudyPlan fromJson(JSONObject object) {
+    static StudyPlan fromJson(JSONObject object) {
         if (object == null) {
             return null;
         }

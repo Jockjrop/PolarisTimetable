@@ -363,7 +363,7 @@ public final class UpdateCoordinator implements UpdateDownloadController.Callbac
         performCheck(true);
     }
 
-    /** 自动检查：默认关闭；仅冷启动稳定 5 秒后由宿主触发；24 小时节流。 */
+    /** 自动检查：默认开启；仅冷启动稳定 5 秒后由宿主触发；24 小时节流。 */
     public void maybeAutoCheck() {
         if (checkInFlight) {
             return;

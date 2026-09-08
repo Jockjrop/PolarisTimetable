@@ -27,6 +27,7 @@ public final class UpdateReadyBadgeView extends View {
     private final Paint circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path arrowPath = new Path();
 
     public UpdateReadyBadgeView(Context context) {
         super(context);
@@ -57,12 +58,12 @@ public final class UpdateReadyBadgeView extends View {
         canvas.drawCircle(cx, cy, radius - ringPaint.getStrokeWidth() / 2f, ringPaint);
 
         // 向下箭头：竖轴 + 下探折线（与系统“下载完成”图标语义一致）。
-        Path arrow = new Path();
-        arrow.moveTo(cx, h * 0.26f);
-        arrow.lineTo(cx, h * 0.56f);
-        arrow.moveTo(cx - w * 0.20f, h * 0.40f);
-        arrow.lineTo(cx, h * 0.62f);
-        arrow.lineTo(cx + w * 0.20f, h * 0.40f);
-        canvas.drawPath(arrow, arrowPaint);
+        arrowPath.reset();
+        arrowPath.moveTo(cx, h * 0.26f);
+        arrowPath.lineTo(cx, h * 0.56f);
+        arrowPath.moveTo(cx - w * 0.20f, h * 0.40f);
+        arrowPath.lineTo(cx, h * 0.62f);
+        arrowPath.lineTo(cx + w * 0.20f, h * 0.40f);
+        canvas.drawPath(arrowPath, arrowPaint);
     }
 }

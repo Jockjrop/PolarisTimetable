@@ -55,8 +55,8 @@ jobs:
           if-no-files-found: error
 
   instrumented:
-    # PR 跑 smoke 快速拦截；push main 跑全量（周切换/旋转/字体缩放等）；
-    # tag push 跑更新入口和安装构件 smoke，标签发布依赖仪器验证。
+    # PR 跑 smoke 快速拦截；push main 和 tag push 跑全量（导入/编辑/旋转/存储/更新等）；
+    # 标签发布依赖与该标签提交绑定的完整仪器回归。
     # 注意：if 必须写单行。多行 plain scalar 的 job 级 if 在 tag push 上
     # 曾被评估为 false，instrumented 被静默跳过而 release 照常发布
     # （v1.24.11 实测），等于绕过了仪器验证；release 的 fail-closed

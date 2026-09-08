@@ -7,8 +7,10 @@ import static org.junit.Assert.fail;
 
 import android.content.SharedPreferences;
 
+import com.polaris.timetable.model.AcademicEvent;
 import com.polaris.timetable.model.CourseMeeting;
 import com.polaris.timetable.model.CourseType;
+import com.polaris.timetable.model.StudyPlan;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
 
@@ -35,6 +37,8 @@ public class ScheduleBackupManagerTest {
         ScheduleBackupManager.BackupBundle bundle =
                 ScheduleBackupManager.capture(repository, "1.2.0");
         byte[] bytes = ScheduleBackupManager.encode(bundle);
+        assertTrue(new String(bytes, StandardCharsets.UTF_8)
+                .startsWith("POLARIS_SCHEDULE_BACKUP_V2\n"));
         ScheduleBackupManager.BackupBundle restored =
                 ScheduleBackupManager.decode(bytes);
 
@@ -53,11 +57,19 @@ public class ScheduleBackupManagerTest {
         assertEquals(20, first.config.semesterWeeks);
         assertEquals(1, first.structuredCourses.size());
         assertStructuredEquals(course(FIRST_ID), first.structuredCourses.get(0));
+        assertEquals(1, first.studyPlans.size());
+        assertEquals("复习信号处理", first.studyPlans.get(0).title);
+        assertEquals(4, first.studyPlans.get(0).week);
+        assertEquals(1, first.academicEvents.size());
+        assertEquals("实验报告截止", first.academicEvents.get(0).title);
+        assertEquals(AcademicEvent.Type.DEADLINE, first.academicEvents.get(0).type);
 
         ScheduleBackupManager.ScheduleBackup second = restored.schedules.get(1);
         assertEquals("schedule_1", second.id);
         assertEquals("备用课表", second.name);
         assertEquals(0, second.structuredCourses.size());
+        assertTrue(second.studyPlans.isEmpty());
+        assertTrue(second.academicEvents.isEmpty());
     }
 
     @Test
@@ -82,6 +94,18 @@ public class ScheduleBackupManagerTest {
         assertStructuredEquals(course(FIRST_ID), courses.get(0));
         assertEquals("西安邮电大学", target.loadConfig("default").schoolName);
         assertEquals(0, target.loadStructuredCourses("schedule_1").size());
+        assertEquals(1, new PlanRepository(preferences).loadPlans("default").size());
+        assertEquals(1, new AcademicEventRepository(preferences).loadEvents("default").size());
+
+        // SharedPreferences 缓存被重新创建后仍应读到已恢复的持久化快照。
+        ScheduleRepository restarted = new ScheduleRepository(preferences.reopened());
+        assertEquals("default", restarted.activeScheduleId());
+        assertEquals("深色", restarted.loadGlobalDarkMode());
+        assertEquals("小明", restarted.loadAccountProfile().name);
+        assertEquals(1, restarted.loadStructuredCourses("default").size());
+        assertEquals(1, new PlanRepository(preferences.reopened()).loadPlans("default").size());
+        assertEquals(1, new AcademicEventRepository(preferences.reopened())
+                .loadEvents("default").size());
     }
 
     @Test
@@ -97,6 +121,117 @@ public class ScheduleBackupManagerTest {
         ScheduleBackupManager.restoreTo(target, bundle);
 
         assertEquals("default", target.activeScheduleId());
+    }
+
+    @Test
+    public void backupRestoreController_restoresAndReportsAllCounts() throws Exception {
+        ScheduleRepository source = repositoryWithTwoSchedules();
+        ScheduleBackupManager.BackupBundle bundle =
+                ScheduleBackupManager.capture(source, "1.2.0");
+        InMemorySharedPreferences preferences = new InMemorySharedPreferences();
+        ScheduleRepository target = new ScheduleRepository(preferences);
+
+        BackupRestoreController.RestoreResult result =
+                new BackupRestoreController(target).restore(bundle);
+
+        assertEquals(2, result.scheduleCount);
+        assertEquals(1, result.courseCount);
+        assertEquals(1, result.studyPlanCount);
+        assertEquals(1, result.academicEventCount);
+        assertEquals("default", target.activeScheduleId());
+        assertEquals(1, target.loadStructuredCourses("default").size());
+        assertEquals(1, new PlanRepository(preferences).loadPlans("default").size());
+        assertEquals(1, new AcademicEventRepository(preferences).loadEvents("default").size());
+    }
+
+    @Test
+    public void restoreTo_clearsStaleScheduleAndRelatedData() throws Exception {
+        ScheduleRepository source = repositoryWithTwoSchedules();
+        ScheduleBackupManager.BackupBundle bundle =
+                ScheduleBackupManager.capture(source, "1.2.0");
+
+        InMemorySharedPreferences preferences = new InMemorySharedPreferences();
+        ScheduleRepository target = new ScheduleRepository(preferences);
+        target.saveSchedules(Collections.singletonList(
+                new ScheduleRepository.ScheduleEntry("stale", "旧课表")));
+        target.saveStructuredCourses("stale", Collections.singletonList(course(SECOND_ID)));
+        new PlanRepository(preferences).savePlans("stale", Collections.singletonList(
+                new StudyPlan("stale-plan", "旧计划", "", 1, 0,
+                        false, false, StudyPlan.REMIND_DEFAULT_MINUTE, 0L)));
+        new AcademicEventRepository(preferences).saveEvents("stale", Collections.singletonList(
+                new AcademicEvent("stale-event", "旧事件", "", AcademicEvent.Type.EXAM,
+                        1700000000000L, -1, "", "", "", false, 0L)));
+
+        ScheduleBackupManager.restoreTo(target, bundle);
+
+        assertTrue(target.loadStructuredCourses("stale").isEmpty());
+        assertTrue(new PlanRepository(preferences).loadPlans("stale").isEmpty());
+        assertTrue(new AcademicEventRepository(preferences).loadEvents("stale").isEmpty());
+        assertEquals(2, target.loadSchedules().size());
+    }
+
+    @Test
+    public void restoreTo_commitFailureLeavesExistingStateUntouched() throws Exception {
+        ScheduleRepository source = repositoryWithTwoSchedules();
+        ScheduleBackupManager.BackupBundle bundle =
+                ScheduleBackupManager.capture(source, "1.2.0");
+
+        InMemorySharedPreferences preferences = new InMemorySharedPreferences();
+        ScheduleRepository target = new ScheduleRepository(preferences);
+        target.saveSchedules(Collections.singletonList(
+                new ScheduleRepository.ScheduleEntry("target", "本机课表")));
+        target.setActiveScheduleId("target");
+        target.saveGlobalDarkMode("浅色");
+        ScheduleRepository.Config config = new ScheduleRepository.Config();
+        config.schoolName = "本机学校";
+        target.saveConfig("target", config);
+        target.saveStructuredCourses("target", Collections.singletonList(course(SECOND_ID)));
+        new PlanRepository(preferences).savePlans("target", Collections.singletonList(
+                new StudyPlan("target-plan", "本机计划", "", 1, 0,
+                        false, false, StudyPlan.REMIND_DEFAULT_MINUTE, 0L)));
+        new AcademicEventRepository(preferences).saveEvents("target", Collections.singletonList(
+                new AcademicEvent("target-event", "本机事件", "", AcademicEvent.Type.PRACTICE,
+                        1700000000000L, -1, "", "", "", false, 0L)));
+        preferences.edit()
+                .putString("unrelated_setting", "本机保留")
+                .putStringSet("unrelated_set", new HashSet<>(Arrays.asList("a", "b")))
+                .commit();
+        Map<String, ?> persistedBeforeFailure = preferences.persistedSnapshot();
+
+        preferences.commitResult = false;
+        try {
+            ScheduleBackupManager.restoreTo(target, bundle);
+            fail("Expected restore to report a failed transaction");
+        } catch (ScheduleBackupManager.RestoreFailure expected) {
+            assertTrue(expected.getMessage().contains("写入"));
+            assertTrue(expected.memoryRestored);
+            assertTrue(!expected.persistenceConfirmed);
+            assertTrue(expected.getMessage().contains("内存状态已恢复"));
+            assertTrue(expected.getMessage().contains("磁盘状态未确认"));
+        }
+
+        assertEquals("target", target.activeScheduleId());
+        assertEquals("浅色", target.loadGlobalDarkMode());
+        assertEquals("本机课表", target.loadSchedules().get(0).name);
+        assertEquals("本机学校", target.loadConfig("target").schoolName);
+        assertStructuredEquals(course(SECOND_ID), target.loadStructuredCourses("target").get(0));
+        assertEquals(1, new PlanRepository(preferences).loadPlans("target").size());
+        assertEquals(1, new AcademicEventRepository(preferences).loadEvents("target").size());
+        assertEquals("本机保留", preferences.getString("unrelated_setting", ""));
+        assertEquals(new HashSet<>(Arrays.asList("a", "b")),
+                preferences.getStringSet("unrelated_set", Collections.emptySet()));
+        assertEquals("持久化快照也应保持失败前状态",
+                persistedBeforeFailure, preferences.persistedSnapshot());
+
+        ScheduleRepository restarted = new ScheduleRepository(preferences.reopened());
+        assertEquals("target", restarted.activeScheduleId());
+        assertEquals("浅色", restarted.loadGlobalDarkMode());
+        assertEquals("本机课表", restarted.loadSchedules().get(0).name);
+        assertEquals("本机学校", restarted.loadConfig("target").schoolName);
+        assertEquals(1, restarted.loadStructuredCourses("target").size());
+        assertEquals(1, new PlanRepository(preferences.reopened()).loadPlans("target").size());
+        assertEquals(1, new AcademicEventRepository(preferences.reopened())
+                .loadEvents("target").size());
     }
 
     @Test
@@ -117,7 +252,7 @@ public class ScheduleBackupManagerTest {
                 ScheduleBackupManager.capture(repository, "1.2.0");
         byte[] original = ScheduleBackupManager.encode(bundle);
         String json = new String(original, StandardCharsets.UTF_8)
-                .replace("\"version\":1", "\"version\":99");
+                .replace("\"version\":2", "\"version\":99");
 
         try {
             ScheduleBackupManager.decode(json.getBytes(StandardCharsets.UTF_8));
@@ -137,6 +272,23 @@ public class ScheduleBackupManagerTest {
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("没有课表数据"));
         }
+    }
+
+    @Test
+    public void decode_v1WithoutNewCollections_remainsCompatible() {
+        String payload = "POLARIS_SCHEDULE_BACKUP_V1\n"
+                + "{\"format\":\"polaris_backup\",\"version\":1,"
+                + "\"activeScheduleId\":\"default\",\"schedules\":["
+                + "{\"id\":\"default\",\"name\":\"旧课表\","
+                + "\"config\":{},\"structuredCourses\":[]}]}";
+
+        ScheduleBackupManager.BackupBundle bundle = ScheduleBackupManager.decode(
+                payload.getBytes(StandardCharsets.UTF_8));
+
+        assertEquals(1, bundle.schedules.size());
+        assertEquals("旧课表", bundle.schedules.get(0).name);
+        assertTrue(bundle.schedules.get(0).studyPlans.isEmpty());
+        assertTrue(bundle.schedules.get(0).academicEvents.isEmpty());
     }
 
     @Test
@@ -187,6 +339,9 @@ public class ScheduleBackupManagerTest {
 
         assertEquals(2, summary.scheduleCount);
         assertEquals(1, summary.courseCount);
+        assertEquals(1, summary.studyPlanCount);
+        assertEquals(1, summary.academicEventCount);
+        assertEquals(1, summary.imageReferenceCount);
         assertNotNull(summary.createdAt);
         assertEquals("1.2.0", summary.appVersion);
     }
@@ -220,6 +375,14 @@ public class ScheduleBackupManagerTest {
         repository.saveStructuredCourses("default",
                 Collections.singletonList(course(FIRST_ID)));
         repository.saveStructuredCourses("schedule_1", new ArrayList<StructuredCourse>());
+
+        new PlanRepository(preferences).savePlans("default", Collections.singletonList(
+                new StudyPlan("plan-1", "复习信号处理", "数字信号处理", 4, 2,
+                        false, true, 8 * 60, 1700000000000L)));
+        new AcademicEventRepository(preferences).saveEvents("default", Collections.singletonList(
+                new AcademicEvent("event-1", "实验报告截止", "数字信号处理",
+                        AcademicEvent.Type.DEADLINE, 1700000000000L, 18 * 60,
+                        "实验室", "", "提交电子版", false, 1700000000000L)));
         return repository;
     }
 
@@ -272,10 +435,23 @@ public class ScheduleBackupManagerTest {
 
     private static final class InMemorySharedPreferences implements SharedPreferences {
         private final Map<String, Object> values = new HashMap<>();
+        private final Map<String, Object> persistedValues = new HashMap<>();
+        private boolean commitResult = true;
 
         @Override
         public Map<String, ?> getAll() {
-            return new HashMap<>(values);
+            return copyValues(values);
+        }
+
+        Map<String, ?> persistedSnapshot() {
+            return copyValues(persistedValues);
+        }
+
+        InMemorySharedPreferences reopened() {
+            InMemorySharedPreferences reopened = new InMemorySharedPreferences();
+            reopened.values.putAll(copyValues(persistedValues));
+            reopened.persistedValues.putAll(copyValues(persistedValues));
+            return reopened;
         }
 
         @Override
@@ -403,13 +579,35 @@ public class ScheduleBackupManagerTest {
                     values.remove(key);
                 }
                 values.putAll(pending);
-                return true;
+                if (commitResult) {
+                    persistedValues.clear();
+                    persistedValues.putAll(copyValues(values));
+                }
+                return commitResult;
             }
 
             @Override
             public void apply() {
                 commit();
             }
+        }
+
+        private static Map<String, Object> copyValues(Map<String, Object> source) {
+            Map<String, Object> copy = new HashMap<>();
+            for (Map.Entry<String, Object> entry : source.entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof Set) {
+                    Set<?> rawSet = (Set<?>) value;
+                    Set<String> setCopy = new HashSet<>();
+                    for (Object item : rawSet) {
+                        setCopy.add((String) item);
+                    }
+                    copy.put(entry.getKey(), setCopy);
+                } else {
+                    copy.put(entry.getKey(), value);
+                }
+            }
+            return copy;
         }
     }
 }

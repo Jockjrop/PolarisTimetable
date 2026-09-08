@@ -23,13 +23,9 @@ case "$GITHUB_EVENT_NAME" in
   push)
     case "$GITHUB_REF" in
       refs/tags/v*)
-        # 标签发布前必须通过更新入口与安装构件的仪器冒烟
-        ./gradlew :app:connectedDebugAndroidTest \
-          -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.update.UpdateEntryTest \
-          --no-daemon --console=plain
-        ./gradlew :app:connectedDebugAndroidTest \
-          -Pandroid.testInstrumentationRunnerArguments.class=com.polaris.timetable.update.UpdateInstallerTest \
-          --no-daemon --console=plain
+        # 标签发布前跑完整仪器回归：导入、页面编辑器、旋转、存储驱动的课表渲染、
+        # 更新与安装入口必须和同一标签提交一起通过，不能只验证发布功能自身。
+        ./gradlew :app:connectedDebugAndroidTest --no-daemon --console=plain
         ;;
       *)
         # push main 跑全量（周切换/旋转/字体缩放等）

@@ -1183,10 +1183,20 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
+            boolean wasSwiping = router.isSwipingHorizontal();
             if (router.onTouch(event)) {
                 return true;
             }
+            if (event.getActionMasked() == MotionEvent.ACTION_UP && !wasSwiping) {
+                performClick();
+            }
             return super.onTouchEvent(event);
+        }
+
+        @Override
+        public boolean performClick() {
+            super.performClick();
+            return true;
         }
 
         private static final class OnSwipeRouter {
@@ -1254,6 +1264,10 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
                     swipingHorizontal = false;
                     firedThisGesture = false;
                 }
+                return swipingHorizontal;
+            }
+
+            private boolean isSwipingHorizontal() {
                 return swipingHorizontal;
             }
         }

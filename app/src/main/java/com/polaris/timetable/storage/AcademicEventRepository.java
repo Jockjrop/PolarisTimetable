@@ -12,6 +12,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 学业事件存储：与计划/课表共用 SharedPreferences 文件，按 scheduleId 隔离。
@@ -56,6 +57,13 @@ public class AcademicEventRepository {
     }
 
     public void saveEvents(String scheduleId, List<AcademicEvent> events) {
+        SharedPreferences.Editor editor = preferences.edit();
+        stageEvents(editor, scheduleId, events);
+        editor.apply();
+    }
+
+    void stageEvents(SharedPreferences.Editor editor, String scheduleId,
+                     List<AcademicEvent> events) {
         JSONArray array = new JSONArray();
         if (events != null) {
             for (AcademicEvent event : events) {
@@ -64,9 +72,18 @@ public class AcademicEventRepository {
                 }
             }
         }
-        preferences.edit()
-                .putString(eventsKey(scheduleId), array.toString())
-                .apply();
+        editor.putString(eventsKey(scheduleId), array.toString());
+    }
+
+    static void clearBackupKeys(SharedPreferences.Editor editor, Set<String> keys) {
+        if (keys == null) {
+            return;
+        }
+        for (String key : keys) {
+            if (key != null && key.startsWith(KEY_EVENTS_PREFIX)) {
+                editor.remove(key);
+            }
+        }
     }
 
     private String eventsKey(String scheduleId) {
@@ -75,7 +92,7 @@ public class AcademicEventRepository {
         return KEY_EVENTS_PREFIX + safeId;
     }
 
-    private JSONObject toJson(AcademicEvent event) {
+    static JSONObject toJson(AcademicEvent event) {
         JSONObject object = new JSONObject();
         try {
             object.put("id", event.id);
@@ -95,7 +112,7 @@ public class AcademicEventRepository {
         return object;
     }
 
-    private AcademicEvent fromJson(JSONObject object) {
+    static AcademicEvent fromJson(JSONObject object) {
         if (object == null) {
             return null;
         }

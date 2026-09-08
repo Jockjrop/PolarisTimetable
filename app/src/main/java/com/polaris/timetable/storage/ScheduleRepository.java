@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 public class ScheduleRepository {
     private static final String TAG = "ScheduleRepository";
@@ -56,6 +57,11 @@ public class ScheduleRepository {
         this.preferences = preferences;
     }
 
+    /** SharedPreferences handle for storage-layer transactions such as backup restore. */
+    SharedPreferences sharedPreferencesForStorage() {
+        return preferences;
+    }
+
     public void saveStructuredCourses(List<StructuredCourse> structuredCourses) {
         saveStructuredCourses(activeScheduleId(), structuredCourses);
     }
@@ -66,6 +72,15 @@ public class ScheduleRepository {
      */
     public void saveStructuredCourses(
             String scheduleId, List<StructuredCourse> structuredCourses) {
+        SharedPreferences.Editor editor = preferences.edit();
+        stageStructuredCourses(editor, scheduleId, structuredCourses);
+        editor.apply();
+        notifyWidgets();
+    }
+
+    void stageStructuredCourses(
+            SharedPreferences.Editor editor, String scheduleId,
+            List<StructuredCourse> structuredCourses) {
         ScheduleStorageSchema.MigrationResult normalized = ScheduleStorageSchema.migrate(
                 ScheduleStorageSchema.CURRENT_VERSION, structuredCourses);
         List<StructuredCourse> safeStructuredCourses = normalized.courses;
@@ -76,14 +91,12 @@ public class ScheduleRepository {
                 array.put(toJson(course));
             }
         }
-        preferences.edit()
+        editor
                 .putString(courseKey(scheduleId), array.toString())
                 .putString(structuredCourseKey(scheduleId), structuredCoursesToJson(safeStructuredCourses).toString())
                 .putBoolean(courseReadyKey(scheduleId), true)
                 .putInt(ScheduleStorageSchema.versionKey(safeScheduleId(scheduleId)),
-                        ScheduleStorageSchema.CURRENT_VERSION)
-                .apply();
-        notifyWidgets();
+                        ScheduleStorageSchema.CURRENT_VERSION);
     }
 
     /**
@@ -160,8 +173,15 @@ public class ScheduleRepository {
     }
 
     public void saveConfig(String scheduleId, Config config) {
-        preferences.edit().putString(configKey(scheduleId), config.toJson().toString()).apply();
+        SharedPreferences.Editor editor = preferences.edit();
+        stageConfig(editor, scheduleId, config);
+        editor.apply();
         notifyWidgets();
+    }
+
+    void stageConfig(SharedPreferences.Editor editor, String scheduleId, Config config) {
+        Config safeConfig = config == null ? new Config() : config;
+        editor.putString(configKey(scheduleId), safeConfig.toJson().toString());
     }
 
     public Config loadConfig() {
@@ -189,8 +209,14 @@ public class ScheduleRepository {
     }
 
     public void setActiveScheduleId(String scheduleId) {
-        preferences.edit().putString(KEY_ACTIVE_SCHEDULE, safeScheduleId(scheduleId)).apply();
+        SharedPreferences.Editor editor = preferences.edit();
+        stageActiveScheduleId(editor, scheduleId);
+        editor.apply();
         notifyWidgets();
+    }
+
+    void stageActiveScheduleId(SharedPreferences.Editor editor, String scheduleId) {
+        editor.putString(KEY_ACTIVE_SCHEDULE, safeScheduleId(scheduleId));
     }
 
     public String loadGlobalDarkMode() {
@@ -198,9 +224,15 @@ public class ScheduleRepository {
     }
 
     public void saveGlobalDarkMode(String darkMode) {
-        preferences.edit().putString(KEY_GLOBAL_DARK_MODE,
-                darkMode == null || darkMode.length() == 0 ? "跟随系统" : darkMode).apply();
+        SharedPreferences.Editor editor = preferences.edit();
+        stageGlobalDarkMode(editor, darkMode);
+        editor.apply();
         notifyWidgets();
+    }
+
+    void stageGlobalDarkMode(SharedPreferences.Editor editor, String darkMode) {
+        editor.putString(KEY_GLOBAL_DARK_MODE,
+                darkMode == null || darkMode.length() == 0 ? "跟随系统" : darkMode);
     }
 
     public AccountProfile loadAccountProfile() {
@@ -215,18 +247,23 @@ public class ScheduleRepository {
     }
 
     public void saveAccountProfile(AccountProfile profile) {
+        SharedPreferences.Editor editor = preferences.edit();
+        stageAccountProfile(editor, profile);
+        editor.apply();
+    }
+
+    void stageAccountProfile(SharedPreferences.Editor editor, AccountProfile profile) {
         AccountProfile safeProfile = profile == null ? new AccountProfile() : profile;
         String name = safeProfile.name == null ? "" : safeProfile.name.trim();
         // 空名原样落库：默认名（用户+随机码）由 UI 加载侧生成并回写，这里不再代填旧默认。
-        preferences.edit()
+        editor
                 .putString(KEY_ACCOUNT_NAME, name)
                 .putString(KEY_ACCOUNT_AVATAR_URI,
                         safeProfile.avatarUri == null ? "" : safeProfile.avatarUri)
                 .putFloat(KEY_ACCOUNT_AVATAR_CROP_LEFT, safeProfile.cropLeft)
                 .putFloat(KEY_ACCOUNT_AVATAR_CROP_TOP, safeProfile.cropTop)
                 .putFloat(KEY_ACCOUNT_AVATAR_CROP_RIGHT, safeProfile.cropRight)
-                .putFloat(KEY_ACCOUNT_AVATAR_CROP_BOTTOM, safeProfile.cropBottom)
-                .apply();
+                .putFloat(KEY_ACCOUNT_AVATAR_CROP_BOTTOM, safeProfile.cropBottom);
     }
 
     private void notifyWidgets() {
@@ -236,6 +273,10 @@ public class ScheduleRepository {
         Intent intent = new Intent(ScheduleWidgetProvider.ACTION_SCHEDULE_CHANGED);
         intent.setPackage(appContext.getPackageName());
         appContext.sendBroadcast(intent);
+    }
+
+    void notifyWidgetsAfterStorageRestore() {
+        notifyWidgets();
     }
 
     public List<ScheduleEntry> loadSchedules() {
@@ -265,8 +306,21 @@ public class ScheduleRepository {
     }
 
     public void saveSchedules(List<ScheduleEntry> schedules) {
+        SharedPreferences.Editor editor = preferences.edit();
+        stageSchedules(editor, schedules);
+        editor.apply();
+    }
+
+    void stageSchedules(SharedPreferences.Editor editor, List<ScheduleEntry> schedules) {
         JSONArray array = new JSONArray();
+        if (schedules == null) {
+            editor.putString(KEY_SCHEDULES, array.toString());
+            return;
+        }
         for (ScheduleEntry schedule : schedules) {
+            if (schedule == null) {
+                continue;
+            }
             JSONObject object = new JSONObject();
             try {
                 object.put("id", schedule.id);
@@ -276,7 +330,42 @@ public class ScheduleRepository {
                 Log.e(TAG, "Unable to serialize schedule entry", exception);
             }
         }
-        preferences.edit().putString(KEY_SCHEDULES, array.toString()).apply();
+        editor.putString(KEY_SCHEDULES, array.toString());
+    }
+
+    static void clearBackupKeys(SharedPreferences.Editor editor, Set<String> keys) {
+        if (keys == null) {
+            return;
+        }
+        for (String key : keys) {
+            if (isBackupKey(key)) {
+                editor.remove(key);
+            }
+        }
+    }
+
+    private static boolean isBackupKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        return KEY_COURSES.equals(key)
+                || key.startsWith(KEY_COURSES + "_")
+                || KEY_STRUCTURED_COURSES.equals(key)
+                || key.startsWith(KEY_STRUCTURED_COURSES + "_")
+                || KEY_CONFIG.equals(key)
+                || key.startsWith(KEY_CONFIG + "_")
+                || KEY_COURSES_READY.equals(key)
+                || key.startsWith(KEY_COURSES_READY + "_")
+                || key.startsWith("schema_version_")
+                || KEY_ACTIVE_SCHEDULE.equals(key)
+                || KEY_SCHEDULES.equals(key)
+                || KEY_GLOBAL_DARK_MODE.equals(key)
+                || KEY_ACCOUNT_NAME.equals(key)
+                || KEY_ACCOUNT_AVATAR_URI.equals(key)
+                || KEY_ACCOUNT_AVATAR_CROP_LEFT.equals(key)
+                || KEY_ACCOUNT_AVATAR_CROP_TOP.equals(key)
+                || KEY_ACCOUNT_AVATAR_CROP_RIGHT.equals(key)
+                || KEY_ACCOUNT_AVATAR_CROP_BOTTOM.equals(key);
     }
 
     public ScheduleEntry createSchedule(String name) {

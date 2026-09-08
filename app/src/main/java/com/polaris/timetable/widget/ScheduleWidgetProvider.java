@@ -17,11 +17,9 @@ import com.polaris.timetable.MainActivity;
 import com.polaris.timetable.R;
 import com.polaris.timetable.reminder.CourseReminderScheduler;
 import com.polaris.timetable.storage.ScheduleRepository;
-import com.polaris.timetable.Course;
 
 import java.util.Calendar;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 public final class ScheduleWidgetProvider extends AppWidgetProvider {
@@ -181,22 +179,28 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         PendingIntent refreshIntent = courseTimeRefreshIntent(context);
         alarmManager.cancel(refreshIntent);
 
-        ScheduleRepository repository = new ScheduleRepository(context);
-        String scheduleId = repository.activeScheduleId();
-        List<Course> courses = repository.loadCourseView(scheduleId);
-        ScheduleRepository.Config config = repository.loadConfig(scheduleId);
-        // 在课程开始/结束时刻各安排一次刷新：开始让"进行中"高亮准时出现，
-        // 结束让已下课条目移除（原有行为）。
-        long nextEnd = ScheduleWidgetData.nextCourseEndAfter(courses, config, Calendar.getInstance());
-        long nextStart = ScheduleWidgetData.nextCourseStartAfter(courses, config, Calendar.getInstance());
-        long nextBoundary = earliestFuture(nextEnd, nextStart);
-        if (nextBoundary <= System.currentTimeMillis()) {
-            // 当天课程全部结束后未来边界缺失，alarm 链会断到跨天为止；补一个
-            // 次日 00:02 的兜底刷新，让新一天列表与标题自续，不依赖可能被
-            // 后台策略延迟的 DATE_CHANGED 系统广播。
-            nextBoundary = ScheduleWidgetData.nextDayBoundaryAfter(Calendar.getInstance());
+        AppWidgetManager manager = AppWidgetManager.getInstance(context);
+        ComponentName provider = new ComponentName(context, ScheduleWidgetProvider.class);
+        int[] appWidgetIds = manager.getAppWidgetIds(provider);
+        if (appWidgetIds.length == 0) {
+            return;
         }
-        if (nextBoundary > System.currentTimeMillis()) {
+
+        ScheduleRepository repository = new ScheduleRepository(context);
+        // 每个 widget 实例可绑定不同课表；只读取激活课表会让其他实例错过
+        // 自己课表的上下课边界。按唯一绑定课表汇总，避免重复加载同一份数据。
+        Map<String, ScheduleWidgetRefreshPlanner.ScheduleSource> sources = new LinkedHashMap<>();
+        for (int appWidgetId : appWidgetIds) {
+            String scheduleId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
+            if (!sources.containsKey(scheduleId)) {
+                sources.put(scheduleId, new ScheduleWidgetRefreshPlanner.ScheduleSource(
+                        repository.loadCourseView(scheduleId), repository.loadConfig(scheduleId)));
+            }
+        }
+
+        Calendar now = Calendar.getInstance();
+        long nextBoundary = ScheduleWidgetRefreshPlanner.nextBoundaryAfter(sources.values(), now);
+        if (nextBoundary > now.getTimeInMillis()) {
             scheduleBoundaryAlarm(context, alarmManager, nextBoundary, refreshIntent);
         }
     }
@@ -222,14 +226,6 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
             alarmManager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP, triggerAtMillis, refreshIntent);
         }
-    }
-
-    private static long earliestFuture(long first, long second) {
-        long earliest = first > 0 ? first : Long.MAX_VALUE;
-        if (second > 0 && second < earliest) {
-            earliest = second;
-        }
-        return earliest == Long.MAX_VALUE ? -1L : earliest;
     }
 
     private static void cancelCourseTimeRefresh(Context context) {
