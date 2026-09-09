@@ -193,8 +193,19 @@ jobs:
       - name: Read version from gradle
         id: version
         run: |
-          VERSION_NAME=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -1)
-          VERSION_CODE=$(grep -oP 'versionCode \K\d+' app/build.gradle | head -1)
+          # 版本号在 Gradle 中由 polarisVersionName/polarisVersionCode 统一定义；
+          # 保留字面量回退，避免旧分支的发布工作流因读取方式不同而读到空值。
+          VERSION_NAME=$(grep -oP '^\s*def\s+polarisVersionName\s*=\s*"\K[^"]+' app/build.gradle | head -1)
+          VERSION_CODE=$(grep -oP '^\s*def\s+polarisVersionCode\s*=\s*\K\d+' app/build.gradle | head -1)
+          if [ -z "$VERSION_NAME" ]; then
+            VERSION_NAME=$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle | head -1)
+          fi
+          if [ -z "$VERSION_CODE" ]; then
+            VERSION_CODE=$(grep -oP 'versionCode\s+\K\d+' app/build.gradle | head -1)
+          fi
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "::error::无法从 app/build.gradle 读取 versionName/versionCode"; exit 1
+          fi
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "版本：$VERSION_NAME ($VERSION_CODE)"
