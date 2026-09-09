@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetTop="2dp">
+    <shape android:shape="rectangle">
+        <solid android:color="@android:color/white" />
+        <corners
+            android:topLeftRadius="@dimen/corner_widget_accent"
+            android:topRightRadius="@dimen/corner_widget_accent" />
+    </shape>
+</inset>

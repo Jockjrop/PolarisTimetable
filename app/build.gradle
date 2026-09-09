@@ -2,6 +2,54 @@ plugins {
     id "com.android.application"
 }
 
+def polarisVersionName = "1.27.13"
+def polarisVersionCode = 12713
+
+// 版本信息弹窗与发布文档共用唯一数据源。构建时按 versionName
+// 读取 docs/releases/<version>.md 并生成 string-array；版本文档缺失或标题错误时直接失败，
+// 避免「版本号已升级、应用内仍显示上一版说明」的双源漂移。
+def currentReleaseNotesFile = rootProject.file("docs/releases/${polarisVersionName}.md")
+def generatedReleaseNotesDir = layout.buildDirectory.dir("generated/res/releaseNotes")
+def generateCurrentReleaseNotes = tasks.register("generateCurrentReleaseNotes") {
+    inputs.file(currentReleaseNotesFile)
+    inputs.property("versionName", polarisVersionName)
+    outputs.dir(generatedReleaseNotesDir)
+
+    doLast {
+        if (!currentReleaseNotesFile.isFile()) {
+            throw new GradleException(
+                    "Missing release notes for ${polarisVersionName}: ${currentReleaseNotesFile}")
+        }
+        List<String> lines = currentReleaseNotesFile.readLines("UTF-8")
+        String expectedTitle = "# Polaris ${polarisVersionName}"
+        if (lines.isEmpty() || lines.first().trim() != expectedTitle) {
+            throw new GradleException(
+                    "Release notes title must be '${expectedTitle}' in ${currentReleaseNotesFile}")
+        }
+        List<String> notes = lines.collect { it.trim() }
+                .findAll { it.startsWith("- ") }
+                .collect { it.substring(2).trim() }
+                .findAll { !it.isEmpty() }
+        if (notes.isEmpty()) {
+            throw new GradleException(
+                    "Release notes for ${polarisVersionName} must contain at least one bullet")
+        }
+
+        File valuesDir = new File(generatedReleaseNotesDir.get().asFile, "values")
+        valuesDir.mkdirs()
+        File output = new File(valuesDir, "release_notes_current.xml")
+        StringWriter writer = new StringWriter()
+        def xml = new groovy.xml.MarkupBuilder(writer)
+        xml.mkp.xmlDeclaration(version: "1.0", encoding: "utf-8")
+        xml.resources {
+            'string-array'(name: "release_notes_current") {
+                notes.each { note -> item(note) }
+            }
+        }
+        output.setText(writer.toString(), "UTF-8")
+    }
+}
+
 def releaseSigningProperties = new Properties()
 def releaseSigningPropertiesFile = rootProject.file("keystore.properties")
 if (releaseSigningPropertiesFile.exists()) {
@@ -30,8 +78,8 @@ android {
         applicationId "com.polaris.timetable"
         minSdk 23
         targetSdk 35
-        versionCode 12712
-        versionName "1.27.12"
+        versionCode polarisVersionCode
+        versionName polarisVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -66,6 +114,11 @@ android {
             outputFileName = "Polaris-${variant.versionName}-${variant.name}.apk"
         }
     }
+}
+
+android.sourceSets.main.res.srcDir(generatedReleaseNotesDir)
+tasks.named("preBuild").configure {
+    dependsOn(generateCurrentReleaseNotes)
 }
 
 def releaseTaskRequested = gradle.startParameter.taskNames.any {

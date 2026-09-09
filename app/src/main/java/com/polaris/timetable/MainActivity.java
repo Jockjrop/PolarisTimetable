@@ -614,7 +614,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         topPanel = new LinearLayout(this);
         topPanel.setOrientation(LinearLayout.VERTICAL);
-        topPanel.setPadding(dp(12), dp(10), dp(12), dp(10));
+        applyTopPanelContentInsets();
         topPanel.setBackgroundColor(Color.TRANSPARENT);
 
         LinearLayout heading = new LinearLayout(this);
@@ -820,7 +820,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         topPanelContainer = new FrameLayout(this);
-        topPanelGlassLayer = glassLayer(liquidGlassBg(scheduleViewState.timetableHeaderOpacity),
+        topPanelGlassLayer = shellGlassLayer(liquidGlassBg(scheduleViewState.timetableHeaderOpacity),
                 topGlassRadius());
         topPanelContainer.addView(topPanelGlassLayer, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, 0));
@@ -3931,17 +3931,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private FrameLayout.LayoutParams bottomNavLayoutParams() {
         int bottomInset = Math.max(systemBottomInset, 0);
         if (regularShellBars()) {
-            // 常规样式：上下栏贴边通栏，底栏只保留系统导航条避让。
-            if (isLandscapeTablet()) {
-                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()),
-                        Gravity.BOTTOM);
-                params.setMargins(0, 0, 0, bottomInset);
-                return params;
-            }
+            // 常规样式：背景覆盖到屏幕底边，导航内容由 BottomNavView
+            // 以 padding 避让系统导航区，避免只在内容外围留一个悬浮框。
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()), Gravity.BOTTOM);
-            params.setMargins(0, 0, 0, bottomInset);
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    dp(navVisualHeight()) + bottomInset, Gravity.BOTTOM);
+            params.setMargins(0, 0, 0, 0);
             return params;
         }
         if (isLandscapeTablet()) {
@@ -3980,7 +3975,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                     Gravity.TOP);
-            params.setMargins(0, statusBarHeight(), 0, 0);
+            params.setMargins(0, 0, 0, 0);
             return params;
         }
         FrameLayout.LayoutParams params;
@@ -4010,7 +4005,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public int bottomContentInset() {
-        return dp(navVisualHeight() + 12) + Math.max(systemBottomInset, 0);
+        int gap = regularShellBars() ? 0 : 12;
+        return dp(navVisualHeight() + gap) + Math.max(systemBottomInset, 0);
     }
 
     // ===== 完成类轻提示（主题化短 Toast，替代系统 Toast 的“完成”场景） =====
@@ -4302,6 +4298,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
+    public boolean navRegularStyle() {
+        return regularShellBars();
+    }
+
+    @Override
     public int navOpacity() {
         return scheduleViewState.bottomNavOpacity;
     }
@@ -4330,6 +4331,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public int navMutedColor() {
         return mutedColor();
+    }
+
+    @Override
+    public int navSurfaceColor() {
+        return shellBarSurfaceColor();
     }
 
     @Override
@@ -5121,7 +5127,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     /**
      * 版本信息行点击：展示上一版本到当前版本的更新内容。内容来自内置
-     * release_notes_current（随发版同步维护，与 docs/releases 同源）。
+     * release_notes_current（构建时从当前版本 docs/releases 文档自动生成）。
      */
     private void showCurrentReleaseNotes() {
         String[] notes = getResources().getStringArray(R.array.release_notes_current);
@@ -7373,6 +7379,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             updateGlassLayer(topPanelGlassLayer,
                     liquidGlassBg(scheduleViewState.timetableHeaderOpacity), topGlassRadius());
         }
+        applyTopPanelContentInsets();
         if (topPanelContainer != null) {
             // 顶/底栏样式（默认/常规）切换后同步通栏与页边距几何。
             topPanelContainer.setLayoutParams(topPanelLayoutParams());
@@ -8240,6 +8247,11 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     }
 
 private GradientDrawable liquidGlassBg(int opacityPercent) {
+    if (regularShellBars()) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(shellBarSurfaceColor());
+        return drawable;
+    }
     return GlassDialogFactory.liquidGlassBg(glassConfig(), opacityPercent);
     }
 
@@ -8247,8 +8259,39 @@ public View glassLayer(GradientDrawable background, int radius) {
     return GlassDialogFactory.glassLayer(glassConfig(), contentHost, background, radius);
     }
 
+private View shellGlassLayer(GradientDrawable background, int radius) {
+    return GlassDialogFactory.glassLayer(shellGlassConfig(), contentHost, background, radius);
+    }
+
 private void updateGlassLayer(View layer, GradientDrawable background, int radius) {
-    GlassDialogFactory.updateGlassLayer(layer, glassConfig(), contentHost, background, radius);
+    GlassDialogFactory.updateGlassLayer(
+            layer, shellGlassConfig(), contentHost, background, radius);
+    }
+
+private GlassDialogFactory.Config shellGlassConfig() {
+    return new GlassDialogFactory.Config(
+            this, scheduleViewState.shellBarsBlurEnabled && !regularShellBars(),
+            isDarkModeActive(), isMinimalVisualTheme(), scheduleViewState.visualTheme);
+    }
+
+    /**
+     * 常规栏是稳定的实色 surface，不继承悬浮玻璃的透明度、描边和圆角。
+     * 主题 card token 可能自带 alpha，此处显式转为不透明色以保证内容可读。
+     */
+    private int shellBarSurfaceColor() {
+        int surface = PolarisVisualTheme.cardColor(
+                scheduleViewState.visualTheme, isDarkModeActive());
+        return Color.rgb(Color.red(surface), Color.green(surface), Color.blue(surface));
+    }
+
+    /** 常规顶栏将实色背景延伸至状态栏，内容仍遵守安全区。 */
+    private void applyTopPanelContentInsets() {
+        if (topPanel == null) {
+            return;
+        }
+        int horizontal = regularShellBars() ? 16 : 12;
+        int top = regularShellBars() ? statusBarHeight() + 10 : 10;
+        topPanel.setPadding(dp(horizontal), top, dp(horizontal), dp(10));
     }
 
     private void syncTopGlassHeight(int contentHeight) {

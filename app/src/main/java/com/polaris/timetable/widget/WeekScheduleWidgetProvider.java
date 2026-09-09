@@ -96,6 +96,11 @@ public final class WeekScheduleWidgetProvider extends AppWidgetProvider {
         int dayCount = ScheduleWidgetConfigActivity.widgetDayCount(context, appWidgetId);
         Calendar today = Calendar.getInstance();
         int todayColumn = CourseTimeResolver.mondayBasedDay(today);
+        String scheduleId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
+        ScheduleRepository repository = new ScheduleRepository(context);
+        ScheduleRepository.Config config = repository.loadConfig(scheduleId);
+        int autoScrollPosition = ScheduleWidgetWeekData.autoScrollPosition(
+                repository.loadCourseView(scheduleId), config, today);
         Calendar[] weekDates = ScheduleWidgetWeekData.weekDates(today);
         views.setTextViewText(R.id.widget_week_month,
                 (weekDates[0].get(Calendar.MONTH) + 1) + "月");
@@ -111,6 +116,11 @@ public final class WeekScheduleWidgetProvider extends AppWidgetProvider {
             views.setTextColor(titleId, column == todayColumn
                     ? Color.parseColor("#2563EB")
                     : context.getColor(R.color.widget_text_muted));
+            views.setViewVisibility(todayColumnId(column), column == todayColumn
+                    ? View.VISIBLE : View.INVISIBLE);
+        }
+        for (int column = dayCount; column < ScheduleWidgetWeekData.DAY_NAMES.length; column++) {
+            views.setViewVisibility(todayColumnId(column), View.GONE);
         }
         views.setTextViewText(R.id.widget_week_date, bigDateTitle(today));
         views.setTextViewText(R.id.widget_week_info, infoTitle(context, appWidgetId, today));
@@ -121,6 +131,9 @@ public final class WeekScheduleWidgetProvider extends AppWidgetProvider {
         serviceIntent.putExtra(EXTRA_DAY_COUNT, dayCount);
         serviceIntent.setData(Uri.parse("polaris://widget/week/" + appWidgetId));
         views.setRemoteAdapter(R.id.widget_week_list, serviceIntent);
+        // 课程边界刷新时将当前/下一门课程的起始节次放到列表首行；
+        // setScrollPosition 在 API 11 已可用，兼容项目 minSdk 23。
+        views.setScrollPosition(R.id.widget_week_list, autoScrollPosition);
         views.setEmptyView(R.id.widget_week_list, R.id.widget_week_empty);
         views.setPendingIntentTemplate(R.id.widget_week_list, openApp);
         return views;
@@ -167,6 +180,18 @@ public final class WeekScheduleWidgetProvider extends AppWidgetProvider {
             case 4: return R.id.widget_week_day_4;
             case 5: return R.id.widget_week_day_5;
             default: return R.id.widget_week_day_6;
+        }
+    }
+
+    private static int todayColumnId(int column) {
+        switch (column) {
+            case 0: return R.id.widget_week_today_column_0;
+            case 1: return R.id.widget_week_today_column_1;
+            case 2: return R.id.widget_week_today_column_2;
+            case 3: return R.id.widget_week_today_column_3;
+            case 4: return R.id.widget_week_today_column_4;
+            case 5: return R.id.widget_week_today_column_5;
+            default: return R.id.widget_week_today_column_6;
         }
     }
 }

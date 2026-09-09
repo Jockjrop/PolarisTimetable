@@ -3,6 +3,7 @@ package com.polaris.timetable.ui.shell;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.View;
@@ -34,6 +35,8 @@ public class BottomNavView extends LinearLayout {
 
         boolean navBlurEnabled();
 
+        boolean navRegularStyle();
+
         int navOpacity();
 
         int navRadius();
@@ -45,6 +48,8 @@ public class BottomNavView extends LinearLayout {
         int navInkColor();
 
         int navMutedColor();
+
+        int navSurfaceColor();
 
         boolean navTabActive(int tab);
 
@@ -80,8 +85,9 @@ public class BottomNavView extends LinearLayout {
     }
 
     private void buildPhoneBar() {
-        setPadding(dp(VISUAL_HORIZONTAL_INSET_DP), 0,
-                dp(VISUAL_HORIZONTAL_INSET_DP), 0);
+        int horizontalInset = host.navRegularStyle() ? 0 : dp(VISUAL_HORIZONTAL_INSET_DP);
+        int bottomInset = host.navRegularStyle() ? host.navBottomInset() : 0;
+        setPadding(horizontalInset, 0, horizontalInset, bottomInset);
         setBackground(null);
         scheduleNav = navItem(0);
         planNav = navItem(1);
@@ -106,6 +112,7 @@ public class BottomNavView extends LinearLayout {
     }
 
     private void buildTabletBar() {
+        setPadding(0, 0, 0, host.navRegularStyle() ? host.navBottomInset() : 0);
         scheduleNav = navItem(0);
         myNav = navItem(2);
         scheduleNav.setPadding(0, 0, 0, 0);
@@ -145,11 +152,18 @@ public class BottomNavView extends LinearLayout {
 
     private View glassLayer() {
         GlassDialogFactory.Config cfg = new GlassDialogFactory.Config(
-                getContext(), host.navBlurEnabled(), host.navDarkMode(),
+                getContext(), host.navBlurEnabled() && !host.navRegularStyle(), host.navDarkMode(),
                 host.navMinimalTheme(), host.navVisualTheme());
+        GradientDrawable background;
+        if (host.navRegularStyle()) {
+            background = new GradientDrawable();
+            background.setColor(host.navSurfaceColor());
+        } else {
+            background = GlassDialogFactory.floatingPanelBg(
+                    cfg, host.navOpacity(), host.navRadius());
+        }
         return GlassDialogFactory.glassLayer(cfg, host.navContentSource(),
-                GlassDialogFactory.floatingPanelBg(cfg, host.navOpacity(), host.navRadius()),
-                host.navRadius());
+                background, host.navRadius());
     }
 
     /** tab 状态变化后更新三个入口的文本与字重。 */

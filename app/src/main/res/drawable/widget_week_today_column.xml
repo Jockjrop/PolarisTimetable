@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 周视图今天列的整体强调底：位于课程列表下方，跨越所有节次行连续渲染。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_today_column" />
+</shape>

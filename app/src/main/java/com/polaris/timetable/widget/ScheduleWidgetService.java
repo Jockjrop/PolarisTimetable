@@ -117,7 +117,7 @@ public final class ScheduleWidgetService extends RemoteViewsService {
     /**
      * 整周课表网格工厂：每行一个节次（时间列 + 天列格子），行数=节次数，
      * ListView 天然支持在小组件内上下滑动。格子底图经 setColorFilter 染色
-     * 呈现课程色圆角块；课程首节展示地点行，跨节续行只重复课程名。
+     * 呈现课程色圆角块；课程首段展示课名和地点，跨节中段/末段只延续色块。
      */
     private static final class WeekGridFactory implements RemoteViewsFactory {
         private static final int[] CELL_IDS = {
@@ -217,16 +217,18 @@ public final class ScheduleWidgetService extends RemoteViewsService {
                     views.setContentDescription(CELL_IDS[day], "");
                     continue;
                 }
-                // 课程格 / 今天列淡底格：白底圆角经染色呈现课程色，文字叠于其上。
+                // 课程格 / 今天列淡底格：白底图形经染色呈现课程色。
+                // 跨节课程按首/中/末段选择边缘，相邻行无缝拼成一块。
                 views.setViewVisibility(CELL_BG_IDS[day], View.VISIBLE);
+                views.setImageViewResource(CELL_BG_IDS[day], cellBackgroundResource(cell));
                 views.setInt(CELL_BG_IDS[day], "setColorFilter", cell.color);
                 boolean showLocation = cell.startOfCourse && cell.location.length() > 0;
                 views.setTextViewText(CELL_TEXT_IDS[day],
                         showLocation ? cell.text + " @" + cell.location : cell.text);
                 views.setTextColor(CELL_TEXT_IDS[day], Color.WHITE);
-                views.setContentDescription(CELL_IDS[day], cell.text.length() == 0 ? ""
+                views.setContentDescription(CELL_IDS[day], cell.courseName.length() == 0 ? ""
                         : ScheduleWidgetWeekData.DAY_NAMES[day] + " 第" + row.section + "节 "
-                                + cell.text
+                                + cell.courseName
                                 + (cell.location.length() > 0 ? " " + cell.location : ""));
             }
             views.setOnClickFillInIntent(R.id.widget_week_row, new Intent());
@@ -251,6 +253,19 @@ public final class ScheduleWidgetService extends RemoteViewsService {
         @Override
         public boolean hasStableIds() {
             return true;
+        }
+
+        private int cellBackgroundResource(ScheduleWidgetWeekData.Cell cell) {
+            if (cell.courseName.length() == 0 || (cell.startOfCourse && cell.endOfCourse)) {
+                return R.drawable.widget_week_cell_bg;
+            }
+            if (cell.startOfCourse) {
+                return R.drawable.widget_week_cell_bg_start;
+            }
+            if (cell.endOfCourse) {
+                return R.drawable.widget_week_cell_bg_end;
+            }
+            return R.drawable.widget_week_cell_bg_middle;
         }
     }
 }

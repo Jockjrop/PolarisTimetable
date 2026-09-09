@@ -12,9 +12,10 @@ import java.util.Map;
 
 /**
  * 整周课表小组件的网格数据：按「节次行 × 天列」铺排课程，与应用内课程表
- * 同款布局语义。跨节课程在覆盖的每个节次行重复占格（远程列表无法跨行合并），
+ * 同款布局语义。跨节课程仍由每个节次行提供一段，但段位置会标记为
+ * 首段/中段/末段，远程视图可将它们无缝拼成一个连续课程块，避免视觉上被拆成多节课。
  * 时间列取该节次的上课时间；隐藏天列（超出 5/6/7 选择）不填充内容。
- * 首节格携带上课地点供内联渲染为「课名 @地点」，续节格只重复课程名。
+ * 仅首段携带课名和地点，续段留空，但保留完整无障碍语义。
  */
 final class ScheduleWidgetWeekData {
     private ScheduleWidgetWeekData() {
@@ -30,19 +31,26 @@ final class ScheduleWidgetWeekData {
 
     /** 单个课程格：text 为课程名；color 为格子底色，0 表示空格（隐藏底图）。 */
     static final class Cell {
-        static final Cell EMPTY = new Cell("", 0, "", false);
+        static final Cell EMPTY = new Cell("", "", 0, "", false, false);
         final String text;
+        /** 完整课程名；续段视觉文字留空时仍供无障碍描述使用。 */
+        final String courseName;
         final int color;
         /** 上课地点（取课程级地点）；空格与无地点课程为空串。 */
         final String location;
         /** 是否为该课程的起始节次（决定此格是否展示地点行）。 */
         final boolean startOfCourse;
+        /** 是否为该课程的末节（决定底部圆角）。 */
+        final boolean endOfCourse;
 
-        Cell(String text, int color, String location, boolean startOfCourse) {
+        Cell(String text, String courseName, int color, String location,
+             boolean startOfCourse, boolean endOfCourse) {
             this.text = text;
+            this.courseName = courseName;
             this.color = color;
             this.location = location;
             this.startOfCourse = startOfCourse;
+            this.endOfCourse = endOfCourse;
         }
     }
 
@@ -73,7 +81,6 @@ final class ScheduleWidgetWeekData {
             return Collections.emptyList();
         }
         CourseTimeResolver.Settings settings = settings(config);
-        int todayDay = CourseTimeResolver.mondayBasedDay(now);
         Map<String, Integer> colors = ScheduleWidgetData.buildCourseColors(source);
         int sectionCount = Math.max(1, Math.min(20, config.sectionCount));
 
@@ -94,18 +101,81 @@ final class ScheduleWidgetWeekData {
                 } else {
                     anyCourse = true;
                     boolean startOfCourse = picked.startSection == section;
+                    boolean endOfCourse = picked.endSection == section;
+                    String courseName = safeName(picked);
                     row.cells[day] = new Cell(
-                            safeName(picked), ScheduleWidgetData.courseColor(picked, colors),
-                            startOfCourse ? safeLocation(picked) : "", startOfCourse);
+                            startOfCourse ? courseName : "", courseName,
+                            ScheduleWidgetData.courseColor(picked, colors),
+                            startOfCourse ? safeLocation(picked) : "",
+                            startOfCourse, endOfCourse);
                 }
-            }
-            // 今天列的课程格在空格上保留一层淡强调底，让「今天」在网格中可辨。
-            if (row.cells[todayDay] == Cell.EMPTY) {
-                row.cells[todayDay] = new Cell("", todayColumnTint(), "", false);
             }
             rows.add(row);
         }
         return anyCourse ? rows : Collections.emptyList();
+    }
+
+    /**
+     * 计算周视图每次刷新时应停留的首行：优先当前正在上的课程，其次是今天下一门课，
+     * 今天课程已结束时停在最后一门课；今天没有课程时才按当前时间轴定位。
+     * 返回值是 ListView 的零基行号。
+     */
+    static int autoScrollPosition(
+            List<Course> source, ScheduleRepository.Config config, Calendar now) {
+        if (source == null || config == null || now == null) {
+            return 0;
+        }
+        int week = CourseTimeResolver.weekForDate(config.firstWeekDay, now);
+        if (week < 1 || week > Math.max(1, config.semesterWeeks)) {
+            return 0;
+        }
+
+        int sectionCount = Math.max(1, Math.min(20, config.sectionCount));
+        int today = CourseTimeResolver.mondayBasedDay(now);
+        int nowMinutes = CourseTimeResolver.minutesOfDay(now);
+        CourseTimeResolver.Settings settings = settings(config);
+        Course current = null;
+        CourseTimeResolver.TimeRange currentRange = null;
+        Course next = null;
+        CourseTimeResolver.TimeRange nextRange = null;
+        Course last = null;
+        CourseTimeResolver.TimeRange lastRange = null;
+
+        for (Course course : source) {
+            if (course == null || course.isBannerOnlyCourse()
+                    || !course.hasScheduledTime() || course.day != today
+                    || !CourseTimeResolver.isActiveInWeek(course, week)) {
+                continue;
+            }
+            CourseTimeResolver.TimeRange range = CourseTimeResolver.timeRange(course, settings);
+            if (range == null) {
+                continue;
+            }
+            if (range.startMinutes <= nowMinutes && nowMinutes < range.endMinutes
+                    && (currentRange == null || range.endMinutes < currentRange.endMinutes)) {
+                current = course;
+                currentRange = range;
+            }
+            if (range.startMinutes > nowMinutes
+                    && (nextRange == null || range.startMinutes < nextRange.startMinutes)) {
+                next = course;
+                nextRange = range;
+            }
+            if (lastRange == null || range.startMinutes > lastRange.startMinutes
+                    || (range.startMinutes == lastRange.startMinutes
+                    && range.endMinutes > lastRange.endMinutes)) {
+                last = course;
+                lastRange = range;
+            }
+        }
+
+        Course target = current != null ? current : (next != null ? next : last);
+        CourseTimeResolver.TimeRange targetRange = current != null
+                ? currentRange : (next != null ? nextRange : lastRange);
+        if (target != null && targetRange != null) {
+            return targetRow(target, targetRange, settings, sectionCount);
+        }
+        return sectionRowAtMinute(settings, nowMinutes, sectionCount);
     }
 
     /** 选定某天某节次上的课程：同时段重叠时取开始最早的课程，与看板行为一致。 */
@@ -149,14 +219,6 @@ final class ScheduleWidgetWeekData {
         return dates;
     }
 
-    /**
-     * 今天列空格的淡强调底色：与「回到本周」按钮同为品牌蓝的浅底，
-     * 在浅色/深色小组件底上均保持可辨识但不喧宾。
-     */
-    static int todayColumnTint() {
-        return 0x1A3E8BFF;
-    }
-
     private static CourseTimeResolver.Settings settings(ScheduleRepository.Config config) {
         return new CourseTimeResolver.Settings(
                 config.firstClassStartTime,
@@ -172,6 +234,42 @@ final class ScheduleWidgetWeekData {
         int hour = minutesOfDay / 60;
         int minute = minutesOfDay % 60;
         return (hour < 10 ? "0" : "") + hour + ":" + (minute < 10 ? "0" : "") + minute;
+    }
+
+    private static int targetRow(Course course, CourseTimeResolver.TimeRange range,
+                                 CourseTimeResolver.Settings settings, int sectionCount) {
+        int section = course.hasSectionTime()
+                ? course.startSection : sectionAtMinute(settings, range.startMinutes, sectionCount);
+        return clamp(section - 1, 0, sectionCount - 1);
+    }
+
+    private static int sectionRowAtMinute(CourseTimeResolver.Settings settings,
+                                           int minute, int sectionCount) {
+        return sectionAtMinute(settings, minute, sectionCount) - 1;
+    }
+
+    private static int sectionAtMinute(CourseTimeResolver.Settings settings,
+                                       int minute, int sectionCount) {
+        int closest = 1;
+        for (int section = 1; section <= sectionCount; section++) {
+            CourseTimeResolver.TimeRange range =
+                    CourseTimeResolver.sectionTimeRange(settings, section);
+            if (range == null) {
+                continue;
+            }
+            if (minute < range.startMinutes) {
+                return section;
+            }
+            if (minute < range.endMinutes) {
+                return section;
+            }
+            closest = section;
+        }
+        return closest;
+    }
+
+    private static int clamp(int value, int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 
     private static String safeName(Course course) {

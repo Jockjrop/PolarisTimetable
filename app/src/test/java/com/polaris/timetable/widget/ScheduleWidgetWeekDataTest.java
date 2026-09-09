@@ -26,10 +26,15 @@ public class ScheduleWidgetWeekDataTest {
                 date(2026, Calendar.MARCH, 2), 5);
 
         assertEquals(config.sectionCount, rows.size());
-        // 跨节课程在覆盖的每个节次行重复占格（第1、2节）。
+        // 跨节课程在数据上仍覆盖第1、2节，但续段不重复文字。
         assertEquals("高等数学", rows.get(0).cells[0].text);
-        assertEquals("高等数学", rows.get(1).cells[0].text);
+        assertEquals("", rows.get(1).cells[0].text);
+        assertEquals("高等数学", rows.get(1).cells[0].courseName);
         assertEquals(rows.get(0).cells[0].color, rows.get(1).cells[0].color);
+        assertTrue(rows.get(0).cells[0].startOfCourse);
+        assertTrue(!rows.get(0).cells[0].endOfCourse);
+        assertTrue(!rows.get(1).cells[0].startOfCourse);
+        assertTrue(rows.get(1).cells[0].endOfCourse);
         // 第3节同列应为空格。
         assertEquals("", rows.get(2).cells[0].text);
         assertEquals("大学物理", rows.get(5).cells[4].text);
@@ -93,7 +98,8 @@ public class ScheduleWidgetWeekDataTest {
                 date(2026, Calendar.MARCH, 2), 5);
 
         // 第2节同时被两门课覆盖：开始更早的高等数学占格。
-        assertEquals("高等数学", rows.get(1).cells[0].text);
+        assertEquals("高等数学", rows.get(1).cells[0].courseName);
+        assertEquals("", rows.get(1).cells[0].text);
     }
 
     @Test
@@ -134,9 +140,10 @@ public class ScheduleWidgetWeekDataTest {
     }
 
     @Test
-    public void buildRows_todayEmptyColumnGetsTintAndNoText() {
+    public void buildRows_todayEmptyColumnStaysEmptyForContinuousOverlay() {
         ScheduleRepository.Config config = config();
-        // 2026/3/2 是周一（todayDay=0）：当天无课时，今天列空格应有淡强调底。
+        // 2026/3/2 是周一（todayDay=0）：今天列的连续底由周视图容器整体绘制，
+        // 行数据不再为每一节生成独立色块。
         Course tuesdayOnly = course(1, 1, 1, "大学英语", "1-2周");
         List<ScheduleWidgetWeekData.Row> rows = ScheduleWidgetWeekData.buildRows(
                 Collections.singletonList(tuesdayOnly), config,
@@ -144,8 +151,39 @@ public class ScheduleWidgetWeekDataTest {
 
         ScheduleWidgetWeekData.Cell todayCell = rows.get(0).cells[0];
         assertEquals("", todayCell.text);
-        assertEquals(ScheduleWidgetWeekData.todayColumnTint(), todayCell.color);
+        assertEquals(0, todayCell.color);
         assertEquals("", todayCell.location);
+    }
+
+    @Test
+    public void autoScrollPosition_followsOngoingCourse() {
+        ScheduleRepository.Config config = config();
+        Calendar now = dateTime(2026, Calendar.MARCH, 2, 9, 10);
+        Course morning = course(0, 1, 2, "高等数学", "1-2周");
+
+        assertEquals(0, ScheduleWidgetWeekData.autoScrollPosition(
+                Collections.singletonList(morning), config, now));
+    }
+
+    @Test
+    public void autoScrollPosition_followsNextCourseAfterCurrentOne() {
+        ScheduleRepository.Config config = config();
+        Calendar now = dateTime(2026, Calendar.MARCH, 2, 10, 0);
+        Course afternoon = course(0, 5, 6, "大学物理", "1-2周");
+
+        assertEquals(4, ScheduleWidgetWeekData.autoScrollPosition(
+                Collections.singletonList(afternoon), config, now));
+    }
+
+    @Test
+    public void autoScrollPosition_usesCurrentTimeWhenTodayHasNoCourse() {
+        ScheduleRepository.Config config = config();
+        Calendar now = dateTime(2026, Calendar.MARCH, 2, 10, 0);
+        Course tuesday = course(1, 1, 1, "大学英语", "1-2周");
+
+        // 10:00 位于第2节结束与第3节开始之间，停在下一节第3行。
+        assertEquals(2, ScheduleWidgetWeekData.autoScrollPosition(
+                Collections.singletonList(tuesday), config, now));
     }
 
     @Test
@@ -187,6 +225,13 @@ public class ScheduleWidgetWeekDataTest {
         Calendar date = Calendar.getInstance();
         date.set(year, month, day, 12, 0, 0);
         date.set(Calendar.MILLISECOND, 0);
+        return date;
+    }
+
+    private Calendar dateTime(int year, int month, int day, int hour, int minute) {
+        Calendar date = date(year, month, day);
+        date.set(Calendar.HOUR_OF_DAY, hour);
+        date.set(Calendar.MINUTE, minute);
         return date;
     }
 }

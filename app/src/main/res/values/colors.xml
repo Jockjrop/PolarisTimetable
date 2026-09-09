@@ -9,4 +9,5 @@
     <color name="widget_text_main">#172033</color>
     <color name="widget_text_muted">#667085</color>
     <color name="widget_divider">#D9DFEA</color>
+    <color name="widget_today_column">#1A3E8BFF</color>
 </resources>

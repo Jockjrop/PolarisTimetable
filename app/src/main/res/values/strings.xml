@@ -331,14 +331,9 @@
     <string name="update_error_no_installer">系统没有可用的安装器</string>
     <string name="update_error_storage_write">更新文件写入失败</string>
 
-    <!-- 版本信息行点击弹窗：展示上一版本到当前版本的更新内容（随发版同步维护）。 -->
+    <!-- 版本信息行点击弹窗；内容由 app/build.gradle 从当前版本
+         docs/releases/<version>.md 生成，不在此处重复维护。 -->
     <string name="release_notes_title">版本 %1$s 更新内容</string>
-    <string-array name="release_notes_current">
-        <item>修复多课表场景下桌面小组件刷新闹钟只跟随激活课表的问题：现在按所有已绑定课表汇总最近的上下课边界</item>
-        <item>备份格式升级至 V2：备份并恢复每个课表的学习计划、考试/DDL 等事件和设置，恢复前完整校验，V1 备份仍可读取</item>
-        <item>固化西邮、西理工、杭电三校匿名 PDF 回归样例，修正西邮课表左侧纯节次行标题被误判为课程的问题</item>
-        <item>清理应用自有 Lint 告警：复用自绘路径、Toast 改用弱引用并补齐水平滑动控件的 performClick</item>
-    </string-array>
 
     <!-- 我的页与账户/背景/头像弹窗。
          注意:设置入口卡片标题(课表设置等)复用页面路由标识;"管理员"是持久化默认账户名,均保持字面量。 -->

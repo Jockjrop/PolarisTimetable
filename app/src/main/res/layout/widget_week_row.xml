@@ -2,7 +2,7 @@
 <!-- 整周课表小组件的单节次行：时间列（节号 + 上课时间）+ 最多 7 个课程格。
      格子为 FrameLayout：圆角底 ImageView 由远程视图 setColorFilter 染成课程色
      （与今日列表 widget_course_accent 同款反射染色），文字叠于其上；
-     空格隐藏底图，今天列的空格染品牌蓝淡底。 -->
+     空格隐藏底图，今天列的连续强调底由 widget_week.xml 的列表容器绘制。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_week_row"
     android:layout_width="match_parent"
@@ -42,8 +42,6 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="2dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp"
         android:layout_weight="1">
 
         <ImageView
@@ -73,8 +71,6 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="2dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp"
         android:layout_weight="1">
 
         <ImageView
@@ -104,8 +100,6 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="2dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp"
         android:layout_weight="1">
 
         <ImageView
@@ -135,8 +129,6 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="2dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp"
         android:layout_weight="1">
 
         <ImageView
@@ -166,8 +158,6 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="2dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp"
         android:layout_weight="1">
 
         <ImageView
@@ -197,8 +187,6 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="2dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp"
         android:layout_weight="1">
 
         <ImageView
@@ -228,8 +216,6 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="2dp"
-        android:layout_marginTop="2dp"
-        android:layout_marginBottom="2dp"
         android:layout_weight="1">
 
         <ImageView
