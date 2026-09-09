@@ -20,6 +20,12 @@
         <item name="android:textStyle">normal</item>
     </style>
 
+    <!-- 整周小组件大号日期行；比今日标题更醒目，对照 WakeUp 式表头层级。 -->
+    <style name="TextAppearance.Polaris.Widget.TitleLarge">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
     <style name="TextAppearance.Polaris.Widget.TitleSmall">
         <item name="android:textSize">12sp</item>
         <item name="android:textStyle">bold</item>
@@ -36,5 +42,15 @@
 
     <style name="TextAppearance.Polaris.Widget.BodySmall">
         <item name="android:textSize">11sp</item>
+    </style>
+
+    <!-- 整周网格时间列等极小注记（10sp），避免 30dp 窄列内时间被截断。 -->
+    <style name="TextAppearance.Polaris.Widget.BodyTiny">
+        <item name="android:textSize">10sp</item>
+    </style>
+
+    <style name="TextAppearance.Polaris.Widget.BodySmallEmphasized">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
     </style>
 </resources>

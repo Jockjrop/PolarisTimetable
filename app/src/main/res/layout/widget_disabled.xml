@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    桌面小组件开关（全局设置）关闭后的占位态：应用无法从桌面移除已放置的
+    小组件（格子由 launcher 管理），因此渲染可见提示引导用户长按手动移除。
+    不挂远程列表，也不参与刷新闹钟。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_disabled_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_schedule_background"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/widget_disabled_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:text="@string/widget_disabled_text"
+        android:textAppearance="@style/TextAppearance.Polaris.Widget.BodyMedium"
+        android:textColor="@color/widget_text_muted" />
+</FrameLayout>

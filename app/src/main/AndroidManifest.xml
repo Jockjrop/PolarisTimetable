@@ -76,6 +76,24 @@
         </receiver>
 
         <receiver
+            android:name=".widget.WeekScheduleWidgetProvider"
+            android:exported="false"
+            android:label="@string/week_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.polaris.timetable.action.SCHEDULE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/week_schedule_widget_info" />
+        </receiver>
+
+        <receiver
             android:name=".reminder.CourseReminderReceiver"
             android:exported="false">
             <intent-filter>

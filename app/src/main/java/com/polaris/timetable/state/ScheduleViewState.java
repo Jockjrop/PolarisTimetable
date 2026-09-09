@@ -53,6 +53,8 @@ public class ScheduleViewState {
     public int bottomNavHeight = DesignTokens.NAV_HEIGHT_DEFAULT;
     public int bottomNavRectCornerRadius = 58;
     public boolean shellBarsBlurEnabled = true;
+    /** 壳层顶/底栏样式：「默认」悬浮玻璃，「常规」贴边矩形。 */
+    public String shellBarStyle = "默认";
     public String semesterName = "";
     public String schoolName = "";
     public String darkMode = "跟随系统";
@@ -112,6 +114,7 @@ public class ScheduleViewState {
                 ? 60 : Math.max(56, Math.min(120, config.bottomNavHeight));
         bottomNavRectCornerRadius = Math.max(0, Math.min(72, config.bottomNavRectCornerRadius));
         shellBarsBlurEnabled = config.shellBarsBlurEnabled;
+        shellBarStyle = "常规".equals(config.shellBarStyle) ? "常规" : "默认";
         darkMode = config.darkMode;
     }
 
@@ -158,6 +161,7 @@ public class ScheduleViewState {
         config.bottomNavCornerRadius = bottomNavRectCornerRadius;
         config.bottomNavRectCornerRadius = bottomNavRectCornerRadius;
         config.shellBarsBlurEnabled = shellBarsBlurEnabled;
+        config.shellBarStyle = shellBarStyle;
     }
 
     // ===== 归一化与辅助逻辑（原 MainActivity 私有方法，原样迁移，保持行为一致） =====

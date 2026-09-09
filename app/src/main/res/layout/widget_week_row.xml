@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 整周课表小组件的单节次行：时间列（节号 + 上课时间）+ 最多 7 个课程格。
+     格子为 FrameLayout：圆角底 ImageView 由远程视图 setColorFilter 染成课程色
+     （与今日列表 widget_course_accent 同款反射染色），文字叠于其上；
+     空格隐藏底图，今天列的空格染品牌蓝淡底。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_week_row"
+    android:layout_width="match_parent"
+    android:layout_height="44dp"
+    android:orientation="horizontal">
+
+    <LinearLayout
+        android:layout_width="30dp"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_week_section_num"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmallEmphasized"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_section_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodyTiny"
+            android:textColor="@color/widget_text_muted" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_week_cell_0"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_week_cell_bg_0"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitXY"
+            android:src="@drawable/widget_week_cell_bg" />
+
+        <TextView
+            android:id="@+id/widget_week_cell_text_0"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_main" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_week_cell_1"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_week_cell_bg_1"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitXY"
+            android:src="@drawable/widget_week_cell_bg" />
+
+        <TextView
+            android:id="@+id/widget_week_cell_text_1"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_main" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_week_cell_2"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_week_cell_bg_2"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitXY"
+            android:src="@drawable/widget_week_cell_bg" />
+
+        <TextView
+            android:id="@+id/widget_week_cell_text_2"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_main" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_week_cell_3"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_week_cell_bg_3"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitXY"
+            android:src="@drawable/widget_week_cell_bg" />
+
+        <TextView
+            android:id="@+id/widget_week_cell_text_3"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_main" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_week_cell_4"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_week_cell_bg_4"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitXY"
+            android:src="@drawable/widget_week_cell_bg" />
+
+        <TextView
+            android:id="@+id/widget_week_cell_text_4"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_main" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_week_cell_5"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_week_cell_bg_5"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitXY"
+            android:src="@drawable/widget_week_cell_bg" />
+
+        <TextView
+            android:id="@+id/widget_week_cell_text_5"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_main" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/widget_week_cell_6"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/widget_week_cell_bg_6"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitXY"
+            android:src="@drawable/widget_week_cell_bg" />
+
+        <TextView
+            android:id="@+id/widget_week_cell_text_6"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:paddingStart="3dp"
+            android:paddingEnd="3dp"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_main" />
+    </FrameLayout>
+</LinearLayout>

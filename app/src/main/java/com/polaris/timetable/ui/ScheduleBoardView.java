@@ -700,9 +700,7 @@ public class ScheduleBoardView extends FrameLayout {
                 continue;
             }
             addTimeLabel(board, section, week);
-            addRowLine(board, section, week);
         }
-        addLunchHourLines(board, week);
         addLunchHourLabels(board, week);
         List<Course> visibleCourses = displayCourses(week);
         Map<Course, SlotLayout> layouts = slotLayouts(visibleCourses);
@@ -928,49 +926,6 @@ public class ScheduleBoardView extends FrameLayout {
         board.addView(box, params);
     }
 
-    private void addRowLine(FrameLayout board, int section, int week) {
-        View line = new View(getContext());
-        int top = sectionTop(section, week);
-        line.setBackgroundColor(PolarisVisualTheme.gridLineColor(visualTheme, darkMode));
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dayWidth * visibleDayCount, dp(1));
-        params.leftMargin = boardContentOffset + timeWidth;
-        params.topMargin = top;
-        board.addView(line, params);
-    }
-
-    /**
-     * Draws horizontal grid lines at whole hours inside the lunch break region
-     * (e.g. 13:00 and 14:00 between the morning and afternoon sections), so the
-     * empty midday band still carries hour marks. Skipped when the lunch break
-     * is collapsed (no visible region) or when the hour coincides with a
-     * section boundary line.
-     */
-    private void addLunchHourLines(FrameLayout board, int week) {
-        if (timeAxis == null || timeAxis.lunchStartMinute < 0
-                || timeAxis.lunchEndMinute <= timeAxis.lunchStartMinute
-                || timeAxis.isLunchBreakCollapsed()) {
-            return;
-        }
-        int firstHour = timeAxis.lunchStartMinute / 60 + 1;
-        int lastHour = (timeAxis.lunchEndMinute - 1) / 60;
-        for (int hour = firstHour; hour <= lastHour; hour++) {
-            int minute = hour * 60;
-            if (minute <= timeAxis.startMinute || minute >= timeAxis.endMinute) {
-                continue;
-            }
-            if (minuteOnSectionBoundary(minute)) {
-                continue;
-            }
-            View line = new View(getContext());
-            line.setBackgroundColor(PolarisVisualTheme.gridLineColor(visualTheme, darkMode));
-            FrameLayout.LayoutParams params =
-                    new FrameLayout.LayoutParams(dayWidth * visibleDayCount, dp(1));
-            params.leftMargin = boardContentOffset + timeWidth;
-            params.topMargin = bodyTop(week) + timeAxis.yForMinute(minute);
-            board.addView(line, params);
-        }
-    }
-
     /**
      * 午休区（未折叠时）时间列的整点标注：每个完整的整点区间（如 13:00–14:00）
      * 显示「整点到下一整点」两行时间，与节次时间的 start/end 样式一致；
@@ -1006,20 +961,6 @@ public class ScheduleBoardView extends FrameLayout {
             params.topMargin = top;
             board.addView(time, params);
         }
-    }
-
-    private boolean minuteOnSectionBoundary(int minute) {
-        for (int section = 1; section <= sectionCount; section++) {
-            CourseTimeResolver.TimeRange range =
-                    CourseTimeResolver.sectionTimeRange(classTimeSettings, section);
-            if (range == null) {
-                continue;
-            }
-            if (range.startMinutes == minute || range.endMinutes == minute) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private int boardHeight(int week) {

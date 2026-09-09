@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 整周课表小组件：大号日期 + 「课表名 | 第N周 星期」信息行 +
+     「月份 + 单字星期 + 日期号」表头 + 按节次滚动的课程网格。
+     月份槽宽与 widget_week_row 的 30dp 时间列对齐；星期列 5/6/7 个由远程视图按配置隐藏。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_week_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_schedule_background"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <TextView
+        android:id="@+id/widget_week_date"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:text="2026/9/9"
+        android:textAppearance="@style/TextAppearance.Polaris.Widget.TitleLarge"
+        android:textColor="@color/widget_text_main" />
+
+    <TextView
+        android:id="@+id/widget_week_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:text="第1周 周一"
+        android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+        android:textColor="@color/widget_text_muted" />
+
+    <LinearLayout
+        android:id="@+id/widget_week_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_week_month"
+            android:layout_width="30dp"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="9月"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_day_0"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="一"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_day_1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="二"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_day_2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="三"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_day_3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="四"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_day_4"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="五"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_day_5"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="六"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+
+        <TextView
+            android:id="@+id/widget_week_day_6"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="2"
+            android:text="日"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:textColor="@color/widget_text_muted" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@+id/widget_week_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="0dp"
+            android:overScrollMode="never"
+            android:scrollbars="none" />
+
+        <TextView
+            android:id="@+id/widget_week_empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/widget_week_empty"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodyMedium"
+            android:textColor="@color/widget_text_muted" />
+    </FrameLayout>
+</LinearLayout>

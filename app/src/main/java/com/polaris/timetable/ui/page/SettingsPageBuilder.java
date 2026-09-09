@@ -6,7 +6,9 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.InsetDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -32,6 +34,8 @@ public class SettingsPageBuilder {
         String visualTheme();
         int inkColor();
         int mutedColor();
+        /** 设置页分组卡内行分隔线颜色。 */
+        int dividerColor();
         String groupColorHex();
         String cardColorHex();
         String pressColorHex();
@@ -80,6 +84,10 @@ public class SettingsPageBuilder {
         boolean showPracticeBanner();
         boolean collapseLunchBreak();
         boolean shellBlurEnabled();
+        /** 顶/底栏样式显示值：「默认」或「常规」。 */
+        String shellBarStyle();
+        /** 桌面小组件总开关（全局设置 → 桌面小组件）。 */
+        boolean widgetEnabled();
         int headerOpacity();
         int navOpacity();
         int navHeight();
@@ -96,6 +104,8 @@ public class SettingsPageBuilder {
         void onShowPracticeChanged(boolean value);
         void onCollapseLunchChanged(boolean value);
         void onShellBlurChanged(boolean value);
+        void onShellBarStyleClicked(View anchor);
+        void onWidgetEnabledChanged(boolean value);
         void onHeaderOpacityClicked(View anchor);
         void onNavOpacityClicked(View anchor);
         void onNavHeightClicked(View anchor);
@@ -146,8 +156,11 @@ public class SettingsPageBuilder {
         header.setTag("settings_header");
         header.setText(text);
         header.setTextColor(host.mutedColor());
-        header.setTextSize(15);
-        header.setPadding(dp(context, 10), dp(context, 22), dp(context, 10), dp(context, 8));
+        // 13sp + 字距的章节标签更有层次；左 20 与分组卡内行文字起始对齐
+        //（页面边距 12/16 + 卡内边距 10 + 行内边距 10），不再悬挂在页面边缘。
+        header.setTextSize(13);
+        header.setLetterSpacing(0.07f);
+        header.setPadding(dp(context, 20), dp(context, 24), dp(context, 10), dp(context, 6));
         return header;
     }
 
@@ -157,6 +170,12 @@ public class SettingsPageBuilder {
         group.setOrientation(LinearLayout.VERTICAL);
         group.setPadding(dp(context, 10), dp(context, 10), dp(context, 10), dp(context, 10));
         group.setBackground(host.roundedBg(host.groupColorHex(), host.isMinimalVisualTheme() ? 18 : 22));
+        // 组内行分隔线：内凹 20dp 与行文字起始位对齐（组内边距 10 + 行内边距 10），
+        // 避免多行设置项在浅色卡面上糊成一块。
+        int dividerInset = dp(context, 20);
+        group.setDividerDrawable(new InsetDrawable(
+                new ColorDrawable(host.dividerColor()), dividerInset, 0, dividerInset, 0));
+        group.setShowDividers(LinearLayout.SHOW_DIVIDER_MIDDLE);
         if (!host.isMinimalVisualTheme()) {
             host.applyThemeElevation(group, 2);
         }
@@ -184,7 +203,9 @@ public class SettingsPageBuilder {
         labelView.setTextSize(16);
         labelView.setTypeface(Typeface.DEFAULT_BOLD);
         labelView.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(labelView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        labelView.setSingleLine(true);
+        row.addView(labelView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView valueView = new TextView(context);
         valueView.setTag("setting_value");
@@ -192,8 +213,12 @@ public class SettingsPageBuilder {
         valueView.setTextColor(host.mutedColor());
         valueView.setTextSize(15);
         valueView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        valueView.setSingleLine(false);
-        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(dp(context, 150), LinearLayout.LayoutParams.WRAP_CONTENT);
+        // 值列不再写死 150dp：长值（网址/邮箱）此前在固定列宽中断行出孤立尾行；
+        // 改为吃满标签剩余宽度，超两行才省略，短值仍保持右对齐。
+        valueView.setMaxLines(2);
+        valueView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         valueParams.leftMargin = dp(context, 10);
         row.addView(valueView, valueParams);
         return row;
@@ -358,6 +383,12 @@ public class SettingsPageBuilder {
         displayCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_collapse_lunch), host.collapseLunchBreak(), host::onCollapseLunchChanged));
         panel.addView(displayCard);
 
+        panel.addView(sectionHeader(context, context.getString(R.string.settings_section_widget)));
+        LinearLayout widgetCard = settingsGroup(context);
+        widgetCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_widget),
+                host.widgetEnabled(), host::onWidgetEnabledChanged));
+        panel.addView(widgetCard);
+
         LinearLayout advancedCard = settingsGroup(context);
 
         LinearLayout advancedContainer = new LinearLayout(context);
@@ -386,6 +417,8 @@ public class SettingsPageBuilder {
 
     public LinearLayout buildAdvancedShellSettings(Context context) {
         LinearLayout shellCard = settingsGroup(context);
+        shellCard.addView(settingValueRow(context, context.getString(R.string.settings_row_shell_bar_style),
+                host.shellBarStyle(), host::onShellBarStyleClicked));
         shellCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_shell_blur), host.shellBlurEnabled(), host::onShellBlurChanged));
         shellCard.addView(settingValueRow(context, context.getString(R.string.settings_row_header_opacity),
                 context.getString(R.string.settings_percent_value, host.headerOpacity()),

@@ -807,6 +807,8 @@ public class ScheduleRepository {
         public int bottomNavSideCornerRadius = 58;
         public int bottomNavSideMargin = 10;
         public boolean shellBarsBlurEnabled = true;
+        /** 壳层顶/底栏样式：「默认」悬浮玻璃，「常规」贴边矩形。 */
+        public String shellBarStyle = "默认";
 
         JSONObject toJson() {
             JSONObject object = new JSONObject();
@@ -854,6 +856,7 @@ public class ScheduleRepository {
                 object.put("bottomNavSideCornerRadius", bottomNavSideCornerRadius);
                 object.put("bottomNavSideMargin", bottomNavSideMargin);
                 object.put("shellBarsBlurEnabled", shellBarsBlurEnabled);
+                object.put("shellBarStyle", shellBarStyle);
             } catch (JSONException exception) {
                 Log.e(TAG, "Unable to serialize schedule configuration", exception);
             }
@@ -923,6 +926,7 @@ public class ScheduleRepository {
             config.bottomNavSideCornerRadius = object.optInt("bottomNavSideCornerRadius", config.bottomNavSideCornerRadius);
             config.bottomNavSideMargin = object.optInt("bottomNavSideMargin", config.bottomNavSideMargin);
             config.shellBarsBlurEnabled = object.optBoolean("shellBarsBlurEnabled", config.shellBarsBlurEnabled);
+            config.shellBarStyle = object.optString("shellBarStyle", config.shellBarStyle);
             return config;
         }
 

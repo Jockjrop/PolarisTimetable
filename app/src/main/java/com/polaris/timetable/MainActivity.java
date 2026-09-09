@@ -136,6 +136,9 @@ import com.polaris.timetable.ui.UpdateReadyBadgeView;
 import com.polaris.timetable.ui.WindowSizeClass;
 import com.polaris.timetable.ui.TodayOverviewView;
 import com.polaris.timetable.ui.WeekNavigationController;
+import com.polaris.timetable.widget.ScheduleWidgetConfigActivity;
+import com.polaris.timetable.widget.ScheduleWidgetProvider;
+import com.polaris.timetable.widget.WeekScheduleWidgetProvider;
 import com.polaris.timetable.ui.page.MyPageBuilder;
 import com.polaris.timetable.ui.page.PlanPageBuilder;
 import com.polaris.timetable.ui.page.SettingsPageBuilder;
@@ -144,8 +147,7 @@ import com.polaris.timetable.update.UpdateDownloadState;
 import com.polaris.timetable.update.UpdateInfo;
 import com.polaris.timetable.update.UpdateInstaller;
 import com.polaris.timetable.update.UpdateJsonParser;
-import com.polaris.timetable.ui.shell.BottomNavView;
-import com.polaris.timetable.ui.WeekdayLabels;
+import com.polaris.timetable.ui.shell.BottomNavView;import com.polaris.timetable.ui.WeekdayLabels;
 import com.polaris.timetable.state.ScheduleSessionViewModel;
 import com.polaris.timetable.state.ScheduleViewState;
 
@@ -817,24 +819,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         rootView.addView(contentHost, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        FrameLayout.LayoutParams topParams;
-        if (isLandscapeTablet()) {
-            // 横屏平板：顶栏与课表网格右缘对齐，左侧留出页边距不贴屏幕边缘（1.27.7）。
-            int leftInset = tabletTopBarLeftInset();
-            topParams = new FrameLayout.LayoutParams(
-                    tabletTopBarWidth(), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP);
-            topParams.setMargins(leftInset, statusBarHeight() + dp(8), 0, 0);
-        } else {
-            topParams = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP);
-            topParams.setMargins(dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE)
-                            + systemLeftInset, statusBarHeight() + dp(DesignTokens.GAP_SHELL),
-                    dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE)
-                            + systemRightInset, 0);
-        }
         topPanelContainer = new FrameLayout(this);
-        topPanelGlassLayer = glassLayer(liquidGlassBg(scheduleViewState.timetableHeaderOpacity), DesignTokens.RADIUS_TOP_PANEL);
+        topPanelGlassLayer = glassLayer(liquidGlassBg(scheduleViewState.timetableHeaderOpacity),
+                topGlassRadius());
         topPanelContainer.addView(topPanelGlassLayer, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, 0));
         topPanelContainer.addView(topPanel, new FrameLayout.LayoutParams(
@@ -842,7 +829,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         topPanel.addOnLayoutChangeListener((view, left, top, right, bottom,
                                             oldLeft, oldTop, oldRight, oldBottom) ->
                 updateTopPanelLayout(bottom - top));
-        rootView.addView(topPanelContainer, topParams);
+        rootView.addView(topPanelContainer, topPanelLayoutParams());
 
         bottomNavView = bottomNav();
         rootView.addView(bottomNavView, bottomNavLayoutParams());
@@ -3894,8 +3881,10 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private GradientDrawable returnCurrentWeekBackground() {
         GradientDrawable background = floatingPanelBg(
                 scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_CARD);
-        float outerRadius = dp(Math.min(navVisualHeight() / 2,
-                Math.max(DesignTokens.RADIUS_CARD, bottomNavRadius())));
+        // 常规样式底栏贴边矩形，按钮外缘圆角随之归零。
+        float outerRadius = regularShellBars() ? 0f
+                : dp(Math.min(navVisualHeight() / 2,
+                        Math.max(DesignTokens.RADIUS_CARD, bottomNavRadius())));
         float innerRadius = dp(DesignTokens.RADIUS_CARD);
         background.setCornerRadii(new float[]{
                 outerRadius, outerRadius,
@@ -3911,18 +3900,22 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         int height = dp(navVisualHeight());
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 width, height, Gravity.BOTTOM | Gravity.START);
-        int bottom = dp(DesignTokens.NAV_FLOATING_MARGIN)
+        // 常规样式底栏贴边，按钮也随之贴到导航条上方。
+        int bottom = (regularShellBars() ? 0 : dp(DesignTokens.NAV_FLOATING_MARGIN))
                 + Math.max(systemBottomInset, 0);
         int left;
         if (isLandscapeTablet()) {
-            int navLeft = (getResources().getDisplayMetrics().widthPixels
-                    - dp(DesignTokens.NAV_TABLET_WIDTH)) / 2;
+            int navLeft = regularShellBars()
+                    ? 0
+                    : (getResources().getDisplayMetrics().widthPixels
+                            - dp(DesignTokens.NAV_TABLET_WIDTH)) / 2;
             left = Math.max(systemLeftInset,
                     navLeft - width - dp(RETURN_WEEK_CARD_GAP_DP));
         } else {
             boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
-            left = dp(tablet
-                    ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE)
+            left = (regularShellBars() ? 0
+                    : dp(tablet
+                            ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE))
                     + systemLeftInset + dp(BottomNavView.VISUAL_HORIZONTAL_INSET_DP);
         }
         params.setMargins(left, 0, 0, bottom);
@@ -3936,20 +3929,77 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
      */
 
     private FrameLayout.LayoutParams bottomNavLayoutParams() {
+        int bottomInset = Math.max(systemBottomInset, 0);
+        if (regularShellBars()) {
+            // 常规样式：上下栏贴边通栏，底栏只保留系统导航条避让。
+            if (isLandscapeTablet()) {
+                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()),
+                        Gravity.BOTTOM);
+                params.setMargins(0, 0, 0, bottomInset);
+                return params;
+            }
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()), Gravity.BOTTOM);
+            params.setMargins(0, 0, 0, bottomInset);
+            return params;
+        }
         if (isLandscapeTablet()) {
             // 底部导航：固定宽度、水平居中，不横跨全屏。
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                     dp(DesignTokens.NAV_TABLET_WIDTH), dp(navVisualHeight()),
                     Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            params.setMargins(0, 0, 0, dp(DesignTokens.NAV_FLOATING_MARGIN) + Math.max(systemBottomInset, 0));
+            params.setMargins(0, 0, 0, dp(DesignTokens.NAV_FLOATING_MARGIN) + bottomInset);
             return params;
         }
         boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
-        int bottomMargin = dp(DesignTokens.NAV_FLOATING_MARGIN) + Math.max(systemBottomInset, 0);
+        int bottomMargin = dp(DesignTokens.NAV_FLOATING_MARGIN) + bottomInset;
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, dp(navVisualHeight()), Gravity.BOTTOM);
         int side = dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE);
         params.setMargins(side + systemLeftInset, 0, side + systemRightInset, bottomMargin);
+        return params;
+    }
+
+    /** 顶/底栏样式是否为「常规」（贴边矩形，区别于默认的悬浮玻璃）。 */
+    private boolean regularShellBars() {
+        return "常规".equals(scheduleViewState.shellBarStyle);
+    }
+
+    /** 常规样式顶栏圆角归零；默认样式保持顶栏玻璃圆角令牌。 */
+    private int topGlassRadius() {
+        return regularShellBars() ? 0 : DesignTokens.RADIUS_TOP_PANEL;
+    }
+
+    /**
+     * 顶栏容器参数。常规样式通栏贴顶（仅保留状态栏避让）；
+     * 默认样式维持原有页边距 + 玻璃悬浮（平板横屏与网格右缘对齐）。
+     */
+    private FrameLayout.LayoutParams topPanelLayoutParams() {
+        if (regularShellBars()) {
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP);
+            params.setMargins(0, statusBarHeight(), 0, 0);
+            return params;
+        }
+        FrameLayout.LayoutParams params;
+        if (isLandscapeTablet()) {
+            // 横屏平板：顶栏与课表网格右缘对齐，左侧留出页边距不贴屏幕边缘（1.27.7）。
+            int leftInset = tabletTopBarLeftInset();
+            params = new FrameLayout.LayoutParams(
+                    tabletTopBarWidth(), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP);
+            params.setMargins(leftInset, statusBarHeight() + dp(8), 0, 0);
+        } else {
+            boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
+            params = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP);
+            params.setMargins(dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE)
+                            + systemLeftInset, statusBarHeight() + dp(DesignTokens.GAP_SHELL),
+                    dp(tablet ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE)
+                            + systemRightInset, 0);
+        }
         return params;
     }
 
@@ -4258,7 +4308,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public int navRadius() {
-        return bottomNavRadius();
+        // 常规样式顶/底栏为贴边矩形，圆角归零（不影响默认样式的圆角设置行）。
+        return regularShellBars() ? 0 : bottomNavRadius();
     }
 
     @Override
@@ -4841,6 +4892,95 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleViewState.shellBarsBlurEnabled = value;
         saveGlobalAppearance();
         applyShellAppearance();
+    }
+
+    @Override
+    public String shellBarStyle() {
+        return scheduleViewState.shellBarStyle;
+    }
+
+    @Override
+    public void onShellBarStyleClicked(View anchor) {
+        appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_shell_bar_style),
+                new String[]{getString(R.string.settings_shell_style_default),
+                        getString(R.string.settings_shell_style_regular)},
+                scheduleViewState.shellBarStyle,
+                value -> {
+                    scheduleViewState.shellBarStyle = value;
+                    saveGlobalAppearance();
+                    applyShellAppearance();
+                    SettingsPageBuilder.updateSettingValueRow(anchor, value);
+                });
+    }
+
+    @Override
+    public boolean widgetEnabled() {
+        return ScheduleWidgetConfigActivity.widgetEnabled(this);
+    }
+
+    @Override
+    public void onWidgetEnabledChanged(boolean value) {
+        ScheduleWidgetConfigActivity.setWidgetEnabled(this, value);
+        // 两种形态统一重渲染：关闭显示「已关闭」占位并取消刷新闹钟，开启立即恢复；
+        // 小组件的添加与移除始终由用户在桌面完成，这里只做操作指引弹窗。
+        ScheduleWidgetProvider.updateAll(this);
+        WeekScheduleWidgetProvider.updateAll(this);
+        showWidgetToggleHint(value);
+    }
+
+    /**
+     * 开关后的操作指引：开启说明如何从桌面「小组件」选择器自行添加并选择视图，
+     * 关闭提醒去桌面长按移除已放置的小组件（应用无法代删）。
+     */
+    private void showWidgetToggleHint(boolean enabled) {
+        Dialog dialog = new Dialog(this);
+        FrameLayout root = new FrameLayout(this);
+        root.setOnClickListener(v -> dialog.dismiss());
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(14), dp(18), dp(14));
+        panel.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_DIALOG_SHEET));
+        panel.setOnClickListener(v -> {});
+
+        TextView title = new TextView(this);
+        title.setText(getString(enabled
+                ? R.string.widget_enable_hint_title : R.string.widget_disable_hint_title));
+        title.setTextColor(inkColor());
+        title.setTextSize(17);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setPadding(0, 0, 0, dp(6));
+        panel.addView(title);
+
+        TextView message = new TextView(this);
+        message.setText(getString(enabled
+                ? R.string.widget_enable_hint_message : R.string.widget_disable_hint_message));
+        message.setTextColor(mutedColor());
+        message.setTextSize(14);
+        message.setLineSpacing(dp(2), 1f);
+        panel.addView(message);
+
+        panel.addView(appearanceDialogs.dialogAction(getString(R.string.widget_toggle_ack),
+                v -> dialog.dismiss()), new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+
+        View content = appearanceDialogs.glassDialogContent(panel, DesignTokens.RADIUS_DIALOG_SHEET);
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                Math.min(dp(320), screenWidth - dp(56)),
+                LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        root.addView(content, params);
+
+        dialog.setContentView(root);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(isDarkModeActive() ? 0.68f : 0.42f);
+            appearanceDialogs.makeDialogStill(window);
+        }
     }
 
     @Override
@@ -7230,9 +7370,12 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             scheduleBoard.setDarkMode(isDarkModeActive());
         }
         if (topPanelGlassLayer != null) {
-            updateGlassLayer(topPanelGlassLayer, liquidGlassBg(scheduleViewState.timetableHeaderOpacity), 24);
+            updateGlassLayer(topPanelGlassLayer,
+                    liquidGlassBg(scheduleViewState.timetableHeaderOpacity), topGlassRadius());
         }
         if (topPanelContainer != null) {
+            // 顶/底栏样式（默认/常规）切换后同步通栏与页边距几何。
+            topPanelContainer.setLayoutParams(topPanelLayoutParams());
             topPanelContainer.setElevation(0f);
         }
         if (bottomNavView != null) {
@@ -7827,6 +7970,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         config.bottomNavCornerRadius = scheduleViewState.bottomNavRectCornerRadius;
         config.bottomNavRectCornerRadius = scheduleViewState.bottomNavRectCornerRadius;
         config.shellBarsBlurEnabled = scheduleViewState.shellBarsBlurEnabled;
+        config.shellBarStyle = scheduleViewState.shellBarStyle;
         scheduleRepository.saveConfig(scheduleId, config);
     }
 
@@ -7968,6 +8112,11 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     @Override
     public int mutedColor() {
         return PolarisVisualTheme.mutedColor(scheduleViewState.visualTheme, isDarkModeActive());
+    }
+
+    @Override
+    public int dividerColor() {
+        return PolarisVisualTheme.dividerColor(scheduleViewState.visualTheme, isDarkModeActive());
     }
 
     @Override
@@ -8139,7 +8288,8 @@ public GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
         if (isMinimalVisualTheme()) {
             drawable.setStroke(dp(1), isDarkModeActive()
                     ? Color.argb(42, 255, 255, 255)
-                    : Color.argb(130, 255, 255, 255));
+                    // 极简浅色描边：#FFFFFF 在浅蓝页面/白卡上不可见，改冷灰蓝画卡片边界。
+                    : Color.argb(120, 204, 216, 232));
         } else {
             drawable.setStroke(dp(1),
                     PolarisVisualTheme.outlineColor(scheduleViewState.visualTheme, isDarkModeActive()));

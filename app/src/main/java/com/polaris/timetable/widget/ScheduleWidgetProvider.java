@@ -1,6 +1,5 @@
 package com.polaris.timetable.widget;
 
-import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
@@ -15,7 +14,6 @@ import android.widget.RemoteViews;
 
 import com.polaris.timetable.MainActivity;
 import com.polaris.timetable.R;
-import com.polaris.timetable.reminder.CourseReminderScheduler;
 import com.polaris.timetable.storage.ScheduleRepository;
 
 import java.util.Calendar;
@@ -25,9 +23,6 @@ import java.util.Map;
 public final class ScheduleWidgetProvider extends AppWidgetProvider {
     public static final String ACTION_SCHEDULE_CHANGED =
             "com.polaris.timetable.action.SCHEDULE_CHANGED";
-    private static final String ACTION_COURSE_TIME_REFRESH =
-            "com.polaris.timetable.action.WIDGET_COURSE_TIME_REFRESH";
-    private static final int COURSE_TIME_REFRESH_REQUEST_CODE = 4207;
     static final String EXTRA_DAY_OFFSET = "day_offset";
     private static final int WIDE_WIDGET_MIN_WIDTH_DP = 230;
     private static final String[] DAY_NAMES = {
@@ -39,14 +34,14 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         for (int appWidgetId : appWidgetIds) {
             updateWidget(context, manager, appWidgetId);
         }
-        scheduleNextCourseTimeRefresh(context);
+        WidgetRefreshScheduler.scheduleNext(context);
     }
 
     @Override
     public void onAppWidgetOptionsChanged(
             Context context, AppWidgetManager manager, int appWidgetId, Bundle newOptions) {
         updateWidget(context, manager, appWidgetId);
-        scheduleNextCourseTimeRefresh(context);
+        WidgetRefreshScheduler.scheduleNext(context);
     }
 
     @Override
@@ -54,13 +49,18 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         super.onReceive(context, intent);
         String action = intent == null ? "" : intent.getAction();
         if (ACTION_SCHEDULE_CHANGED.equals(action)
-                || ACTION_COURSE_TIME_REFRESH.equals(action)
+                || WidgetRefreshScheduler.ACTION_COURSE_TIME_REFRESH.equals(action)
                 || Intent.ACTION_DATE_CHANGED.equals(action)
                 || Intent.ACTION_TIME_CHANGED.equals(action)
                 || Intent.ACTION_TIMEZONE_CHANGED.equals(action)
                 || Intent.ACTION_CONFIGURATION_CHANGED.equals(action)
                 || Intent.ACTION_BOOT_COMPLETED.equals(action)) {
             updateAll(context);
+            // 课程边界闹钟只投递到本驱动者：同步刷新整周小组件，
+            // 让「进行中」等时间敏感状态在两种形态间保持一致。
+            if (WidgetRefreshScheduler.ACTION_COURSE_TIME_REFRESH.equals(action)) {
+                WeekScheduleWidgetProvider.updateAll(context);
+            }
         }
     }
 
@@ -73,17 +73,14 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
             manager.notifyAppWidgetViewDataChanged(id, R.id.widget_today_list);
             manager.notifyAppWidgetViewDataChanged(id, R.id.widget_tomorrow_list);
         }
-        if (ids.length > 0) {
-            scheduleNextCourseTimeRefresh(context);
-        } else {
-            cancelCourseTimeRefresh(context);
-        }
+        WidgetRefreshScheduler.scheduleNext(context);
     }
 
     @Override
     public void onDisabled(Context context) {
         super.onDisabled(context);
-        cancelCourseTimeRefresh(context);
+        // 本形态最后一个实例被移除时，若整周小组件仍在则保留闹钟链。
+        WidgetRefreshScheduler.scheduleNext(context);
     }
 
     private static void updateWidget(Context context, AppWidgetManager manager, int appWidgetId) {
@@ -101,33 +98,26 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
     }
 
     private static RemoteViews buildViews(Context context, int appWidgetId, boolean wide) {
+        if (!ScheduleWidgetConfigActivity.widgetEnabled(context)) {
+            // 开关关闭（全局设置 → 桌面小组件）：渲染「已关闭」占位，不挂远程列表；
+            // 应用无法从桌面移除小组件，占位文案引导用户长按手动移除。
+            return new RemoteViews(context.getPackageName(), R.layout.widget_disabled);
+        }
         int layout = wide ? R.layout.widget_schedule_large : R.layout.widget_schedule_small;
         RemoteViews views = new RemoteViews(context.getPackageName(), layout);
         PendingIntent openApp = openAppIntent(context, appWidgetId);
         views.setOnClickPendingIntent(R.id.widget_root, openApp);
 
         Calendar today = Calendar.getInstance();
-        // 绑定了非激活课表时在标题前缀课表名，让多 widget 用户可分辨数据源。
-        String boundId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
-        String titlePrefix = "";
-        ScheduleRepository repository = new ScheduleRepository(context);
-        if (!boundId.equals(repository.activeScheduleId())) {
-            for (ScheduleRepository.ScheduleEntry entry : repository.loadSchedules()) {
-                if (entry.id.equals(boundId)) {
-                    titlePrefix = entry.name + "·";
-                    break;
-                }
-            }
-        }
         views.setTextViewText(R.id.widget_today_title,
-                titlePrefix + dateTitle("今天", today));
+                scheduleTitlePrefix(context, appWidgetId) + dateTitle("今天", today));
         configureList(context, views, R.id.widget_today_list, R.id.widget_today_empty,
                 appWidgetId, 0, openApp);
         if (wide) {
             Calendar tomorrow = (Calendar) today.clone();
             tomorrow.add(Calendar.DATE, 1);
             views.setTextViewText(R.id.widget_tomorrow_title,
-                    titlePrefix + dateTitle("明天", tomorrow));
+                    scheduleTitlePrefix(context, appWidgetId) + dateTitle("明天", tomorrow));
             configureList(context, views, R.id.widget_tomorrow_list, R.id.widget_tomorrow_empty,
                     appWidgetId, 1, openApp);
         }
@@ -151,7 +141,7 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         views.setPendingIntentTemplate(listId, openApp);
     }
 
-    private static PendingIntent openAppIntent(Context context, int appWidgetId) {
+    static PendingIntent openAppIntent(Context context, int appWidgetId) {
         Intent intent = new Intent(context, MainActivity.class);
         intent.setAction(Intent.ACTION_MAIN);
         intent.addCategory(Intent.CATEGORY_LAUNCHER);
@@ -163,85 +153,29 @@ public final class ScheduleWidgetProvider extends AppWidgetProvider {
         return PendingIntent.getActivity(context, appWidgetId, intent, flags);
     }
 
-    private static String dateTitle(String prefix, Calendar date) {
+    /**
+     * 绑定了非激活课表时在标题前缀课表名，让多 widget 用户可分辨数据源；
+     * 今日/整周两种形态共用。
+     */
+    static String scheduleTitlePrefix(Context context, int appWidgetId) {
+        String boundId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
+        ScheduleRepository repository = new ScheduleRepository(context);
+        if (boundId.equals(repository.activeScheduleId())) {
+            return "";
+        }
+        for (ScheduleRepository.ScheduleEntry entry : repository.loadSchedules()) {
+            if (entry.id.equals(boundId)) {
+                return entry.name + "·";
+            }
+        }
+        return "";
+    }
+
+    static String dateTitle(String prefix, Calendar date) {
         int dayOfWeek = date.get(Calendar.DAY_OF_WEEK);
         String dayName = dayOfWeek >= Calendar.SUNDAY && dayOfWeek <= Calendar.SATURDAY
                 ? DAY_NAMES[dayOfWeek - 1] : "";
         return prefix + "·" + dayName + " "
                 + (date.get(Calendar.MONTH) + 1) + "/" + date.get(Calendar.DAY_OF_MONTH);
-    }
-
-    private static void scheduleNextCourseTimeRefresh(Context context) {
-        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        if (alarmManager == null) {
-            return;
-        }
-        PendingIntent refreshIntent = courseTimeRefreshIntent(context);
-        alarmManager.cancel(refreshIntent);
-
-        AppWidgetManager manager = AppWidgetManager.getInstance(context);
-        ComponentName provider = new ComponentName(context, ScheduleWidgetProvider.class);
-        int[] appWidgetIds = manager.getAppWidgetIds(provider);
-        if (appWidgetIds.length == 0) {
-            return;
-        }
-
-        ScheduleRepository repository = new ScheduleRepository(context);
-        // 每个 widget 实例可绑定不同课表；只读取激活课表会让其他实例错过
-        // 自己课表的上下课边界。按唯一绑定课表汇总，避免重复加载同一份数据。
-        Map<String, ScheduleWidgetRefreshPlanner.ScheduleSource> sources = new LinkedHashMap<>();
-        for (int appWidgetId : appWidgetIds) {
-            String scheduleId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
-            if (!sources.containsKey(scheduleId)) {
-                sources.put(scheduleId, new ScheduleWidgetRefreshPlanner.ScheduleSource(
-                        repository.loadCourseView(scheduleId), repository.loadConfig(scheduleId)));
-            }
-        }
-
-        Calendar now = Calendar.getInstance();
-        long nextBoundary = ScheduleWidgetRefreshPlanner.nextBoundaryAfter(sources.values(), now);
-        if (nextBoundary > now.getTimeInMillis()) {
-            scheduleBoundaryAlarm(context, alarmManager, nextBoundary, refreshIntent);
-        }
-    }
-
-    /**
-     * 边界闹钟用唤醒型并允许 Doze：设备锁屏睡眠期间课程开始/结束（以及跨天兜底）
-     * 也能按时触发，避免解锁后才补刷。精确闹钟权限不可用时降级为非精确调度。
-     */
-    private static void scheduleBoundaryAlarm(
-            Context context,
-            AlarmManager alarmManager,
-            long triggerAtMillis,
-            PendingIntent refreshIntent) {
-        if (CourseReminderScheduler.canScheduleExactAlarms(context)) {
-            try {
-                alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP, triggerAtMillis, refreshIntent);
-            } catch (SecurityException permissionRevoked) {
-                alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP, triggerAtMillis, refreshIntent);
-            }
-        } else {
-            alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP, triggerAtMillis, refreshIntent);
-        }
-    }
-
-    private static void cancelCourseTimeRefresh(Context context) {
-        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        if (alarmManager != null) {
-            alarmManager.cancel(courseTimeRefreshIntent(context));
-        }
-    }
-
-    private static PendingIntent courseTimeRefreshIntent(Context context) {
-        Intent intent = new Intent(context, ScheduleWidgetProvider.class);
-        intent.setAction(ACTION_COURSE_TIME_REFRESH);
-        return PendingIntent.getBroadcast(
-                context,
-                COURSE_TIME_REFRESH_REQUEST_CODE,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 }

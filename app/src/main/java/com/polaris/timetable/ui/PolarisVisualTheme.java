@@ -99,12 +99,28 @@ public final class PolarisVisualTheme {
     public static int groupColor(String value, boolean dark) {
         String theme = normalize(value);
         if (MINIMAL.equals(theme)) {
-            return dark ? color("#101318") : color("#F2F0FA");
+            // 极简浅色分组面：#F2F0FA 与页面底色（清爽蓝 #EAF3FB）明度差不足 0.5，
+            // 卡片边界不可辨；抬升到与 cardColor 同级白，边界交给 roundedBg 的描边。
+            return dark ? color("#101318") : color("#F8FBFF");
         }
         if (dark) {
             return GALAXY.equals(theme) ? color("#C60E203B") : color("#C3172940");
         }
         return AURORA.equals(theme) ? color("#DDF2EEFC") : color("#DDEAF2FC");
+    }
+
+    /**
+     * 设置页分组卡内行分隔线：极简浅色用冷灰蓝（浅色表面上的隐形灰线），
+     * 极简深色用中性灰；主题模式背景带透明度，分隔线同样带透明度以融入表面。
+     */
+    public static int dividerColor(String value, boolean dark) {
+        if (MINIMAL.equals(normalize(value))) {
+            return dark ? color("#2C3747") : color("#E2E9F2");
+        }
+        if (dark) {
+            return GALAXY.equals(normalize(value)) ? color("#552E4470") : color("#553F5878");
+        }
+        return AURORA.equals(normalize(value)) ? color("#66A3B0C8") : color("#66A8B6CB");
     }
 
     public static int pressColor(String value, boolean dark) {

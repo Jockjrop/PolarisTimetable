@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 整周网格课程格底：白色圆角块由远程视图 setColorFilter 染成课程色，
+     与 widget_course_accent 同款反射染色模式；空格直接隐藏。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/white" />
+    <corners android:radius="@dimen/corner_widget_accent" />
+</shape>

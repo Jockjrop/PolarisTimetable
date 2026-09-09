@@ -161,7 +161,7 @@ final class ScheduleWidgetData {
         return nextBoundary == Long.MAX_VALUE ? -1L : nextBoundary;
     }
 
-    private static Map<String, Integer> buildCourseColors(List<Course> courses) {
+    static Map<String, Integer> buildCourseColors(List<Course> courses) {
         Map<String, Integer> colors = new LinkedHashMap<>();
         for (Course course : courses) {
             if (course == null) {
@@ -176,7 +176,7 @@ final class ScheduleWidgetData {
         return colors;
     }
 
-    private static int courseColor(Course course, Map<String, Integer> colors) {
+    static int courseColor(Course course, Map<String, Integer> colors) {
         Integer saved = parseColor(course.color);
         if (saved != null) {
             return saved;

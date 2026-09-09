@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 整周课表小组件：与今日课表小组件共用配置页与刷新策略；
+     updatePeriodMillis 周期兜底与 schedule_widget_info 保持一致。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:description="@string/week_widget_description"
+    android:initialLayout="@layout/widget_week"
+    android:minHeight="110dp"
+    android:minResizeHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minWidth="180dp"
+    android:previewLayout="@layout/widget_week"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable"
+    android:configure="com.polaris.timetable.widget.ScheduleWidgetConfigActivity"
+    tools:targetApi="s" />
