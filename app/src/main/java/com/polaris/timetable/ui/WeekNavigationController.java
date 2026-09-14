@@ -9,7 +9,7 @@ package com.polaris.timetable.ui;
  * <p>路径差异（与抽取前逐一对应）：
  * <ul>
  *   <li>{@code changeWeek}：捕获板面快照 → 换周 → 标题+重渲染 → 按传入 delta 播放过渡动画；</li>
- *   <li>{@code returnToCurrentWeek}：与 changeWeek 同路径，动画 delta 取实际差值，无变化时宿主仅刷新悬浮按钮；</li>
+ *   <li>{@code returnToCurrentWeek}：与 changeWeek 同路径，动画 delta 取实际差值，无变化时宿主仅刷新底栏返回图标；</li>
  *   <li>{@code switchToWeek}：无快照与动画，额外把板面定位到目标周，再走周依赖 UI 刷新序列；</li>
  *   <li>{@code onBoardWeekChanged}：板面已自行落位，只做钳制判定后走周依赖 UI 刷新序列。</li>
  * </ul>
@@ -77,7 +77,7 @@ public final class WeekNavigationController {
         return true;
     }
 
-    /** 回到本周：目标 = todayWeek；返回是否发生变更（false 时宿主刷新悬浮按钮可见性）。 */
+    /** 回到本周：目标 = todayWeek；返回是否发生变更（false 时宿主刷新底栏「课表」返回图标态）。 */
     public boolean returnToCurrentWeek() {
         int from = host.currentWeek();
         int target = clampWeek(host.todayWeek(), host.semesterWeeks());

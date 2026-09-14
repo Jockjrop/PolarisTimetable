@@ -107,6 +107,9 @@ public final class TodayOverviewController {
         void updatePracticeTopBar();
 
         void refreshPracticeAndPlanSidePanels();
+
+        /** 按折叠密度刷新顶栏 padding：宿主负责合成顶栏样式所需的状态栏避让。 */
+        void applyTopPanelDensityPadding(boolean compact);
     }
 
     /** 冷启动时若尚未折叠且未设截止时间，则初始化 3 秒折叠截止。 */
@@ -177,11 +180,9 @@ public final class TodayOverviewController {
     /** 折叠后同步收紧顶栏留白，避免只隐藏一行文字却仍占用原高度。 */
     public void applyTopPanelCollapseDensity() {
         boolean compact = collapsedForProcess;
-        LinearLayout topPanel = host.topPanel();
-        if (topPanel != null) {
-            topPanel.setPadding(host.dp(12), host.dp(compact ? 8 : 10),
-                    host.dp(12), host.dp(compact ? 6 : 10));
-        }
+        // 顶栏 padding 由宿主按顶栏样式合成（常规栏顶部 padding 含状态栏避让，
+        // 不得在此直接覆盖，否则常规栏内容会滑进状态栏底下）。
+        host.applyTopPanelDensityPadding(compact);
         updateTopPanelChildMargin(host.todayOverviewView(), compact ? 2 : 5);
         updateTopPanelChildMargin(host.conflictSummaryView(), compact ? 2 : 5);
         LinearLayout content = host.todayOverviewPanelContent();

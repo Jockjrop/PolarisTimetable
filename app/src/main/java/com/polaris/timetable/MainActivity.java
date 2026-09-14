@@ -192,9 +192,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final int BOTTOM_NAV_SHOW_DURATION_MS = 220;
     private static final int SETTINGS_PAGE_EXIT_DURATION_MS = 170;
     private static final int SETTINGS_PAGE_REVEAL_OFFSET_DP = 16;
-    private static final int RETURN_WEEK_CARD_WIDTH_DP = 64;
     private static final long AUTO_UPDATE_CHECK_DELAY_MS = 5000L;
-    private static final int RETURN_WEEK_CARD_GAP_DP = 8;
     private static final long PRACTICE_BAR_COLLAPSE_DELAY_MS = 3_000L;
     /** 更新就绪角标直径（dp）：明显可点但不遮挡课表网格。 */
     private static final int UPDATE_BADGE_SIZE_DP = 40;
@@ -243,8 +241,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private View emptyScheduleView;
     private TextView title;
     private TextView subtitle;
-    private FrameLayout returnCurrentWeekButton;
-    private View returnCurrentWeekIcon;
     private Button overflowMenuButton;
     private TodayOverviewView todayOverviewView;
     private CourseConflictSummaryView conflictSummaryView;
@@ -833,9 +829,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         bottomNavView = bottomNav();
         rootView.addView(bottomNavView, bottomNavLayoutParams());
-        returnCurrentWeekButton = buildReturnCurrentWeekButton();
-        rootView.addView(returnCurrentWeekButton, returnCurrentWeekLayoutParams());
-        updateReturnCurrentWeekAction();
         if (isLandscapeTablet()) {
             // 平板横屏：计划管理浮层（遮罩 + 右侧手机宽面板），盖在最上层。
             planPageBuilder.buildManageOverlay(this, rootView);
@@ -1057,7 +1050,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (subtitle != null) {
             subtitle.setText(subtitleText);
         }
-        updateReturnCurrentWeekAction();
+        updateScheduleNavReturnState();
     }
 
     void renderSchedule() {
@@ -1085,7 +1078,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         todayOverviewController.updateTodayOverview();
         updateConflictSummary();
         updateEmptyScheduleView();
-        updateReturnCurrentWeekAction();
+        updateScheduleNavReturnState();
         // 横屏平板：顶栏宽度与课表网格一致（右缘对齐、左侧留边距）——
         // 周六/周日开关变化后即时重算。
         if (isLandscapeTablet() && topPanelContainer != null) {
@@ -2174,27 +2167,20 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private void returnToCurrentWeek() {
         if (!weekNavigationController.returnToCurrentWeek()) {
-            // 无变化路径与抽取前一致：仅刷新「回到本周」悬浮按钮可见性。
-            updateReturnCurrentWeekAction();
+            // 无变化路径与抽取前一致：仅刷新底栏「课表」返回图标态。
+            updateScheduleNavReturnState();
         }
     }
 
-    private void updateReturnCurrentWeekAction() {
-        if (returnCurrentWeekButton == null) {
-            return;
-        }
-        boolean show = activeTab == 0 && !courses.isEmpty()
-                && currentWeek != currentWeekFromDate()
-                && (settingsPage == null || settingsPage.getVisibility() != View.VISIBLE);
-        returnCurrentWeekButton.setVisibility(show ? View.VISIBLE : View.GONE);
-        if (show) {
-            returnCurrentWeekButton.setTranslationY(bottomNavHidden
-                    ? dp(navVisualHeight() + 18) : 0f);
-            if (returnCurrentWeekIcon != null) {
-                // 周切换后重绘箭头，方向随浏览周与本周的相对位置刷新。
-                returnCurrentWeekIcon.invalidate();
-            }
-            returnCurrentWeekButton.bringToFront();
+    /** 是否正浏览非本周的周次（底栏「课表」进入返回态的前提）。 */
+    private boolean browsingOtherWeek() {
+        return !courses.isEmpty() && currentWeek != currentWeekFromDate();
+    }
+
+    /** 周号或返回态变化后刷新底栏「课表」图标（常规图标 ↔ 返回箭头）。 */
+    private void updateScheduleNavReturnState() {
+        if (bottomNavView != null) {
+            bottomNavView.refreshScheduleTab();
         }
     }
 
@@ -3826,103 +3812,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return bottomNavView;
     }
 
-    /** 独立悬浮卡片，不加入 BottomNavView 的 tab 权重布局。 */
-    private FrameLayout buildReturnCurrentWeekButton() {
-        FrameLayout card = new FrameLayout(this);
-        card.setBackground(returnCurrentWeekBackground());
-        card.setElevation(dp(3));
-        card.setClickable(true);
-        card.setFocusable(true);
-        card.setContentDescription(getString(R.string.return_to_current_week));
-        card.setOnClickListener(v -> returnToCurrentWeek());
-        attachPressFeedback(card);
-
-        returnCurrentWeekIcon = new View(this) {
-            private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            private final Path iconPath = new Path();
-
-            @Override
-            protected void onDraw(Canvas canvas) {
-                super.onDraw(canvas);
-                float density = getResources().getDisplayMetrics().density;
-                float centerX = getWidth() / 2f;
-                float centerY = getHeight() / 2f;
-                float arm = 6f * density;
-                iconPaint.setStyle(Paint.Style.STROKE);
-                iconPaint.setStrokeWidth(2.1f * density);
-                iconPaint.setStrokeCap(Paint.Cap.ROUND);
-                iconPaint.setStrokeJoin(Paint.Join.ROUND);
-                iconPaint.setColor(inkColor());
-                // 箭头指向本周所在方向：浏览未来周时本周页面在左（←），
-                // 浏览过去周时本周页面在右（→），与课表横向翻页方向一致。
-                boolean pointLeft = WeekNavigationController.returnArrowPointsLeft(
-                        currentWeek, currentWeekFromDate());
-                float tip = pointLeft ? centerX - arm : centerX + arm;
-                float tail = pointLeft ? centerX + arm : centerX - arm;
-                float barbX = pointLeft ? centerX - density : centerX + density;
-                iconPath.reset();
-                iconPath.moveTo(tail, centerY);
-                iconPath.lineTo(tip, centerY);
-                iconPath.moveTo(tip, centerY);
-                iconPath.lineTo(barbX, centerY - arm);
-                iconPath.moveTo(tip, centerY);
-                iconPath.lineTo(barbX, centerY + arm);
-                canvas.drawPath(iconPath, iconPaint);
-            }
-        };
-        card.addView(returnCurrentWeekIcon, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
-        card.setVisibility(View.GONE);
-        return card;
-    }
-
-    /** 左侧圆角跟随底栏外轮廓，右侧保留独立卡片的较小圆角。 */
-    private GradientDrawable returnCurrentWeekBackground() {
-        GradientDrawable background = floatingPanelBg(
-                scheduleViewState.bottomNavOpacity, DesignTokens.RADIUS_CARD);
-        // 常规样式底栏贴边矩形，按钮外缘圆角随之归零。
-        float outerRadius = regularShellBars() ? 0f
-                : dp(Math.min(navVisualHeight() / 2,
-                        Math.max(DesignTokens.RADIUS_CARD, bottomNavRadius())));
-        float innerRadius = dp(DesignTokens.RADIUS_CARD);
-        background.setCornerRadii(new float[]{
-                outerRadius, outerRadius,
-                innerRadius, innerRadius,
-                innerRadius, innerRadius,
-                outerRadius, outerRadius
-        });
-        return background;
-    }
-
-    private FrameLayout.LayoutParams returnCurrentWeekLayoutParams() {
-        int width = dp(RETURN_WEEK_CARD_WIDTH_DP);
-        int height = dp(navVisualHeight());
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                width, height, Gravity.BOTTOM | Gravity.START);
-        // 常规样式底栏贴边，按钮也随之贴到导航条上方。
-        int bottom = (regularShellBars() ? 0 : dp(DesignTokens.NAV_FLOATING_MARGIN))
-                + Math.max(systemBottomInset, 0);
-        int left;
-        if (isLandscapeTablet()) {
-            int navLeft = regularShellBars()
-                    ? 0
-                    : (getResources().getDisplayMetrics().widthPixels
-                            - dp(DesignTokens.NAV_TABLET_WIDTH)) / 2;
-            left = Math.max(systemLeftInset,
-                    navLeft - width - dp(RETURN_WEEK_CARD_GAP_DP));
-        } else {
-            boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
-            left = (regularShellBars() ? 0
-                    : dp(tablet
-                            ? DesignTokens.MARGIN_PAGE_TABLET : DesignTokens.MARGIN_PAGE_PHONE))
-                    + systemLeftInset + dp(BottomNavView.VISUAL_HORIZONTAL_INSET_DP);
-        }
-        params.setMargins(left, 0, 0, bottom);
-        return params;
-    }
-
-
     /**
      * 横屏平板底部导航：矩形悬浮条样式，宽度由 bottomNavLayoutParams
      * 限制为居中限宽（不横跨全屏）。
@@ -4074,15 +3963,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 .setDuration(BOTTOM_NAV_HIDE_DURATION_MS)
                 .setInterpolator(new DecelerateInterpolator())
                 .start();
-        if (returnCurrentWeekButton != null
-                && returnCurrentWeekButton.getVisibility() == View.VISIBLE) {
-            returnCurrentWeekButton.animate().cancel();
-            returnCurrentWeekButton.animate()
-                    .translationY(dp(navVisualHeight() + 18))
-                    .setDuration(BOTTOM_NAV_HIDE_DURATION_MS)
-                    .setInterpolator(new DecelerateInterpolator())
-                    .start();
-        }
     }
 
     private void showBottomNav(boolean animate) {
@@ -4095,11 +3975,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         bottomNavView.setVisibility(View.VISIBLE);
         if (!animate) {
             bottomNavView.setTranslationY(0f);
-            if (returnCurrentWeekButton != null
-                    && returnCurrentWeekButton.getVisibility() == View.VISIBLE) {
-                returnCurrentWeekButton.animate().cancel();
-                returnCurrentWeekButton.setTranslationY(0f);
-            }
             return;
         }
         bottomNavView.animate()
@@ -4107,15 +3982,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                 .setDuration(BOTTOM_NAV_SHOW_DURATION_MS)
                 .setInterpolator(new DecelerateInterpolator())
                 .start();
-        if (returnCurrentWeekButton != null
-                && returnCurrentWeekButton.getVisibility() == View.VISIBLE) {
-            returnCurrentWeekButton.animate().cancel();
-            returnCurrentWeekButton.animate()
-                    .translationY(0f)
-                    .setDuration(BOTTOM_NAV_SHOW_DURATION_MS)
-                    .setInterpolator(new DecelerateInterpolator())
-                    .start();
-        }
     }
 
     private void switchTab(int tab) {
@@ -4156,7 +4022,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (bottomNavView != null) {
             bottomNavView.updateTabs(schedule, plan, mine);
         }
-        updateReturnCurrentWeekAction();
+        updateScheduleNavReturnState();
         if (schedule) {
             updateHeader();
             // 从我的/设置等页签回到课表时，顶栏刚由 GONE 恢复：
@@ -4191,10 +4057,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             bottomNavView.setTranslationY(dp(navVisualHeight() + 18));
         } else {
             bottomNavView.setTranslationY(0f);
-        }
-        if (returnCurrentWeekButton != null) {
-            returnCurrentWeekButton.setLayoutParams(returnCurrentWeekLayoutParams());
-            returnCurrentWeekButton.bringToFront();
         }
         // 底栏高度可在设置中调整，悬浮新增菜单的定位与列表末端留白必须同步重算。
         planPageBuilder.relayoutAddMenus(this);
@@ -4269,6 +4131,13 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     private String navText(String label, boolean active) {
         if ("课表".equals(label)) {
+            if (browsingOtherWeek()) {
+                // 浏览非本周：「课表」图标即返回本周入口，箭头指向本周页面所在方向
+                // （浏览未来周时本周在左 ←，浏览过去周时本周在右 →），与翻页方向一致。
+                boolean pointLeft = WeekNavigationController.returnArrowPointsLeft(
+                        currentWeek, currentWeekFromDate());
+                return (pointLeft ? "←" : "→") + "\n" + label;
+            }
             return (active ? "▣" : "▦") + "\n" + label;
         }
         if ("计划".equals(label)) {
@@ -4345,7 +4214,19 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
     @Override
     public void onNavTabSelected(int tab) {
+        // 浏览非本周时「课表」tab 即返回入口：先恢复课表页（顺带收起设置页等覆盖层），
+        // 再按翻页动画回到本周。
+        if (tab == 0 && browsingOtherWeek()) {
+            switchTab(0);
+            returnToCurrentWeek();
+            return;
+        }
         switchTab(tab);
+    }
+
+    @Override
+    public CharSequence scheduleNavDescription() {
+        return browsingOtherWeek() ? getString(R.string.return_to_current_week) : null;
     }
 
     @Override
@@ -7397,14 +7278,6 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         if (overflowMenuButton != null) {
             overflowMenuButton.setTextColor(inkColor());
         }
-        if (returnCurrentWeekButton != null) {
-            returnCurrentWeekButton.setBackground(returnCurrentWeekBackground());
-            returnCurrentWeekButton.setLayoutParams(returnCurrentWeekLayoutParams());
-            if (returnCurrentWeekIcon != null) {
-                returnCurrentWeekIcon.invalidate();
-            }
-            returnCurrentWeekButton.bringToFront();
-        }
         todayOverviewController.updateTodayOverview();
         updateConflictSummary();
         if (bottomNavView != null) {
@@ -7688,7 +7561,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
     @Override
     public void refreshWeekDependentUi() {
-        updateReturnCurrentWeekAction();
+        updateScheduleNavReturnState();
         updateHeader();
         todayOverviewController.updateTodayOverview();
         updateConflictSummary();
@@ -8284,14 +8157,29 @@ private GlassDialogFactory.Config shellGlassConfig() {
         return Color.rgb(Color.red(surface), Color.green(surface), Color.blue(surface));
     }
 
-    /** 常规顶栏将实色背景延伸至状态栏，内容仍遵守安全区。 */
+    /**
+     * 常规顶栏把实色背景延伸进状态栏，此时顶栏顶部 padding 是唯一的状态栏
+     * 避让（默认样式由容器 topMargin 负责），折叠密度刷新必须经此合成，
+     * 不能直接覆盖 padding，否则常规栏内容会滑进状态栏底下。
+     */
     private void applyTopPanelContentInsets() {
+        applyTopPanelContentInsets(todayOverviewController.isCollapsedForProcess());
+    }
+
+    /** 顶栏 padding 合成：横向页边距随样式，顶部叠加状态栏避让，纵向随折叠密度。 */
+    private void applyTopPanelContentInsets(boolean compact) {
         if (topPanel == null) {
             return;
         }
         int horizontal = regularShellBars() ? 16 : 12;
-        int top = regularShellBars() ? statusBarHeight() + 10 : 10;
-        topPanel.setPadding(dp(horizontal), top, dp(horizontal), dp(10));
+        int top = regularShellBars() ? statusBarHeight() + dp(compact ? 8 : 10)
+                : dp(compact ? 8 : 10);
+        topPanel.setPadding(dp(horizontal), top, dp(horizontal), dp(compact ? 6 : 10));
+    }
+
+    @Override
+    public void applyTopPanelDensityPadding(boolean compact) {
+        applyTopPanelContentInsets(compact);
     }
 
     private void syncTopGlassHeight(int contentHeight) {

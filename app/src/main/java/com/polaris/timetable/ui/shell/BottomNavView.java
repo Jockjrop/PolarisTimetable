@@ -59,6 +59,9 @@ public class BottomNavView extends LinearLayout {
 
         CharSequence navLabel(int tab, boolean active);
 
+        /** 「课表」tab 的无障碍描述：浏览非本周时应表达「返回本周」语义。 */
+        CharSequence scheduleNavDescription();
+
         void attachNavPressFeedback(View item);
     }
 
@@ -169,13 +172,20 @@ public class BottomNavView extends LinearLayout {
     /** tab 状态变化后更新三个入口的文本与字重。 */
     public void updateTabs(boolean schedule, boolean plan, boolean mine) {
         if (scheduleNav != null) {
-            applyTabState(scheduleNav, 0, schedule);
+            applyScheduleTabState(schedule);
         }
         if (planNav != null) {
             applyTabState(planNav, 1, plan);
         }
         if (myNav != null) {
             applyTabState(myNav, 2, mine);
+        }
+    }
+
+    /** 课表返回态（浏览非本周）或周号变化后，重查宿主 label 以刷新「课表」图标。 */
+    public void refreshScheduleTab() {
+        if (scheduleNav != null) {
+            applyScheduleTabState(host.navTabActive(0));
         }
     }
 
@@ -197,5 +207,11 @@ public class BottomNavView extends LinearLayout {
         item.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
         item.setTextColor(active ? host.navInkColor() : host.navMutedColor());
         item.setSelected(active);
+    }
+
+    /** 「课表」tab 状态：图标由宿主 label 决定（浏览非本周时为返回箭头）。 */
+    private void applyScheduleTabState(boolean active) {
+        applyTabState(scheduleNav, 0, active);
+        scheduleNav.setContentDescription(host.scheduleNavDescription());
     }
 }

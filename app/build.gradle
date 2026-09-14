@@ -2,8 +2,8 @@ plugins {
     id "com.android.application"
 }
 
-def polarisVersionName = "1.27.13"
-def polarisVersionCode = 12713
+def polarisVersionName = "1.27.14"
+def polarisVersionCode = 12714
 
 // 版本信息弹窗与发布文档共用唯一数据源。构建时按 versionName
 // 读取 docs/releases/<version>.md 并生成 string-array；版本文档缺失或标题错误时直接失败，
