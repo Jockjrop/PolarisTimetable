@@ -204,6 +204,105 @@ public class ScheduleWidgetWeekDataTest {
         assertEquals(8, dates[6].get(Calendar.DAY_OF_MONTH));
     }
 
+    @Test
+    public void buildRows_spreadsNameTeacherAndLocationOverWholeCourseBlock() {
+        ScheduleRepository.Config config = config();
+        String name = "高等数学与线性代数综合实践";
+        Course longCourse = new Course(0, 1, 3, name, "1-2周", "A101", "王老师", "");
+
+        List<ScheduleWidgetWeekData.Row> rows = ScheduleWidgetWeekData.buildRows(
+                Collections.singletonList(longCourse), config,
+                date(2026, Calendar.MARCH, 2), 5);
+
+        // 三节连堂课的三段色块都参与显示，不再只有首段有字。
+        assertTrue(rows.get(0).cells[0].displayText.length() > 0);
+        assertTrue(rows.get(1).cells[0].displayText.length() > 0);
+        assertTrue(rows.get(2).cells[0].displayText.length() > 0);
+        // 铺排不丢字：把各段文案接起来就是完整的「课名 + 老师 + @地点」。
+        assertEquals(name + "王老师@A101", flattened(rows, 0, 0, 2));
+        assertTrue(rows.get(1).cells[0].displayText.contains("王老师"));
+        // 既有字段语义不变：text 仍只在首段携带课程名。
+        assertEquals(name, rows.get(0).cells[0].text);
+        assertEquals("", rows.get(1).cells[0].text);
+    }
+
+    @Test
+    public void buildRows_continuationSegmentCarriesRemainingText() {
+        ScheduleRepository.Config config = config();
+        List<ScheduleWidgetWeekData.Row> rows = ScheduleWidgetWeekData.buildRows(
+                Collections.singletonList(course(0, 1, 2, "高等数学", "1-2周")),
+                config, date(2026, Calendar.MARCH, 2), 5);
+
+        // 课名与老师排在首段，地点顺延到原先空白的续段。
+        assertTrue(rows.get(0).cells[0].displayText.contains("高等数学"));
+        assertTrue(rows.get(0).cells[0].displayText.contains("教师"));
+        assertEquals("@A101", rows.get(1).cells[0].displayText);
+        assertEquals("高等数学教师@A101", flattened(rows, 0, 0, 1));
+    }
+
+    @Test
+    public void buildRows_singleSectionKeepsNameAndTeacherFirst() {
+        ScheduleRepository.Config config = config();
+        List<ScheduleWidgetWeekData.Row> rows = ScheduleWidgetWeekData.buildRows(
+                Collections.singletonList(course(0, 1, 1, "高等数学", "1-2周")),
+                config, date(2026, Calendar.MARCH, 2), 5);
+
+        String text = rows.get(0).cells[0].displayText;
+        assertTrue(text.contains("高等数学"));
+        assertTrue(text.contains("教师"));
+        assertTrue(text.contains("@A101"));
+        assertEquals("高等数学教师@A101", flattened(rows, 0, 0, 0));
+    }
+
+    @Test
+    public void buildRows_keepsWholeTeacherNameInOneSegment() {
+        ScheduleRepository.Config config = config();
+        Course named = new Course(0, 1, 2, "数据结构", "1-2周", "B205", "欧阳明远", "");
+
+        List<ScheduleWidgetWeekData.Row> rows = ScheduleWidgetWeekData.buildRows(
+                Collections.singletonList(named), config,
+                date(2026, Calendar.MARCH, 2), 5);
+
+        // 整行放不下时另起一段，教师姓名不会被拆成两截。
+        String merged = rows.get(0).cells[0].displayText + "\n"
+                + rows.get(1).cells[0].displayText;
+        assertTrue(merged.contains("欧阳明远"));
+        assertEquals("数据结构欧阳明远@B205", flattened(rows, 0, 0, 1));
+    }
+
+    @Test
+    public void buildRows_withoutTeacherOrLocationHasNoExtraLines() {
+        ScheduleRepository.Config config = config();
+        Course plain = new Course(0, 1, 2, "体育", "1-2周", "", "", "");
+
+        List<ScheduleWidgetWeekData.Row> rows = ScheduleWidgetWeekData.buildRows(
+                Collections.singletonList(plain), config,
+                date(2026, Calendar.MARCH, 2), 5);
+
+        assertEquals("体育", rows.get(0).cells[0].displayText);
+        assertEquals("", rows.get(1).cells[0].displayText);
+    }
+
+    @Test
+    public void buildRows_emptyCellHasNoDisplayText() {
+        ScheduleRepository.Config config = config();
+        List<ScheduleWidgetWeekData.Row> rows = ScheduleWidgetWeekData.buildRows(
+                Collections.singletonList(course(0, 1, 1, "高等数学", "1-2周")),
+                config, date(2026, Calendar.MARCH, 2), 5);
+
+        assertEquals("", rows.get(2).cells[0].displayText);
+        assertEquals("", rows.get(0).cells[1].displayText);
+    }
+
+    private String flattened(List<ScheduleWidgetWeekData.Row> rows,
+                             int day, int fromSection, int toSection) {
+        StringBuilder text = new StringBuilder();
+        for (int index = fromSection; index <= toSection; index++) {
+            text.append(rows.get(index).cells[day].displayText.replace("\n", ""));
+        }
+        return text.toString();
+    }
+
     private ScheduleRepository.Config config() {
         ScheduleRepository.Config config = new ScheduleRepository.Config();
         config.firstWeekDay = "2026/3/3";

@@ -99,8 +99,11 @@ public final class WeekScheduleWidgetProvider extends AppWidgetProvider {
         String scheduleId = ScheduleWidgetConfigActivity.boundScheduleId(context, appWidgetId);
         ScheduleRepository repository = new ScheduleRepository(context);
         ScheduleRepository.Config config = repository.loadConfig(scheduleId);
+        com.polaris.timetable.time.AcademicCalendar calendar =
+                com.polaris.timetable.time.AcademicCalendar.load(
+                        context, repository.loadGlobalHolidayOverrides());
         int autoScrollPosition = ScheduleWidgetWeekData.autoScrollPosition(
-                repository.loadCourseView(scheduleId), config, today);
+                repository.loadCourseView(scheduleId), config, today, calendar);
         Calendar[] weekDates = ScheduleWidgetWeekData.weekDates(today);
         views.setTextViewText(R.id.widget_week_month,
                 (weekDates[0].get(Calendar.MONTH) + 1) + "月");
@@ -111,7 +114,13 @@ public final class WeekScheduleWidgetProvider extends AppWidgetProvider {
             if (!visible) {
                 continue;
             }
-            views.setTextViewText(titleId, ScheduleWidgetWeekData.DAY_CHARS[column] + "\n"
+            // 放假日标「休」，补班日标「补」，与 App 内看板列头保持一致。
+            int effectiveDay = calendar.effectiveWeekday(
+                    com.polaris.timetable.time.AcademicCalendar.dateKey(weekDates[column]), column);
+            String note = effectiveDay
+                    == com.polaris.timetable.time.AcademicCalendar.WEEKDAY_UNSPECIFIED
+                    ? "·休" : effectiveDay != column ? "·补" : "";
+            views.setTextViewText(titleId, ScheduleWidgetWeekData.DAY_CHARS[column] + note + "\n"
                     + weekDates[column].get(Calendar.DAY_OF_MONTH));
             views.setTextColor(titleId, column == todayColumn
                     ? Color.parseColor("#2563EB")

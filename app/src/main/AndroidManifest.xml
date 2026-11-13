@@ -9,6 +9,20 @@
          PackageInstaller 会话并由系统确认，不授予静默安装能力。 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 扫码导入课表：仅在用户点击「扫一扫」时打开相机预览，画面只在设备本地解码，
+         不拍照、不保存、不上传。 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 保存二维码到相册：Android 10 起走 MediaStore 不需要此权限，故限定在 API 28 及以下。 -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <!-- 无相机的设备（部分平板/ChromeOS）仍应能安装并使用粘贴导入。 -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -18,11 +32,19 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
+        <!-- 扫码界面锁定竖屏：zxing 默认的传感器横屏会导致竖屏持机时画面横过来；
+             取景框按竖屏比例设计，横屏会变形，故此处有意不做多方向适配。 -->
+        <activity
+            android:name=".sharing.PolarisScanActivity"
+            android:screenOrientation="portrait"
+            android:stateNotNeeded="true"
+            android:theme="@style/zxing_CaptureTheme"
+            android:windowSoftInputMode="stateAlwaysHidden"
+            tools:ignore="DiscouragedApi,LockedOrientationActivity" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize"
-            android:exported="true">
-            <intent-filter>
+            android:exported="true">            <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>

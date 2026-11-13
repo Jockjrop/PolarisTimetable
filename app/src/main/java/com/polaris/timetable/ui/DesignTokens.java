@@ -29,6 +29,8 @@ public final class DesignTokens {
     // ===== 圆角(dp)=====
     /** 输入框、小组件 */
     public static final int RADIUS_CHIP = 12;
+    /** 顶栏图标按钮的矩形描边框：比胶囊更方，用来圈出可点击区域 */
+    public static final int RADIUS_ICON_BUTTON = 8;
     /** 卡片 */
     public static final int RADIUS_CARD = 14;
     /** 小按钮/标签 */
@@ -37,6 +39,11 @@ public final class DesignTokens {
     public static final int RADIUS_MEDIUM = 16;
     /** 卡片(大) */
     public static final int RADIUS_LARGE = 18;
+    /**
+     * 卡片与设置分组的统一圆角。四套视觉主题共用同一几何：
+     * 切换主题只换配色与背景，不改变圆角、尺寸或投影。
+     */
+    public static final int RADIUS_SURFACE = 18;
     /** 右侧毛玻璃侧板(今日概览/实践/计划) */
     public static final int RADIUS_SIDE_PANEL = 20;
     /** 对话框玻璃容器,全 app 对话框默认值 */

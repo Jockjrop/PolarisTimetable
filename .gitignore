@@ -36,3 +36,10 @@ web/
 web.zip
 # NVIDIA GPU 工具自动生成的日志目录（不入库）
 NVIDIA Corporation/
+# 官网改版草稿、内部交接与设计方案（不入库；提交一律用白名单）
+web-next/
+polaris-web-next.zip
+HANDOFF.MD
+docs/proposals/
+# 注意：output/ verify/ tmp/ videos/ 与 test pdf/ 虽已忽略不入库，但含真机截图、
+# UI dump 与真实姓名/学号样例，不要整包压缩后对外分享或上传。

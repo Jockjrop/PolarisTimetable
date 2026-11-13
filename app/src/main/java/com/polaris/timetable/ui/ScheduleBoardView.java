@@ -44,6 +44,7 @@ import androidx.viewpager.widget.ViewPager;
 import com.polaris.timetable.Course;
 import com.polaris.timetable.R;
 import com.polaris.timetable.model.CourseType;
+import com.polaris.timetable.time.AcademicCalendar;
 import com.polaris.timetable.time.CourseTimeResolver;
 import com.polaris.timetable.time.ScheduleTimeAxis;
 import com.polaris.timetable.validation.CourseConflictDetector;
@@ -134,6 +135,8 @@ public class ScheduleBoardView extends FrameLayout {
     private String[] sectionTimes = TIMES;
     private CourseTimeResolver.Settings classTimeSettings = CourseTimeResolver.defaultSettings();
     private boolean collapseLunchBreak;
+    /** 节假日/调休：决定每列实际按星期几排课。默认空表（全部按真实星期）。 */
+    private AcademicCalendar academicCalendar = AcademicCalendar.empty();
     private ScheduleTimeAxis.Axis timeAxis;
     private int dayWidth;
     private int sectionHeight;
@@ -497,6 +500,19 @@ public class ScheduleBoardView extends FrameLayout {
         renderSchedule();
     }
 
+    /**
+     * 设置学业日历（节假日/调休）。放假列不排课，补班列按目标星期取课。
+     * 传 {@link AcademicCalendar#empty()} 等同于关闭该能力。
+     */
+    public void setAcademicCalendar(AcademicCalendar calendar) {
+        AcademicCalendar next = calendar == null ? AcademicCalendar.empty() : calendar;
+        if (next.signature() == academicCalendar.signature()) {
+            return;
+        }
+        academicCalendar = next;
+        renderSchedule();
+    }
+
     public void captureCurrentBoardForTransition() {
         // ViewPager 自带切换动画，无需捕获旧板。
     }
@@ -546,6 +562,7 @@ public class ScheduleBoardView extends FrameLayout {
         hash = 31 * hash + hashOf(currentBackgroundImageUri);
         hash = 31 * hash + sectionCount;
         hash = 31 * hash + (collapseLunchBreak ? 1 : 0);
+        hash = 31 * hash + academicCalendar.signature();
         hash = 31 * hash + visibleDayCount;
         hash = 31 * hash + firstWeek;
         hash = 31 * hash + lastWeek;
@@ -623,9 +640,12 @@ public class ScheduleBoardView extends FrameLayout {
         boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
         boolean landscape = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE;
-        // 横屏平板纵向空间紧张：节高额外抬高，让单屏容纳更多节次并让格子接近方形。
-        int tabletSectionBoost = landscape ? 16 : 8;
-        sectionHeight = dp(tablet ? Math.max(72, configuredSectionHeight + tabletSectionBoost)
+        // 横屏平板可用高度只有约 576dp：节高沿用用户配置的默认值(66dp)，
+        // 不再额外抬高；旧实现 +16dp 反而让单屏只看到约 5 节。
+        // 竖屏平板空间充裕，保留轻微抬高让格子接近方形。
+        int tabletSectionBoost = 8;
+        sectionHeight = dp(tablet && !landscape
+                ? Math.max(72, configuredSectionHeight + tabletSectionBoost)
                 : configuredSectionHeight);
         timeAxis = ScheduleTimeAxis.create(
                 courses, classTimeSettings, sectionCount, sectionHeight, collapseLunchBreak);
@@ -849,7 +869,14 @@ public class ScheduleBoardView extends FrameLayout {
         }
 
         TextView weekday = new TextView(getContext());
-        weekday.setText(WeekdayLabels.label(getContext(), actualDay));
+        int sourceDay = academicCalendar.effectiveWeekday(
+                columnDateKey(column, week), actualDay);
+        String dayNote = sourceDay == AcademicCalendar.WEEKDAY_UNSPECIFIED
+                ? getContext().getString(R.string.board_day_holiday)
+                : sourceDay != actualDay ? getContext().getString(R.string.board_day_makeup) : "";
+        String dayLabel = WeekdayLabels.label(getContext(), actualDay);
+        weekday.setText(dayNote.isEmpty() ? dayLabel : dayLabel + " · " + dayNote);
+
         weekday.setTextSize(tabletText(today ? 15 : 13, today ? 13 : 12));
         int left = boardContentOffset + timeWidth + dayWidth * column;
         applyAdaptiveTextColor(weekday, left, 0, dayWidth, dayHeaderHeight / 2, !today);
@@ -1303,15 +1330,23 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private void configureCourseBlockText(TextView view, int width, int height) {
-        int horizontalPadding = width < dp(48) ? dp(3) : dp(5);
+        boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
+        boolean landscape = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        // 横屏平板列宽被 board_day_max_width 压到 80dp：压缩左右内边距、允许
+        // 字号再自适应降一档并收紧行距，减少「射频识别技/术」这类被挤出的换行。
+        // 仅作用于横屏平板窄列，手机与竖屏平板排版保持原样。
+        boolean compactColumn = tablet && landscape && width < dp(96);
+        int horizontalPadding = compactColumn ? dp(3) : (width < dp(48) ? dp(3) : dp(5));
         int verticalPadding = height < dp(44) ? dp(2) : dp(6);
         view.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
         view.setSingleLine(false);
         view.setHorizontallyScrolling(false);
         view.setEllipsize(TextUtils.TruncateAt.END);
+        view.setLineSpacing(0f, compactColumn ? 0.95f : 1f);
 
-        boolean tablet = getResources().getConfiguration().smallestScreenWidthDp >= 600;
-        int minimumTextSize = tablet ? 10 : (visibleDayCount >= 7 ? 10 : 8);
+        int minimumTextSize = compactColumn ? 9
+                : (tablet ? 10 : (visibleDayCount >= 7 ? 10 : 8));
         int textSize = courseTextSize();
         int maxLines;
         while (true) {
@@ -1365,16 +1400,73 @@ public class ScheduleBoardView extends FrameLayout {
     }
 
     private List<Course> filterDisplayCourses(List<Course> source, int week) {
+        int[] sourceDays = columnSourceDays(week);
         List<Course> visibleCourses = new ArrayList<>();
+        // 1) 常规列：该列日期没有被放假/调休改写，按原 day 取课。
         for (Course course : source) {
+            if (course.day < 0) {
+                continue;
+            }
+            int column = visibleDays.indexOf(course.day);
+            if (column < 0 || sourceDays[column] != course.day) {
+                continue;
+            }
             boolean inCurrentWeek = isCourseInWeek(course, week);
-            if (columnForCourse(course) >= 0 && (inCurrentWeek
+            if (inCurrentWeek
                     || (showOutOfWeekCourses && !hasCourseEnded(course, week)
-                    && !hasCurrentWeekOverlap(source, course, week)))) {
+                    && !hasCurrentWeekOverlap(source, course, week))) {
                 visibleCourses.add(course);
             }
         }
+        // 2) 补班列：该列日期要上「另一个星期」的课，复制一份课程块落到本列。
+        //    同周内若原星期不放假（例如国庆后 10/8 周四照常上课、10/10 又补周四），
+        //    两列都显示同一门课，与实际课表一致。
+        for (int column = 0; column < visibleDayCount; column++) {
+            int actualDay = visibleDays.get(column);
+            int sourceDay = sourceDays[column];
+            if (sourceDay < 0 || sourceDay == actualDay) {
+                continue;
+            }
+            for (Course course : source) {
+                if (course.day != sourceDay) {
+                    continue;
+                }
+                boolean inCurrentWeek = isCourseInWeek(course, week);
+                if (inCurrentWeek
+                        || (showOutOfWeekCourses && !hasCourseEnded(course, week)
+                        && !hasCurrentWeekOverlap(source, course, week))) {
+                    visibleCourses.add(shiftedCourse(course, actualDay));
+                }
+            }
+        }
         return visibleCourses;
+    }
+
+    /** 该列在本周实际对应的日期（{@code yyyy/M/d}）。 */
+    private String columnDateKey(int column, int week) {
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(firstWeekStartMillis);
+        date.add(Calendar.DATE, (week - 1) * 7 + visibleDays.get(column));
+        return AcademicCalendar.dateKey(date);
+    }
+
+    /** 每列应显示的源星期：-1=放假，其余 0-6。 */
+    private int[] columnSourceDays(int week) {
+        int[] result = new int[visibleDayCount];
+        for (int column = 0; column < visibleDayCount; column++) {
+            int actualDay = visibleDays.get(column);
+            result[column] = academicCalendar.effectiveWeekday(
+                    columnDateKey(column, week), actualDay);
+        }
+        return result;
+    }
+
+    /** 复制课程并把 day 改到补班列，其余字段（含 id）保持不变，编辑仍落在原课程上。 */
+    private Course shiftedCourse(Course course, int day) {
+        return new Course(day, course.startSection, course.endSection, course.name,
+                course.weeks, course.location, course.teacher, course.raw, course.credit,
+                course.color, course.courseType, course.structuredCourseId, course.meetingId,
+                course.timeMode, course.startMinuteOfDay, course.endMinuteOfDay);
     }
 
     private boolean hasCurrentWeekOverlap(List<Course> source, Course candidate, int week) {

@@ -2,8 +2,8 @@ plugins {
     id "com.android.application"
 }
 
-def polarisVersionName = "1.27.14"
-def polarisVersionCode = 12714
+def polarisVersionName = "1.28.0"
+def polarisVersionCode = 12800
 
 // 版本信息弹窗与发布文档共用唯一数据源。构建时按 versionName
 // 读取 docs/releases/<version>.md 并生成 string-array；版本文档缺失或标题错误时直接失败，
@@ -158,6 +158,11 @@ dependencies {
     implementation "androidx.lifecycle:lifecycle-viewmodel:2.8.7"
     implementation "androidx.viewpager:viewpager:1.0.0"
     implementation "com.tom-roush:pdfbox-android:2.0.27.0"
+    // 分享链接二维码：只用 zxing 的纯 Java 编码核心，不引入 camera/Android 组件。
+    implementation "com.google.zxing:core:3.5.3"
+    // 扫码：zxing-android-embedded 提供相机预览与解码，minSdk 24；
+    // API 23 上不展示扫码入口，仅在 manifest 合并时放行。
+    implementation "com.journeyapps:zxing-android-embedded:4.3.0"
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.json:json:20240303"
     // Kotlin stdlib 统一到 1.9.20（AGP 8.7 强制 UTP，UTP launcher 由 Kotlin 1.9 编译，

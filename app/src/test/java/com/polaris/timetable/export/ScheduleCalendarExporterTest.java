@@ -9,6 +9,7 @@ import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
+import com.polaris.timetable.time.AcademicCalendar;
 import com.polaris.timetable.time.CourseTimeResolver;
 
 import org.junit.Test;
@@ -131,6 +132,44 @@ public class ScheduleCalendarExporterTest {
         assertTrue(content.contains("DTSTART:20260309T163500\r\n"));
         assertTrue(content.contains("DTSTART:20260330T163500\r\n"));
         assertTrue(content.contains("DTSTART:20260413T163500\r\n"));
+    }
+
+    @Test
+    public void ical_skipsHolidayAndMovesMakeupToTargetDate() {
+        // 2026/3/3（周二）放假，2026/3/7（周六）补周二的课。
+        AcademicCalendar calendar = AcademicCalendar.parse("{"
+                + "\"days\":["
+                + "{\"date\":\"2026/3/3\",\"kind\":\"holiday\"},"
+                + "{\"date\":\"2026/3/7\",\"kind\":\"makeup\",\"weekday\":1}"
+                + "]}", "");
+        ScheduleCalendarExporter.ExportContext context = context();
+        context.calendar = calendar;
+        StructuredCourse course = course("高等数学",
+                meeting(1, 1, 2,
+                        new WeekRule(WeekRule.Type.RANGE, 1, 1,
+                                Collections.emptyList(), "1周"), "A101"));
+
+        String content = ScheduleCalendarExporter.buildICal(context,
+                Collections.singletonList(course));
+
+        // 周二那天不再有事件，改到周六补课。
+        assertEquals(1, count(content, "BEGIN:VEVENT"));
+        assertFalse(content.contains("DTSTART:20260303T"));
+        assertTrue(content.contains("DTSTART:20260307T080000\r\n"));
+        assertTrue(content.contains("安排：调休补班"));
+    }
+
+    @Test
+    public void ical_withoutCalendarKeepsLegacyExpansion() {
+        StructuredCourse course = course("高等数学",
+                meeting(1, 1, 2,
+                        new WeekRule(WeekRule.Type.RANGE, 1, 1,
+                                Collections.emptyList(), "1周"), "A101"));
+
+        String content = ScheduleCalendarExporter.buildICal(context(),
+                Collections.singletonList(course));
+
+        assertTrue(content.contains("DTSTART:20260303T080000\r\n"));
     }
 
     @Test

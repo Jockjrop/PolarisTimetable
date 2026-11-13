@@ -5,6 +5,7 @@ import com.polaris.timetable.model.CourseTimeMode;
 import com.polaris.timetable.model.CourseType;
 import com.polaris.timetable.model.StructuredCourse;
 import com.polaris.timetable.model.WeekRule;
+import com.polaris.timetable.time.AcademicCalendar;
 import com.polaris.timetable.time.CourseTimeResolver;
 
 import java.nio.charset.StandardCharsets;
@@ -43,6 +44,9 @@ public final class ScheduleCalendarExporter {
         public final String firstWeekDay;
         public final int semesterWeeks;
         public final CourseTimeResolver.Settings timeSettings;
+
+        /** 学业日历：非空时导出会跳过放假日、并为补班日按其目标星期生成事件。 */
+        public AcademicCalendar calendar;
 
         public ExportContext(String scheduleName, String semesterName,
                              String firstWeekDay, int semesterWeeks,
@@ -86,9 +90,20 @@ public final class ScheduleCalendarExporter {
                 }
                 TimeRange range = meetingRange(meeting, safe.timeSettings);
                 for (int week : activeWeeks) {
-                    List<String> event = buildEvent(safe, course, meeting, range, week, firstMonday);
-                    if (!event.isEmpty()) {
-                        lines.addAll(event);
+                    // 逐日比对：正常日与补班日都会命中，放假日被日历判定排除。
+                    for (int offset = 0; offset < 7; offset++) {
+                        Calendar date = dateFor(firstMonday, week, offset);
+                        int effectiveDay = safe.calendar == null ? offset
+                                : safe.calendar.effectiveWeekday(
+                                        AcademicCalendar.dateKey(date), offset);
+                        if (effectiveDay != meeting.day) {
+                            continue;
+                        }
+                        List<String> event = buildEvent(safe, course, meeting, range,
+                                week, date, offset);
+                        if (!event.isEmpty()) {
+                            lines.addAll(event);
+                        }
                     }
                 }
             }
@@ -162,14 +177,13 @@ public final class ScheduleCalendarExporter {
 
     private static List<String> buildEvent(ExportContext context, StructuredCourse course,
                                            CourseMeeting meeting, TimeRange range,
-                                           int week, Calendar firstMonday) {
+                                           int week, Calendar date, int dayOffset) {
         if (range == null && !isWeekUnknown(meeting.weekRule)) {
             return java.util.Collections.emptyList();
         }
-        Calendar date = dateFor(firstMonday, week, meeting.day);
         List<String> lines = new ArrayList<>();
         lines.add("BEGIN:VEVENT");
-        lines.add("UID:" + eventUid(course, meeting, week));
+        lines.add("UID:" + eventUid(course, meeting, week, date));
         lines.add("DTSTAMP:" + utcStamp());
         if (range == null) {
             lines.add("DTSTART;VALUE=DATE:" + dateStamp(date));
@@ -196,6 +210,10 @@ public final class ScheduleCalendarExporter {
         }
         if (meeting.day >= 0 && meeting.day <= 6) {
             description.append("星期：").append(DAY_NAMES[meeting.day]).append('\n');
+        }
+        if (dayOffset != meeting.day) {
+            description.append("安排：调休补班，按")
+                    .append(DAY_NAMES[meeting.day]).append("的课表上课\n");
         }
         if (isWeekUnknown(meeting.weekRule)) {
             description.append("提示：周次未能识别，请以实际课表为准\n");
@@ -232,7 +250,9 @@ public final class ScheduleCalendarExporter {
                 || rule.type == WeekRule.Type.UNKNOWN);
     }
 
-    private static String eventUid(StructuredCourse course, CourseMeeting meeting, int week) {
+    /** UID 带上具体日期：同一周里「正常日 + 补班日」可能出现两次同一门课。 */
+    private static String eventUid(StructuredCourse course, CourseMeeting meeting,
+                                   int week, Calendar date) {
         String meetingPart = meeting.id != null && meeting.id.length() > 0
                 ? meeting.id
                 : "d" + meeting.day + "-s" + meeting.startSection
@@ -240,7 +260,7 @@ public final class ScheduleCalendarExporter {
         String coursePart = course.id != null && course.id.length() > 0
                 ? course.id : String.valueOf(course.name.hashCode());
         return "polaris-" + coursePart + "-" + meetingPart + "-w" + week
-                + "@polaris.timetable";
+                + "-" + dateStamp(date) + "@polaris.timetable";
     }
 
     private static TimeRange meetingRange(CourseMeeting meeting,

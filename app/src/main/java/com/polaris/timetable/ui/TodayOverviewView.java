@@ -247,6 +247,8 @@ public final class TodayOverviewView extends LinearLayout {
                 return getContext().getString(R.string.today_status_finished);
             case OUTSIDE_SEMESTER:
                 return getContext().getString(R.string.today_status_outside);
+            case HOLIDAY:
+                return getContext().getString(R.string.today_status_holiday);
             case NO_COURSES:
             default:
                 return getContext().getString(R.string.today_status_no_courses);
@@ -264,6 +266,8 @@ public final class TodayOverviewView extends LinearLayout {
                 return getContext().getString(R.string.today_title_finished);
             case OUTSIDE_SEMESTER:
                 return getContext().getString(R.string.today_title_outside);
+            case HOLIDAY:
+                return getContext().getString(R.string.today_title_holiday);
             case NO_COURSES:
             default:
                 return getContext().getString(R.string.today_title_no_courses);
@@ -292,6 +296,8 @@ public final class TodayOverviewView extends LinearLayout {
                 return getContext().getString(R.string.today_detail_finished);
             case OUTSIDE_SEMESTER:
                 return getContext().getString(R.string.today_detail_outside);
+            case HOLIDAY:
+                return getContext().getString(R.string.today_detail_holiday);
             case NO_COURSES:
             default:
                 return getContext().getString(R.string.today_detail_no_courses);

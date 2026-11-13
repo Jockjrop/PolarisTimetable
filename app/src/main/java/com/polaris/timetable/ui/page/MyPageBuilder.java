@@ -19,7 +19,6 @@ import android.widget.TextView;
 import com.polaris.timetable.R;
 import com.polaris.timetable.ui.BackgroundImageCrop;
 import com.polaris.timetable.ui.CircleAvatarView;
-import com.polaris.timetable.ui.PolarisVisualTheme;
 
 /**
  * 「我的」页构建器:头像区 + 四个设置入口卡片 + 版本行。
@@ -31,8 +30,6 @@ public class MyPageBuilder {
     /** 宿主回调:由 MainActivity 实现,提供主题状态、布局度量、样式辅助与页面跳转。 */
     public interface Host {
         boolean isLandscapeTablet();
-
-        boolean isMinimalVisualTheme();
 
         boolean isDarkModeActive();
 
@@ -66,8 +63,6 @@ public class MyPageBuilder {
         int colorValue(String hex);
 
         Drawable roundedCardBackground(String hex, int radiusDp);
-
-        void applyThemeElevation(View view, int elevationDp);
 
         void attachCardPressFeedback(View view, int radiusDp);
 
@@ -124,21 +119,15 @@ public class MyPageBuilder {
             }
         }
         scrollView.addView(page);
-        if (host.isMinimalVisualTheme()) {
-            page.addView(profileHeader(context));
-            page.addView(mySettingCard(context, context.getString(R.string.my_card_schedule), "schedule", v -> host.openScheduleSettings()));
-            page.addView(mySettingCard(context, context.getString(R.string.my_card_global), "settings", v -> host.openGlobalSettings()));
-            page.addView(mySettingCard(context, context.getString(R.string.my_card_security), "shield", v -> host.openSecuritySettings()));
-            page.addView(mySettingCard(context, context.getString(R.string.my_card_user_info), "user", v -> host.openUserInfo()));
-            page.addView(mySettingCard(context, context.getString(R.string.my_card_more), "more", v -> host.openMoreSettings()));
-        } else {
-            page.addView(themedProfileHeader(context));
-            page.addView(themedMySettingCard(context, context.getString(R.string.my_card_schedule), "schedule", v -> host.openScheduleSettings()));
-            page.addView(themedMySettingCard(context, context.getString(R.string.my_card_global), "settings", v -> host.openGlobalSettings()));
-            page.addView(themedMySettingCard(context, context.getString(R.string.my_card_security), "shield", v -> host.openSecuritySettings()));
-            page.addView(themedMySettingCard(context, context.getString(R.string.my_card_user_info), "user", v -> host.openUserInfo()));
-            page.addView(themedMySettingCard(context, context.getString(R.string.my_card_more), "more", v -> host.openMoreSettings()));
-        }
+        // 单套结构：主题只提供颜色，不改变布局、尺寸与信息层级。
+        // （历史实现按 isMinimalVisualTheme() 分出「纵向居中身份区 + 58dp 行」与
+        // 「横向身份卡 + 78dp 入口卡」两套视图树，切换主题时整页重排。）
+        page.addView(profileHeader(context));
+        page.addView(mySettingCard(context, context.getString(R.string.my_card_schedule), "schedule", v -> host.openScheduleSettings()));
+        page.addView(mySettingCard(context, context.getString(R.string.my_card_global), "settings", v -> host.openGlobalSettings()));
+        page.addView(mySettingCard(context, context.getString(R.string.my_card_security), "shield", v -> host.openSecuritySettings()));
+        page.addView(mySettingCard(context, context.getString(R.string.my_card_user_info), "user", v -> host.openUserInfo()));
+        page.addView(mySettingCard(context, context.getString(R.string.my_card_more), "more", v -> host.openMoreSettings()));
         TextView versionLine = new TextView(context);
         versionLine.setText(host.versionText());
         versionLine.setTextColor(host.mutedColor());
@@ -149,159 +138,6 @@ public class MyPageBuilder {
         versionParams.topMargin = dp(context, 24);
         page.addView(versionLine, versionParams);
         return scrollView;
-    }
-
-    private View themedProfileHeader(Context context) {
-        LinearLayout header = new LinearLayout(context);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(context, 18), dp(context, 18), dp(context, 18), dp(context, 18));
-        header.setBackground(host.roundedCardBackground(host.cardColorHex(), 26));
-        host.applyThemeElevation(header, 4);
-
-        CircleAvatarView avatar = new CircleAvatarView(context);
-        avatar.setProfile(host.accountName(), host.avatarImageUri(), host.avatarImageCrop());
-        // 头像底色：按账户名哈希取稳定随机色（1.27.7），主题切换不改变头像身份色。
-        avatar.setPlaceholderColor(CircleAvatarView.placeholderColorFor(host.accountName()));
-        avatar.setContentDescription(context.getString(R.string.my_cd_edit_account));
-        avatar.setClickable(true);
-        avatar.setFocusable(true);
-        avatar.setOnClickListener(v -> host.editAccountProfile());
-        header.addView(avatar, new LinearLayout.LayoutParams(dp(context, 78), dp(context, 78)));
-
-        LinearLayout identity = new LinearLayout(context);
-        identity.setOrientation(LinearLayout.VERTICAL);
-        identity.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams identityParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        identityParams.leftMargin = dp(context, 18);
-        header.addView(identity, identityParams);
-
-        TextView name = new TextView(context);
-        name.setText(host.accountName());
-        name.setTextColor(host.inkColor());
-        name.setTextSize(22);
-        name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        identity.addView(name);
-
-        TextView school = themedProfileLine(context, host.schoolDisplayName());
-        LinearLayout.LayoutParams schoolParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        schoolParams.topMargin = dp(context, 6);
-        identity.addView(school, schoolParams);
-
-        TextView semester = themedProfileLine(context, host.semesterDisplayName());
-        LinearLayout.LayoutParams semesterParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        semesterParams.topMargin = dp(context, 3);
-        identity.addView(semester, semesterParams);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(host.menuCardWidthPx(0.88f)),
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.CENTER_HORIZONTAL;
-        params.setMargins(0, dp(context, 8), 0, dp(context, 18));
-        header.setLayoutParams(params);
-        return header;
-    }
-
-    private TextView themedProfileLine(Context context, String value) {
-        TextView line = new TextView(context);
-        line.setText(value);
-        line.setTextColor(host.mutedColor());
-        line.setTextSize(13);
-        line.setSingleLine(true);
-        line.setEllipsize(TextUtils.TruncateAt.END);
-        return line;
-    }
-
-    private View themedMySettingCard(Context context, String titleText, String iconType,
-                                     View.OnClickListener listener) {
-        LinearLayout card = new LinearLayout(context);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(context, 16), dp(context, 10), dp(context, 14), dp(context, 10));
-        card.setBackground(host.roundedCardBackground(host.cardColorHex(), 22));
-        host.applyThemeElevation(card, 3);
-        card.setOnClickListener(listener);
-        host.attachCardPressFeedback(card, 22);
-
-        FrameLayout iconSurface = new FrameLayout(context);
-        iconSurface.setBackground(host.roundedCardBackground(PolarisVisualTheme.hex(
-                PolarisVisualTheme.accentSurfaceColor(host.visualTheme(), host.isDarkModeActive())), 16));
-        host.applyThemeElevation(iconSurface, 2);
-        MySettingIconView icon = new MySettingIconView(context, iconType,
-                themedIconColor(iconType), host.mutedColor());
-        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                dp(context, 27), dp(context, 27), Gravity.CENTER);
-        iconSurface.addView(icon, iconParams);
-        card.addView(iconSurface, new LinearLayout.LayoutParams(dp(context, 46), dp(context, 46)));
-
-        LinearLayout copy = new LinearLayout(context);
-        copy.setOrientation(LinearLayout.VERTICAL);
-        copy.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        copyParams.leftMargin = dp(context, 16);
-        card.addView(copy, copyParams);
-
-        TextView label = new TextView(context);
-        label.setText(titleText);
-        label.setTextColor(host.inkColor());
-        label.setTextSize(16);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        copy.addView(label);
-
-        TextView description = new TextView(context);
-        description.setText(themedSettingDescription(context, iconType));
-        description.setTextColor(host.mutedColor());
-        description.setTextSize(12);
-        LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        descriptionParams.topMargin = dp(context, 3);
-        copy.addView(description, descriptionParams);
-
-        TextView arrow = new TextView(context);
-        arrow.setText("›");
-        arrow.setTextColor(host.mutedColor());
-        arrow.setTextSize(26);
-        arrow.setGravity(Gravity.CENTER);
-        card.addView(arrow, new LinearLayout.LayoutParams(dp(context, 30), dp(context, 48)));
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                Math.round(host.menuCardWidthPx(0.88f)), dp(context, 78));
-        params.gravity = Gravity.CENTER_HORIZONTAL;
-        params.setMargins(0, 0, 0, dp(context, 12));
-        card.setLayoutParams(params);
-        return card;
-    }
-
-    private String themedSettingDescription(Context context, String iconType) {
-        if ("schedule".equals(iconType)) {
-            return context.getString(R.string.settings_themed_desc_schedule);
-        }
-        if ("settings".equals(iconType)) {
-            return context.getString(R.string.settings_themed_desc_global);
-        }
-        if ("more".equals(iconType)) {
-            return context.getString(R.string.settings_themed_desc_more);
-        }
-        if ("user".equals(iconType)) {
-            return context.getString(R.string.settings_themed_desc_user);
-        }
-        return context.getString(R.string.settings_themed_desc_security);
-    }
-
-    private int themedIconColor(String iconType) {
-        if ("settings".equals(iconType)) {
-            return host.colorValue(host.isDarkModeActive() ? "#70D8F0" : "#238AB4");
-        }
-        if ("shield".equals(iconType)) {
-            return host.colorValue(host.isDarkModeActive() ? "#7FE0B5" : "#2E8F68");
-        }
-        return PolarisVisualTheme.accentColor(host.visualTheme(), host.isDarkModeActive());
     }
 
     private View profileHeader(Context context) {

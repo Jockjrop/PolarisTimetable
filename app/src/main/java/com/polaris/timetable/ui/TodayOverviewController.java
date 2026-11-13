@@ -84,6 +84,9 @@ public final class TodayOverviewController {
 
         long firstWeekStartMillis();
 
+        /** 学业日历：放假当天显示「放假」，补班日按补的星期取课。 */
+        com.polaris.timetable.time.AcademicCalendar academicCalendar();
+
         boolean isDarkModeActive();
 
         boolean isLandscapeTablet();
@@ -134,7 +137,8 @@ public final class TodayOverviewController {
                 host.courseTimeSettings(),
                 host.firstWeekStartMillis(),
                 host.semesterWeeks(),
-                Calendar.getInstance());
+                Calendar.getInstance(),
+                host.academicCalendar());
         view.setOverview(overview, host.isDarkModeActive());
     }
 

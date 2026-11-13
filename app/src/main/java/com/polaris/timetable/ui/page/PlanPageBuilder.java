@@ -85,11 +85,6 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         /** 分组卡片色（与设置页 settingsGroup 同源），用于计划页分栏卡片。 */
         String groupColorHex();
 
-        boolean isMinimalVisualTheme();
-
-        /** 非极简主题下的卡片投影（与设置页分组一致的 elevation 处理）。 */
-        void applyThemeElevation(View view, int elevationDp);
-
         GradientDrawable roundedBg(String hex, int radius);
 
         void attachPressFeedback(View view);
@@ -162,6 +157,9 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     private ViewGroup planPageRoot;
     /** 计划页外侧大卡片：悬浮角标的锚点（区别于平板浮层重建后的 planOuterCard）。 */
     private LinearLayout planPageOuterCard;
+    /** 独立计划页的两个列表容器：横屏管理浮层会覆盖共享字段，需单独持有引用。 */
+    private LinearLayout pageTimelineListContainer;
+    private LinearLayout pagePlanListContainer;
     /** 悬浮角标锚点变化回调（滚动 / 卡片重排时通知宿主重算位置）。 */
     private Runnable planPageAnchorCallback;
 
@@ -181,12 +179,14 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         LinearLayout page = new LinearLayout(context);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(0, host.statusBarInsetPx() + dp(context, 34), 0, 0);
-        if (!host.isLandscapeTablet()) {
-            int columnWidth = host.contentColumnWidthPx();
-            if (columnWidth < context.getResources().getDisplayMetrics().widthPixels) {
-                page.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
-                        LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
-            }
+        // 手机/竖屏平板沿用内容列宽；横屏平板限宽居中，避免卡片横跨 1000dp。
+        int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+        int columnWidth = host.isLandscapeTablet()
+                ? Math.min(screenWidth - dp(context, 48), dp(context, 640))
+                : host.contentColumnWidthPx();
+        if (columnWidth > 0 && columnWidth < screenWidth) {
+            page.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
         }
         scrollView.addView(page);
         root.addView(scrollView, new FrameLayout.LayoutParams(
@@ -217,6 +217,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
 
         timelineListContainer = new LinearLayout(context);
         timelineListContainer.setOrientation(LinearLayout.VERTICAL);
+        pageTimelineListContainer = timelineListContainer;
         timelineSection.addView(timelineListContainer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -227,6 +228,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
 
         planListContainer = new LinearLayout(context);
         planListContainer.setOrientation(LinearLayout.VERTICAL);
+        pagePlanListContainer = planListContainer;
         planSection.addView(planListContainer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -411,9 +413,6 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8));
         card.setBackground(host.roundedBg(host.cardColorHex(), 24));
-        if (!host.isMinimalVisualTheme()) {
-            host.applyThemeElevation(card, 2);
-        }
         return card;
     }
 
@@ -422,11 +421,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(context, 10), dp(context, 10), dp(context, 10), dp(context, 10));
-        card.setBackground(host.roundedBg(host.groupColorHex(),
-                host.isMinimalVisualTheme() ? 18 : 22));
-        if (!host.isMinimalVisualTheme()) {
-            host.applyThemeElevation(card, 2);
-        }
+        card.setBackground(host.roundedBg(host.groupColorHex(), DesignTokens.RADIUS_SURFACE));
         return card;
     }
 
@@ -460,7 +455,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         if (planOuterCard != null) {
             planOuterCard.setBackground(host.roundedBg(host.cardColorHex(), 24));
         }
-        int radius = host.isMinimalVisualTheme() ? 18 : 22;
+        int radius = DesignTokens.RADIUS_SURFACE;
         if (planTimelineSectionCard != null) {
             planTimelineSectionCard.setBackground(host.roundedBg(host.groupColorHex(), radius));
         }
@@ -513,13 +508,29 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
     }
 
     public void refreshList(Context context, List<StudyPlan> plans) {
-        lastPlans = plans == null ? Collections.emptyList() : plans;
-        if (planListContainer == null || context == null) {
+        List<StudyPlan> current = plans == null ? Collections.emptyList() : plans;
+        lastPlans = current;
+        if (context == null) {
             return;
         }
-        refreshTimelineColumn(context);
-        planListContainer.removeAllViews();
-        planListContainer.addView(sectionCardTitle(context,
+        fillPlanColumns(context, pageTimelineListContainer, pagePlanListContainer, current);
+        // 横屏「计划管理浮层」另有一套容器：buildManageOverlay 会把共享字段
+        // 改指向浮层，若只刷一次，独立计划页就是空白。非横屏时两组引用相同，跳过重复重建。
+        if (timelineListContainer != pageTimelineListContainer
+                || planListContainer != pagePlanListContainer) {
+            fillPlanColumns(context, timelineListContainer, planListContainer, current);
+        }
+    }
+
+    /** 往一组「考试 / DDL + 计划」容器重建内容；两套容器互不共享视图。 */
+    private void fillPlanColumns(Context context, LinearLayout timeline,
+                                 LinearLayout planList, List<StudyPlan> plans) {
+        fillTimelineColumn(context, timeline);
+        if (planList == null) {
+            return;
+        }
+        planList.removeAllViews();
+        planList.addView(sectionCardTitle(context,
                 context.getString(R.string.plan_title)));
         if (plans.isEmpty()) {
             TextView empty = new TextView(context);
@@ -528,7 +539,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
             empty.setTextSize(15);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dp(context, 24), 0, dp(context, 24));
-            planListContainer.addView(empty);
+            planList.addView(empty);
             return;
         }
         List<StudyPlan> pending = new ArrayList<>();
@@ -539,17 +550,17 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         Collections.sort(pending, (a, b) -> weekDayValue(a) - weekDayValue(b));
         Collections.sort(finished, (a, b) -> weekDayValue(b) - weekDayValue(a));
         if (!pending.isEmpty()) {
-            planListContainer.addView(sectionCardTitle(context,
+            planList.addView(sectionCardTitle(context,
                     context.getString(R.string.plan_section_pending)));
             for (StudyPlan plan : pending) {
-                planListContainer.addView(planRow(context, plan));
+                planList.addView(planRow(context, plan));
             }
         }
         if (!finished.isEmpty()) {
-            planListContainer.addView(doneHeader(context, finished.size()));
+            planList.addView(doneHeader(context, finished.size()));
             if (!doneCollapsed) {
                 for (StudyPlan plan : finished) {
-                    planListContainer.addView(planRow(context, plan));
+                    planList.addView(planRow(context, plan));
                 }
             }
         }
@@ -560,11 +571,11 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
      * 数量自动撑开栏高；主题切换、事件增删后都经 refreshList 走到这里。
      * 栏头在大卡片内的分栏卡片顶部，「管理」入口随之处于大卡片内。
      */
-    private void refreshTimelineColumn(Context context) {
-        if (timelineListContainer == null) {
+    private void fillTimelineColumn(Context context, LinearLayout container) {
+        if (container == null) {
             return;
         }
-        timelineListContainer.removeAllViews();
+        container.removeAllViews();
         LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -582,7 +593,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         manage.setOnClickListener(v -> host.openAcademicTimeline());
         host.attachPressFeedback(manage);
         header.addView(manage);
-        timelineListContainer.addView(header);
+        container.addView(header);
 
         List<AcademicEvent> events = host.academicEvents();
         if (events == null || events.isEmpty()) {
@@ -594,7 +605,7 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
             empty.setPadding(0, dp(context, 18), 0, dp(context, 18));
             empty.setOnClickListener(v -> host.openAcademicTimeline());
             host.attachPressFeedback(empty);
-            timelineListContainer.addView(empty);
+            container.addView(empty);
             return;
         }
         List<AcademicEvent> pending = new ArrayList<>();
@@ -605,10 +616,10 @@ public class PlanPageBuilder implements PlanAddMenuView.Host {
         Collections.sort(pending, EVENT_DATE_ASC);
         Collections.sort(finished, EVENT_DATE_DESC);
         for (AcademicEvent event : pending) {
-            timelineListContainer.addView(academicEventRow(context, event));
+            container.addView(academicEventRow(context, event));
         }
         for (AcademicEvent event : finished) {
-            timelineListContainer.addView(academicEventRow(context, event));
+            container.addView(academicEventRow(context, event));
         }
     }
 

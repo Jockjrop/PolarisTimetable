@@ -1,0 +1,51 @@
+{
+  "source": "国务院办公厅关于2026年部分节假日安排的通知（国办发明电〔2025〕7号）",
+  "note": "补班日只标 kind=makeup，补哪一天的课由各校教务处决定，因此不预设 weekday，由用户在设置中指定。",
+  "days": [
+    { "date": "2026/1/1", "kind": "holiday", "label": "元旦" },
+    { "date": "2026/1/2", "kind": "holiday", "label": "元旦" },
+    { "date": "2026/1/3", "kind": "holiday", "label": "元旦" },
+    { "date": "2026/1/4", "kind": "makeup", "label": "元旦补班" },
+
+    { "date": "2026/2/14", "kind": "makeup", "label": "春节补班" },
+    { "date": "2026/2/15", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/16", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/17", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/18", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/19", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/20", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/21", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/22", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/23", "kind": "holiday", "label": "春节" },
+    { "date": "2026/2/28", "kind": "makeup", "label": "春节补班" },
+
+    { "date": "2026/4/4", "kind": "holiday", "label": "清明" },
+    { "date": "2026/4/5", "kind": "holiday", "label": "清明" },
+    { "date": "2026/4/6", "kind": "holiday", "label": "清明" },
+
+    { "date": "2026/5/1", "kind": "holiday", "label": "劳动节" },
+    { "date": "2026/5/2", "kind": "holiday", "label": "劳动节" },
+    { "date": "2026/5/3", "kind": "holiday", "label": "劳动节" },
+    { "date": "2026/5/4", "kind": "holiday", "label": "劳动节" },
+    { "date": "2026/5/5", "kind": "holiday", "label": "劳动节" },
+    { "date": "2026/5/9", "kind": "makeup", "label": "劳动节补班" },
+
+    { "date": "2026/6/19", "kind": "holiday", "label": "端午" },
+    { "date": "2026/6/20", "kind": "holiday", "label": "端午" },
+    { "date": "2026/6/21", "kind": "holiday", "label": "端午" },
+
+    { "date": "2026/9/20", "kind": "makeup", "label": "国庆补班" },
+    { "date": "2026/9/25", "kind": "holiday", "label": "中秋" },
+    { "date": "2026/9/26", "kind": "holiday", "label": "中秋" },
+    { "date": "2026/9/27", "kind": "holiday", "label": "中秋" },
+
+    { "date": "2026/10/1", "kind": "holiday", "label": "国庆" },
+    { "date": "2026/10/2", "kind": "holiday", "label": "国庆" },
+    { "date": "2026/10/3", "kind": "holiday", "label": "国庆" },
+    { "date": "2026/10/4", "kind": "holiday", "label": "国庆" },
+    { "date": "2026/10/5", "kind": "holiday", "label": "国庆" },
+    { "date": "2026/10/6", "kind": "holiday", "label": "国庆" },
+    { "date": "2026/10/7", "kind": "holiday", "label": "国庆" },
+    { "date": "2026/10/10", "kind": "makeup", "label": "国庆补班" }
+  ]
+}

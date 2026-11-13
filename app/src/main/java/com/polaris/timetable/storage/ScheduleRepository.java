@@ -36,6 +36,8 @@ public class ScheduleRepository {
     private static final String KEY_ACTIVE_SCHEDULE = "active_schedule";
     private static final String KEY_SCHEDULES = "schedules";
     private static final String KEY_GLOBAL_DARK_MODE = "global_dark_mode";
+    /** 节假日/调休的用户覆盖表（设备级偏好，不随课表备份走）。 */
+    private static final String KEY_GLOBAL_HOLIDAY_OVERRIDES = "global_holiday_overrides";
     private static final String KEY_ACCOUNT_NAME = "account_name";
     private static final String KEY_ACCOUNT_AVATAR_URI = "account_avatar_uri";
     private static final String KEY_ACCOUNT_AVATAR_CROP_LEFT = "account_avatar_crop_left";
@@ -233,6 +235,18 @@ public class ScheduleRepository {
     void stageGlobalDarkMode(SharedPreferences.Editor editor, String darkMode) {
         editor.putString(KEY_GLOBAL_DARK_MODE,
                 darkMode == null || darkMode.length() == 0 ? "跟随系统" : darkMode);
+    }
+
+    /** 节假日覆盖表：JSON 数组，逐日覆盖内置表。空串表示完全使用内置数据。 */
+    public String loadGlobalHolidayOverrides() {
+        return preferences.getString(KEY_GLOBAL_HOLIDAY_OVERRIDES, "");
+    }
+
+    public void saveGlobalHolidayOverrides(String json) {
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putString(KEY_GLOBAL_HOLIDAY_OVERRIDES, json == null ? "" : json);
+        editor.apply();
+        notifyWidgets();
     }
 
     public AccountProfile loadAccountProfile() {

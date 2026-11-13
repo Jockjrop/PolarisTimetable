@@ -42,7 +42,7 @@
 
         <TextView
             android:id="@+id/widget_week_month"
-            android:layout_width="30dp"
+            android:layout_width="@dimen/widget_week_time_width"
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:gravity="center"
@@ -159,14 +159,14 @@
             android:orientation="horizontal">
 
             <TextView
-                android:layout_width="30dp"
+                android:layout_width="@dimen/widget_week_time_width"
                 android:layout_height="match_parent" />
 
             <TextView
                 android:id="@+id/widget_week_today_column_0"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="2dp"
+                android:layout_marginStart="@dimen/widget_week_cell_gap"
                 android:layout_weight="1"
                 android:background="@drawable/widget_week_today_column"
                 android:visibility="invisible" />
@@ -175,7 +175,7 @@
                 android:id="@+id/widget_week_today_column_1"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="2dp"
+                android:layout_marginStart="@dimen/widget_week_cell_gap"
                 android:layout_weight="1"
                 android:background="@drawable/widget_week_today_column"
                 android:visibility="invisible" />
@@ -184,7 +184,7 @@
                 android:id="@+id/widget_week_today_column_2"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="2dp"
+                android:layout_marginStart="@dimen/widget_week_cell_gap"
                 android:layout_weight="1"
                 android:background="@drawable/widget_week_today_column"
                 android:visibility="invisible" />
@@ -193,7 +193,7 @@
                 android:id="@+id/widget_week_today_column_3"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="2dp"
+                android:layout_marginStart="@dimen/widget_week_cell_gap"
                 android:layout_weight="1"
                 android:background="@drawable/widget_week_today_column"
                 android:visibility="invisible" />
@@ -202,7 +202,7 @@
                 android:id="@+id/widget_week_today_column_4"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="2dp"
+                android:layout_marginStart="@dimen/widget_week_cell_gap"
                 android:layout_weight="1"
                 android:background="@drawable/widget_week_today_column"
                 android:visibility="invisible" />
@@ -211,7 +211,7 @@
                 android:id="@+id/widget_week_today_column_5"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="2dp"
+                android:layout_marginStart="@dimen/widget_week_cell_gap"
                 android:layout_weight="1"
                 android:background="@drawable/widget_week_today_column"
                 android:visibility="invisible" />
@@ -220,7 +220,7 @@
                 android:id="@+id/widget_week_today_column_6"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="2dp"
+                android:layout_marginStart="@dimen/widget_week_cell_gap"
                 android:layout_weight="1"
                 android:background="@drawable/widget_week_today_column"
                 android:visibility="invisible" />

@@ -3,4 +3,9 @@
          与 ScheduleBoardView 原tablet分支的 54/72dp 数值一致。 -->
     <dimen name="board_time_width">54dp</dimen>
     <dimen name="board_day_min_width">72dp</dimen>
+    <!-- 横屏平板 7 列若不封顶会按 110dp 铺满 824dp，右侧只剩约 152dp，
+         今日概览(240dp)/计划(360dp) 面板都因空间不足被隐藏，实践窄条文字被截断。
+         封到 80dp 后网格约 614dp，右侧约 362dp，三块侧栏都能完整显示。
+         竖屏平板每列本就只有约 78dp，低于此上限，故竖屏与手机不受影响。 -->
+    <dimen name="board_day_max_width">80dp</dimen>
 </resources>

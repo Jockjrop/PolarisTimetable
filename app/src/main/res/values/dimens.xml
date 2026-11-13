@@ -11,6 +11,15 @@
     <dimen name="corner_widget">22dp</dimen>
     <dimen name="corner_widget_accent">3dp</dimen>
 
+    <!-- 整周课表小组件网格：时间列宽、单节行高、列间距与课程格文字内边距。
+         widget_week.xml 的表头/今天列强调底与 widget_week_row.xml 的格子必须共用同一组值，
+         否则列会错位。格子上下 padding 与 widget_week_cell_bg 的 2dp inset 对齐。 -->
+    <dimen name="widget_week_time_width">30dp</dimen>
+    <dimen name="widget_week_row_height">44dp</dimen>
+    <dimen name="widget_week_cell_gap">2dp</dimen>
+    <dimen name="widget_week_cell_padding_h">2dp</dimen>
+    <dimen name="widget_week_cell_padding_v">2dp</dimen>
+
     <!-- 课表网格断点尺寸（手机值；平板覆盖见 values-sw600dp/dimens.xml）。
          ScheduleBoardView 与 MainActivity 顶栏/侧栏对齐计算共用，Java 经
          getDimensionPixelSize 读取，勿在代码里另写魔法数。 -->

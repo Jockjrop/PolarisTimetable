@@ -2,15 +2,16 @@
 <!-- 整周课表小组件的单节次行：时间列（节号 + 上课时间）+ 最多 7 个课程格。
      格子为 FrameLayout：圆角底 ImageView 由远程视图 setColorFilter 染成课程色
      （与今日列表 widget_course_accent 同款反射染色），文字叠于其上；
-     空格隐藏底图，今天列的连续强调底由 widget_week.xml 的列表容器绘制。 -->
+     空格隐藏底图，今天列的连续强调底由 widget_week.xml 的列表容器绘制。
+     课程格文字顶部对齐、单格可排 3 行，连堂课的课名/老师/地点按节次段依次铺满整块色块。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_week_row"
     android:layout_width="match_parent"
-    android:layout_height="44dp"
+    android:layout_height="@dimen/widget_week_row_height"
     android:orientation="horizontal">
 
     <LinearLayout
-        android:layout_width="30dp"
+        android:layout_width="@dimen/widget_week_time_width"
         android:layout_height="match_parent"
         android:gravity="center"
         android:orientation="vertical">
@@ -41,7 +42,7 @@
         android:id="@+id/widget_week_cell_0"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="2dp"
+        android:layout_marginStart="@dimen/widget_week_cell_gap"
         android:layout_weight="1">
 
         <ImageView
@@ -57,12 +58,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:ellipsize="end"
-            android:gravity="center"
+            android:gravity="center_horizontal|top"
             android:includeFontPadding="false"
-            android:maxLines="2"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:maxLines="3"
+            android:paddingStart="@dimen/widget_week_cell_padding_h"
+            android:paddingEnd="@dimen/widget_week_cell_padding_h"
+            android:paddingTop="@dimen/widget_week_cell_padding_v"
+            android:paddingBottom="@dimen/widget_week_cell_padding_v"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.Cell"
             android:textColor="@color/widget_text_main" />
     </FrameLayout>
 
@@ -70,7 +73,7 @@
         android:id="@+id/widget_week_cell_1"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="2dp"
+        android:layout_marginStart="@dimen/widget_week_cell_gap"
         android:layout_weight="1">
 
         <ImageView
@@ -86,12 +89,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:ellipsize="end"
-            android:gravity="center"
+            android:gravity="center_horizontal|top"
             android:includeFontPadding="false"
-            android:maxLines="2"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:maxLines="3"
+            android:paddingStart="@dimen/widget_week_cell_padding_h"
+            android:paddingEnd="@dimen/widget_week_cell_padding_h"
+            android:paddingTop="@dimen/widget_week_cell_padding_v"
+            android:paddingBottom="@dimen/widget_week_cell_padding_v"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.Cell"
             android:textColor="@color/widget_text_main" />
     </FrameLayout>
 
@@ -99,7 +104,7 @@
         android:id="@+id/widget_week_cell_2"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="2dp"
+        android:layout_marginStart="@dimen/widget_week_cell_gap"
         android:layout_weight="1">
 
         <ImageView
@@ -115,12 +120,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:ellipsize="end"
-            android:gravity="center"
+            android:gravity="center_horizontal|top"
             android:includeFontPadding="false"
-            android:maxLines="2"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:maxLines="3"
+            android:paddingStart="@dimen/widget_week_cell_padding_h"
+            android:paddingEnd="@dimen/widget_week_cell_padding_h"
+            android:paddingTop="@dimen/widget_week_cell_padding_v"
+            android:paddingBottom="@dimen/widget_week_cell_padding_v"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.Cell"
             android:textColor="@color/widget_text_main" />
     </FrameLayout>
 
@@ -128,7 +135,7 @@
         android:id="@+id/widget_week_cell_3"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="2dp"
+        android:layout_marginStart="@dimen/widget_week_cell_gap"
         android:layout_weight="1">
 
         <ImageView
@@ -144,12 +151,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:ellipsize="end"
-            android:gravity="center"
+            android:gravity="center_horizontal|top"
             android:includeFontPadding="false"
-            android:maxLines="2"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:maxLines="3"
+            android:paddingStart="@dimen/widget_week_cell_padding_h"
+            android:paddingEnd="@dimen/widget_week_cell_padding_h"
+            android:paddingTop="@dimen/widget_week_cell_padding_v"
+            android:paddingBottom="@dimen/widget_week_cell_padding_v"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.Cell"
             android:textColor="@color/widget_text_main" />
     </FrameLayout>
 
@@ -157,7 +166,7 @@
         android:id="@+id/widget_week_cell_4"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="2dp"
+        android:layout_marginStart="@dimen/widget_week_cell_gap"
         android:layout_weight="1">
 
         <ImageView
@@ -173,12 +182,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:ellipsize="end"
-            android:gravity="center"
+            android:gravity="center_horizontal|top"
             android:includeFontPadding="false"
-            android:maxLines="2"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:maxLines="3"
+            android:paddingStart="@dimen/widget_week_cell_padding_h"
+            android:paddingEnd="@dimen/widget_week_cell_padding_h"
+            android:paddingTop="@dimen/widget_week_cell_padding_v"
+            android:paddingBottom="@dimen/widget_week_cell_padding_v"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.Cell"
             android:textColor="@color/widget_text_main" />
     </FrameLayout>
 
@@ -186,7 +197,7 @@
         android:id="@+id/widget_week_cell_5"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="2dp"
+        android:layout_marginStart="@dimen/widget_week_cell_gap"
         android:layout_weight="1">
 
         <ImageView
@@ -202,12 +213,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:ellipsize="end"
-            android:gravity="center"
+            android:gravity="center_horizontal|top"
             android:includeFontPadding="false"
-            android:maxLines="2"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:maxLines="3"
+            android:paddingStart="@dimen/widget_week_cell_padding_h"
+            android:paddingEnd="@dimen/widget_week_cell_padding_h"
+            android:paddingTop="@dimen/widget_week_cell_padding_v"
+            android:paddingBottom="@dimen/widget_week_cell_padding_v"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.Cell"
             android:textColor="@color/widget_text_main" />
     </FrameLayout>
 
@@ -215,7 +228,7 @@
         android:id="@+id/widget_week_cell_6"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="2dp"
+        android:layout_marginStart="@dimen/widget_week_cell_gap"
         android:layout_weight="1">
 
         <ImageView
@@ -231,12 +244,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:ellipsize="end"
-            android:gravity="center"
+            android:gravity="center_horizontal|top"
             android:includeFontPadding="false"
-            android:maxLines="2"
-            android:paddingStart="3dp"
-            android:paddingEnd="3dp"
-            android:textAppearance="@style/TextAppearance.Polaris.Widget.BodySmall"
+            android:maxLines="3"
+            android:paddingStart="@dimen/widget_week_cell_padding_h"
+            android:paddingEnd="@dimen/widget_week_cell_padding_h"
+            android:paddingTop="@dimen/widget_week_cell_padding_v"
+            android:paddingBottom="@dimen/widget_week_cell_padding_v"
+            android:textAppearance="@style/TextAppearance.Polaris.Widget.Cell"
             android:textColor="@color/widget_text_main" />
     </FrameLayout>
 </LinearLayout>

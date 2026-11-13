@@ -2,9 +2,7 @@ package com.polaris.timetable.ui.page;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -19,6 +17,9 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.polaris.timetable.R;
+import com.polaris.timetable.ui.DesignTokens;
+import com.polaris.timetable.ui.PolarisSwitchView;
+import com.polaris.timetable.ui.ViewTags;
 
 /**
  * 设置页内容构建器：课表/全局/安全/更多四页与行组件。
@@ -29,7 +30,6 @@ public class SettingsPageBuilder {
 
     public interface Host {
         // 主题/样式
-        boolean isMinimalVisualTheme();
         boolean isDarkModeActive();
         String visualTheme();
         int inkColor();
@@ -41,7 +41,6 @@ public class SettingsPageBuilder {
         String pressColorHex();
         Drawable roundedBg(String hex, int radius);
         int color(String hex);
-        void applyThemeElevation(View view, int elevationDp);
 
         // 布局度量
         int contentColumnWidth();
@@ -101,6 +100,11 @@ public class SettingsPageBuilder {
         void onVisualThemeClicked(View anchor);
         void onDarkModeClicked(View anchor);
         void onBoardBackgroundClicked(View anchor);
+
+        /** 「节假日与调休」入口的摘要：待确认的补班日数量。 */
+        String holidaySummary();
+
+        void onHolidayClicked(View anchor);
         void onShowPracticeChanged(boolean value);
         void onCollapseLunchChanged(boolean value);
         void onShellBlurChanged(boolean value);
@@ -153,7 +157,8 @@ public class SettingsPageBuilder {
 
     public TextView sectionHeader(Context context, String text) {
         TextView header = new TextView(context);
-        header.setTag("settings_header");
+        // 与 ViewTags.SECTION_HEADER 对应：就地换肤按此 key 改文字色。
+        header.setTag(ViewTags.SECTION_HEADER, ViewTags.MARK);
         header.setText(text);
         header.setTextColor(host.mutedColor());
         // 13sp + 字距的章节标签更有层次；左 20 与分组卡内行文字起始对齐
@@ -166,19 +171,16 @@ public class SettingsPageBuilder {
 
     public LinearLayout settingsGroup(Context context) {
         LinearLayout group = new LinearLayout(context);
-        group.setTag("settings_group");
+        group.setTag(ViewTags.SETTINGS_GROUP, ViewTags.MARK);
         group.setOrientation(LinearLayout.VERTICAL);
         group.setPadding(dp(context, 10), dp(context, 10), dp(context, 10), dp(context, 10));
-        group.setBackground(host.roundedBg(host.groupColorHex(), host.isMinimalVisualTheme() ? 18 : 22));
+        group.setBackground(host.roundedBg(host.groupColorHex(), DesignTokens.RADIUS_SURFACE));
         // 组内行分隔线：内凹 20dp 与行文字起始位对齐（组内边距 10 + 行内边距 10），
         // 避免多行设置项在浅色卡面上糊成一块。
         int dividerInset = dp(context, 20);
         group.setDividerDrawable(new InsetDrawable(
                 new ColorDrawable(host.dividerColor()), dividerInset, 0, dividerInset, 0));
         group.setShowDividers(LinearLayout.SHOW_DIVIDER_MIDDLE);
-        if (!host.isMinimalVisualTheme()) {
-            host.applyThemeElevation(group, 2);
-        }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(0, 0, 0, dp(context, 8));
@@ -197,7 +199,7 @@ public class SettingsPageBuilder {
         attachRowPressFeedback(context, row);
 
         TextView labelView = new TextView(context);
-        labelView.setTag("setting_label");
+        labelView.setTag(ViewTags.SETTING_LABEL, ViewTags.MARK);
         labelView.setText(label);
         labelView.setTextColor(host.inkColor());
         labelView.setTextSize(16);
@@ -208,7 +210,7 @@ public class SettingsPageBuilder {
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView valueView = new TextView(context);
-        valueView.setTag("setting_value");
+        valueView.setTag(ViewTags.SETTING_VALUE, ViewTags.MARK);
         valueView.setText(value);
         valueView.setTextColor(host.mutedColor());
         valueView.setTextSize(15);
@@ -233,7 +235,7 @@ public class SettingsPageBuilder {
         attachRowPressFeedback(context, row);
 
         TextView labelView = new TextView(context);
-        labelView.setTag("setting_label");
+        labelView.setTag(ViewTags.SETTING_LABEL, ViewTags.MARK);
         labelView.setText(label);
         labelView.setTextColor(host.inkColor());
         labelView.setTextSize(16);
@@ -241,7 +243,7 @@ public class SettingsPageBuilder {
         labelView.setGravity(Gravity.CENTER_VERTICAL);
         row.addView(labelView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        SwitchThumbView toggle = switchView(context, checked);
+        PolarisSwitchView toggle = switchView(context, checked);
         row.addView(toggle);
         final boolean[] state = {checked};
         View.OnClickListener listener = v -> {
@@ -254,9 +256,9 @@ public class SettingsPageBuilder {
         return row;
     }
 
-    private SwitchThumbView switchView(Context context, boolean checked) {
-        SwitchThumbView view = new SwitchThumbView(context, checked, host.isDarkModeActive());
-        view.setTag("switch_thumb");
+    private PolarisSwitchView switchView(Context context, boolean checked) {
+        PolarisSwitchView view = new PolarisSwitchView(context, checked, host.isDarkModeActive());
+        view.setTag(ViewTags.SWITCH, ViewTags.MARK);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(context, 52), dp(context, 30));
         params.leftMargin = dp(context, 14);
         view.setLayoutParams(params);
@@ -277,7 +279,7 @@ public class SettingsPageBuilder {
         row.setContentDescription(context.getString(R.string.settings_row_locked_switch_cd, label));
 
         TextView labelView = new TextView(context);
-        labelView.setTag("setting_label");
+        labelView.setTag(ViewTags.SETTING_LABEL, ViewTags.MARK);
         labelView.setText(label);
         labelView.setTextColor(host.inkColor());
         labelView.setTextSize(16);
@@ -285,7 +287,7 @@ public class SettingsPageBuilder {
         labelView.setGravity(Gravity.CENTER_VERTICAL);
         row.addView(labelView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        SwitchThumbView toggle = switchView(context, true);
+        PolarisSwitchView toggle = switchView(context, true);
         toggle.setClickable(false);
         toggle.setFocusable(false);
         row.addView(toggle);
@@ -310,22 +312,25 @@ public class SettingsPageBuilder {
     public LinearLayout settingsPagePanel(Context context, String headingText) {
         LinearLayout panel = new LinearLayout(context);
         panel.setOrientation(LinearLayout.VERTICAL);
-        int columnWidth = host.contentColumnWidth();
         int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
-        if (columnWidth < screenWidth) {
-            panel.setLayoutParams(new ScrollView.LayoutParams(columnWidth,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
-            panel.setPadding(dp(context, 16), dp(context, 8), dp(context, 16), host.bottomContentInset() + dp(context, 48));
-        } else {
-            panel.setPadding(dp(context, 12), dp(context, 8), dp(context, 12), host.bottomContentInset() + dp(context, 48));
-        }
+        // 宽度跟随父容器自适应：横屏分栏时设置页只有约 575dp，若仍按
+        // contentColumnWidth(640dp) 固定居中，面板会左右各溢出约 32dp，
+        // 行标题左侧与数值右侧都会被容器裁掉。改为填满可用宽度 + 固定内边距，
+        // 行长由容器决定；手机/竖屏平板也不再需要居中限宽。
+        int sidePadding = dp(context,
+                host.contentColumnWidth() < screenWidth ? 16 : 12);
+        panel.setLayoutParams(new ScrollView.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        panel.setPadding(sidePadding, dp(context, 8), sidePadding,
+                host.bottomContentInset() + dp(context, 48));
         return panel;
     }
 
     // ===== 四页内容工厂 =====
 
     public LinearLayout createScheduleSettingsPanel(Context context) {
-        LinearLayout panel = settingsPagePanel(context, "课表设置");
+        LinearLayout panel = settingsPagePanel(context, SettingsRoute.SCHEDULE);
         panel.addView(settingValueRow(context, context.getString(R.string.settings_row_schedule_name), host.scheduleName(), v -> {}));
         panel.addView(settingValueRow(context, context.getString(R.string.settings_row_current_week), host.currentWeekValue(), v -> {}));
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_schedule_appearance)));
@@ -369,7 +374,7 @@ public class SettingsPageBuilder {
     }
 
     public LinearLayout createGlobalSettingsPanel(Context context) {
-        LinearLayout panel = settingsPagePanel(context, "全局设置");
+        LinearLayout panel = settingsPagePanel(context, SettingsRoute.GLOBAL);
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_display)));
         LinearLayout displayCard = settingsGroup(context);
         displayCard.addView(settingValueRow(context, context.getString(R.string.settings_row_timetable), host.scheduleName(), host::onScheduleSwitchClicked));
@@ -379,6 +384,8 @@ public class SettingsPageBuilder {
                 host::onDarkModeClicked));
         displayCard.addView(settingValueRow(context, context.getString(R.string.settings_row_board_background), host.backgroundDisplayValue(),
                 host::onBoardBackgroundClicked));
+        displayCard.addView(settingValueRow(context, context.getString(R.string.settings_row_holiday),
+                host.holidaySummary(), host::onHolidayClicked));
         displayCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_show_practice), host.showPracticeBanner(), host::onShowPracticeChanged));
         displayCard.addView(settingSwitchRow(context, context.getString(R.string.settings_row_collapse_lunch), host.collapseLunchBreak(), host::onCollapseLunchChanged));
         panel.addView(displayCard);
@@ -450,7 +457,7 @@ public class SettingsPageBuilder {
     }
 
     public LinearLayout createSecuritySettingsPanel(Context context) {
-        LinearLayout panel = settingsPagePanel(context, "安全设置");
+        LinearLayout panel = settingsPagePanel(context, SettingsRoute.SECURITY);
         // 学期/学校两行已迁入「我的」页用户信息栏，此处仅保留账户与备份。
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_account)));
         LinearLayout accountCard = settingsGroup(context);
@@ -491,7 +498,8 @@ public class SettingsPageBuilder {
         return panel;
     }
 
-    public LinearLayout createMoreSettingsPanel(Context context) {        LinearLayout panel = settingsPagePanel(context, "更多");
+    public LinearLayout createMoreSettingsPanel(Context context) {
+        LinearLayout panel = settingsPagePanel(context, SettingsRoute.MORE);
         // 「更新」区：检查入口与自动检查开关集中在上半区。
         panel.addView(sectionHeader(context, context.getString(R.string.settings_section_update)));
         LinearLayout updateCard = settingsGroup(context);
@@ -533,59 +541,5 @@ public class SettingsPageBuilder {
 
     public interface BooleanSetter {
         void set(boolean value);
-    }
-
-    // 自绘制开关_thumb，纯搬 MainActivity.SwitchThumbView，改为静态与 Context 解耦
-    private static class SwitchThumbView extends View {
-        // 开关组件 token：选中态固定用夜色 brand（不随视觉风格变化），未选中态按明暗分叉
-        private static final int TRACK_CHECKED = Color.parseColor("#3E8BFF");
-        private static final int TRACK_OFF_DARK = Color.parseColor("#252B36");
-        private static final int TRACK_OFF_LIGHT = Color.parseColor("#D8DDE6");
-        private static final int STROKE_CHECKED = Color.parseColor("#63A4FF");
-        private static final int STROKE_OFF_DARK = Color.parseColor("#3B424D");
-        private static final int STROKE_OFF_LIGHT = Color.parseColor("#C9D0DA");
-
-        private boolean checked;
-        private boolean dark;
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-        SwitchThumbView(Context context, boolean checked, boolean dark) {
-            super(context);
-            this.checked = checked;
-            this.dark = dark;
-        }
-
-        void setChecked(boolean checked) {
-            if (this.checked == checked) return;
-            this.checked = checked;
-            invalidate();
-        }
-
-        void setDark(boolean dark) {
-            if (this.dark == dark) return;
-            this.dark = dark;
-            invalidate();
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            float width = getWidth();
-            float height = getHeight();
-            float radius = height / 2f;
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(checked ? TRACK_CHECKED : dark ? TRACK_OFF_DARK : TRACK_OFF_LIGHT);
-            canvas.drawRoundRect(0f, 0f, width, height, radius, radius, paint);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(getResources().getDisplayMetrics().density * 1f);
-            paint.setColor(checked ? STROKE_CHECKED : dark ? STROKE_OFF_DARK : STROKE_OFF_LIGHT);
-            float inset = getResources().getDisplayMetrics().density * 0.5f;
-            canvas.drawRoundRect(inset, inset, width - inset, height - inset, radius, radius, paint);
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.WHITE);
-            float thumbRadius = height / 2f - Math.round(4 * getResources().getDisplayMetrics().density);
-            float centerX = checked ? width - radius : radius;
-            canvas.drawCircle(centerX, height / 2f, thumbRadius, paint);
-        }
     }
 }

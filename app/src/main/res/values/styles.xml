@@ -53,4 +53,10 @@
         <item name="android:textSize">11sp</item>
         <item name="android:textStyle">bold</item>
     </style>
+
+    <!-- 整周网格课程格：10sp + 紧凑行距，让单节 44dp 高度内可完整排下 3 行文字。 -->
+    <style name="TextAppearance.Polaris.Widget.Cell">
+        <item name="android:textSize">10sp</item>
+        <item name="android:lineSpacingMultiplier">0.95</item>
+    </style>
 </resources>

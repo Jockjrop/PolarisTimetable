@@ -18,6 +18,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Canvas;
 import android.graphics.Insets;
@@ -27,6 +28,7 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -64,6 +66,14 @@ import android.widget.Button;
 import android.widget.DatePicker;
 import android.widget.FrameLayout;
 import android.widget.EditText;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.MultiFormatReader;
+import com.google.zxing.NotFoundException;
+import com.google.zxing.RGBLuminanceSource;
+import com.google.zxing.Result;
+import com.google.zxing.common.HybridBinarizer;
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -105,6 +115,7 @@ import com.polaris.timetable.DialogKit.LongSetter;
 import com.polaris.timetable.DialogKit.StringSetter;
 import com.polaris.timetable.reminder.CourseReminderScheduler;
 import com.polaris.timetable.reminder.PlanReminderScheduler;
+import com.polaris.timetable.sharing.PolarisScanActivity;
 import com.polaris.timetable.sharing.ScheduleShareCodec;
 import com.polaris.timetable.sharing.ScheduleShareFile;
 import com.polaris.timetable.statistics.ScheduleStatistics;
@@ -113,6 +124,7 @@ import com.polaris.timetable.storage.BackupRestoreController;
 import com.polaris.timetable.storage.PlanRepository;
 import com.polaris.timetable.storage.ScheduleBackupManager;
 import com.polaris.timetable.storage.ScheduleRepository;
+import com.polaris.timetable.time.AcademicCalendar;
 import com.polaris.timetable.time.ClassTimeTableController;
 import com.polaris.timetable.time.CourseTimeResolver;
 import com.polaris.timetable.validation.CourseConflictDetector;
@@ -127,12 +139,15 @@ import com.polaris.timetable.ui.CourseConflictSummaryView;
 import com.polaris.timetable.ui.dialog.GlassDialogFactory;
 import com.polaris.timetable.ui.DesignTokens;
 import com.polaris.timetable.ui.PolarisThemeBackgroundView;
+import com.polaris.timetable.ui.PolarisSwitchView;
+import com.polaris.timetable.ui.QrCodeView;
 import com.polaris.timetable.ui.PolarisToast;
 import com.polaris.timetable.ui.PolarisVisualTheme;
 import com.polaris.timetable.ui.PracticePanelController;
 import com.polaris.timetable.ui.ScheduleBoardView;
 import com.polaris.timetable.ui.TodayOverviewController;
 import com.polaris.timetable.ui.UpdateReadyBadgeView;
+import com.polaris.timetable.ui.ViewTags;
 import com.polaris.timetable.ui.WindowSizeClass;
 import com.polaris.timetable.ui.TodayOverviewView;
 import com.polaris.timetable.ui.WeekNavigationController;
@@ -142,12 +157,15 @@ import com.polaris.timetable.widget.WeekScheduleWidgetProvider;
 import com.polaris.timetable.ui.page.MyPageBuilder;
 import com.polaris.timetable.ui.page.PlanPageBuilder;
 import com.polaris.timetable.ui.page.SettingsPageBuilder;
+import com.polaris.timetable.ui.page.SettingsRoute;
 import com.polaris.timetable.update.UpdateCoordinator;
 import com.polaris.timetable.update.UpdateDownloadState;
 import com.polaris.timetable.update.UpdateInfo;
 import com.polaris.timetable.update.UpdateInstaller;
 import com.polaris.timetable.update.UpdateJsonParser;
-import com.polaris.timetable.ui.shell.BottomNavView;import com.polaris.timetable.ui.WeekdayLabels;
+import com.polaris.timetable.ui.shell.BottomNavView;
+import com.polaris.timetable.ui.shell.OverflowMenuButton;
+import com.polaris.timetable.ui.WeekdayLabels;
 import com.polaris.timetable.state.ScheduleSessionViewModel;
 import com.polaris.timetable.state.ScheduleViewState;
 
@@ -177,16 +195,12 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final int PICK_PDF = 1001;
     private static final int PICK_BACKGROUND_IMAGE = 1002;
     private static final int PICK_AVATAR_IMAGE = 1003;
-    private static final int PICK_SHARED_SCHEDULE_FILE = 1005;
     private static final int PICK_BACKUP_FILE = 1006;
+    private static final int PICK_QR_IMAGE = 1007;
     private static final int REQUEST_NOTIFICATION_PERMISSION = 2001;
-    private static final String TAG_SETTINGS_GROUP = "settings_group";
-    private static final String TAG_SECTION_HEADER = "section_header";
-    private static final String TAG_SETTING_LABEL = "setting_label";
-    private static final String TAG_SETTING_VALUE = "setting_value";
-    private static final String TAG_SWITCH_THUMB = "switch_thumb";
-    private static final String TAG_SETTINGS_HEADER = "settings_header";
-    private static final String TAG_SETTINGS_SCROLL = "settings_scroll";
+    private static final int REQUEST_WRITE_GALLERY = 2002;
+    /** 低版本系统申请存储权限期间暂存待保存的二维码链接。 */
+    private String pendingGalleryQrLink;
     private static final int BOTTOM_NAV_SCROLL_THRESHOLD_DP = 12;
     private static final int BOTTOM_NAV_HIDE_DURATION_MS = 160;
     private static final int BOTTOM_NAV_SHOW_DURATION_MS = 220;
@@ -205,7 +219,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private static final String CONTACT_EMAIL = "support@polaris-io.ccwu.cc";
     private static final String PROJECT_HOME_URL = "https://github.com/Jockjrop/PolarisTimetable";
     private static final String PROJECT_GITEE_URL = "https://gitee.com/Jockjrop/polaris-course-schedule";
-    private static final String OFFICIAL_WEBSITE_URL = "https://timetable.polaris-io.ccwu.cc/";
+    private static final String OFFICIAL_WEBSITE_URL = "https://timetable.deeps.top/";
     private final List<StructuredCourse> structuredCourses = new ArrayList<>();
     private final List<Course> courses = new ArrayList<>();
     private final CourseStructureMapper courseStructureMapper = new CourseStructureMapper();
@@ -241,13 +255,15 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private View emptyScheduleView;
     private TextView title;
     private TextView subtitle;
-    private Button overflowMenuButton;
+    private OverflowMenuButton overflowMenuButton;
     private TodayOverviewView todayOverviewView;
     private CourseConflictSummaryView conflictSummaryView;
     /** 横屏平板顶栏的周选择下拉按钮（替代周 chip 行）。 */
     private TextView weekSelectorButton;
     /** 横屏平板：设置面板是否打开（我的页处于左侧侧栏模式）。 */
     private boolean tabletSettingsOpen;
+    /** 「我的」页颜色在构建时固化：不可见时改主题只置脏，切回该页再重建。 */
+    private boolean myPageThemeDirty;
     /** 横屏平板双栏模式的分隔线（仅侧栏模式可见）。 */
     private View paneDivider;
     /** 横屏平板：课表右侧本周实践列表面板（右侧空间充足时显示）。 */
@@ -455,6 +471,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     private View weekSwipeHintView;
     private View courseSaveUndoView;
     private final Handler practiceBarHandler = new Handler(Looper.getMainLooper());
+    /** 学业日历（节假日/调休）：全局生效，与具体课表无关。 */
+    private AcademicCalendar academicCalendar = AcademicCalendar.empty();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -470,6 +488,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleViewState.darkMode = scheduleRepository.loadGlobalDarkMode();
         applyAccountProfile(scheduleRepository.loadAccountProfile());
         applyConfig(scheduleRepository.loadConfig(activeScheduleId));
+        academicCalendar = AcademicCalendar.load(this, scheduleRepository.loadGlobalHolidayOverrides());
         // 会话级状态恢复：ViewModel 跨重建存活（旋转走 configChanges 不经此路径）。
         // currentWeek==0 表示新会话，回退当前日期周；恢复值须夹在有效周范围内。
         sessionViewModel = new ViewModelProvider(this).get(ScheduleSessionViewModel.class);
@@ -528,6 +547,19 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
                                            int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_WRITE_GALLERY) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            String link = pendingGalleryQrLink;
+            pendingGalleryQrLink = null;
+            if (granted && link != null) {
+                saveQrToGallery(link);
+            } else {
+                Toast.makeText(this, getString(R.string.share_qr_permission_denied),
+                        Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
         if (requestCode != REQUEST_NOTIFICATION_PERMISSION) {
             return;
         }
@@ -596,6 +628,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         boolean wideTopPanel = isLandscapeTablet();
         // 布局重建（旋转等）后回到「我的页居中」初始模式，侧栏状态不跨重建保留。
         tabletSettingsOpen = false;
+        myPageThemeDirty = false;
         paneDivider = null;
         todayOverviewPanelContent = null;
         weekSelectorButton = null;
@@ -648,14 +681,15 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         practiceHeaderParams.rightMargin = dp(6);
         actions.addView(practiceTopBar, practiceHeaderParams);
 
-        overflowMenuButton = transparentTopButton("···", v -> {
-            v.animate().rotationBy(90f).scaleX(0.88f).scaleY(0.88f).setDuration(90)
-                    .withEndAction(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(90).start())
-                    .start();
-            showActionPanel(v);
-        });
+        // 常驻细描边矩形 + 手绘三点：矩形与同行「实践 / 周选择」共用 actions 的
+        // 垂直居中，三点画在 View 正中心，不再受「…」字形基线偏下影响。
+        // 按钮几何完全静止（按下的弹跳只作用于内部绘制），菜单锚点保持稳定。
+        overflowMenuButton = new OverflowMenuButton(this, inkColor(),
+                PolarisVisualTheme.outlineColor(scheduleViewState.visualTheme, isDarkModeActive()),
+                accentColor());
         overflowMenuButton.setContentDescription(getString(R.string.more_actions_cd));
-        actions.addView(overflowMenuButton);
+        overflowMenuButton.setOnClickListener(v -> showActionPanel(v));
+        actions.addView(overflowMenuButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         LinearLayout headline = new LinearLayout(this);
         headline.setOrientation(LinearLayout.HORIZONTAL);
@@ -706,6 +740,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleBoard.setClassTimeSettings(scheduleViewState.firstClassStartTime, scheduleViewState.classDurationMinutes, scheduleViewState.classBreakMinutes,
                 scheduleViewState.classBigBreakMinutes, scheduleViewState.afternoonStartTime, scheduleViewState.lateAfternoonStartTime, scheduleViewState.classTimeConfig);
         scheduleBoard.setCollapseLunchBreak(scheduleViewState.collapseLunchBreak);
+        scheduleBoard.setAcademicCalendar(academicCalendar);
         scheduleBoard.setVisualTheme(scheduleViewState.visualTheme);
         scheduleBoard.setDarkMode(isDarkModeActive());
         scheduleBoard.setCourseMetrics(scheduleViewState.courseCellHeight, scheduleViewState.courseCornerRadius);
@@ -880,15 +915,27 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        // 扫码结果走 zxing 自带的 requestCode，必须在通用 resultCode 判断之前拦下。
+        IntentResult scanResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        if (scanResult != null) {
+            String contents = scanResult.getContents();
+            if (contents == null || contents.trim().isEmpty()) {
+                Toast.makeText(this, getString(R.string.import_link_scan_empty),
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
+            handleScannedLink(contents);
+            return;
+        }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             return;
         }
         if (requestCode == PICK_PDF) {
             startPdfImportFlow(data.getData());
-        } else if (requestCode == PICK_SHARED_SCHEDULE_FILE) {
-            startSharedScheduleFileImportFlow(data.getData());
         } else if (requestCode == PICK_BACKUP_FILE) {
             startBackupRestoreFlow(data.getData());
+        } else if (requestCode == PICK_QR_IMAGE) {
+            decodeQrFromImage(data.getData());
         } else if (requestCode == AiImportFlow.REQUEST_PICK_AI_IMAGE) {
             aiImportFlow.onImagePicked(data.getData());
         } else if (requestCode == PICK_BACKGROUND_IMAGE) {
@@ -1063,6 +1110,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             scheduleBoard.setClassTimeSettings(scheduleViewState.firstClassStartTime, scheduleViewState.classDurationMinutes, scheduleViewState.classBreakMinutes,
                     scheduleViewState.classBigBreakMinutes, scheduleViewState.afternoonStartTime, scheduleViewState.lateAfternoonStartTime, scheduleViewState.classTimeConfig);
             scheduleBoard.setCollapseLunchBreak(scheduleViewState.collapseLunchBreak);
+            scheduleBoard.setAcademicCalendar(academicCalendar);
             scheduleBoard.setVisualTheme(scheduleViewState.visualTheme);
             scheduleBoard.setDarkMode(isDarkModeActive());
             scheduleBoard.setShowOutOfWeekCourses(scheduleViewState.showOutOfWeekCourses);
@@ -1512,10 +1560,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
         card.setPadding(dp(24), dp(28), dp(24), dp(28));
-        card.setBackground(roundedBg(cardColorHex(), isMinimalVisualTheme() ? 18 : 22));
-        if (!isMinimalVisualTheme()) {
-            applyThemeElevation(card, 4);
-        }
+        card.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_SURFACE));
 
         TextView titleView = new TextView(this);
         titleView.setText(getString(R.string.empty_courses_title));
@@ -1853,7 +1898,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         scheduleViewState.backgroundImageCrop = nextCrop;
         scheduleViewState.timetableBackground = "系统相册";
         saveGlobalAppearance();
-        applyShellAppearance();
+        applyShellAppearance(false);
         renderSchedule();
         refreshMyPageBehindSettings();
         updateSettingValueRow(backgroundSettingRow, "系统相册");
@@ -2137,34 +2182,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         toastDone(getString(R.string.profile_saved));
     }
 
-    // 触摸仅做按压反馈装饰（返回 false 不消费），点击语义由 OnClickListener 承接，
-    // 无障碍路径不受影响；若在 ACTION_UP 里手动 performClick 会双触发点击。
-    @SuppressLint("ClickableViewAccessibility")
-    private Button transparentTopButton(String text, View.OnClickListener listener) {
-        Button button = new Button(this);
-        button.setText(text);
-        button.setTextSize(22);
-        button.setTextColor(inkColor());
-        button.setBackgroundColor(Color.TRANSPARENT);
-        button.setOnClickListener(listener);
-        button.setOnTouchListener((view, event) -> {
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                view.setBackground(roundedBg(pressColorHex(), DesignTokens.RADIUS_SMALL));
-                view.animate().scaleX(0.92f).scaleY(0.92f).setDuration(70).start();
-            } else if (event.getAction() == MotionEvent.ACTION_UP
-                    || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                view.setBackgroundColor(Color.TRANSPARENT);
-                view.animate().scaleX(1f).scaleY(1f).setDuration(110).start();
-            }
-            return false;
-        });
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
-        button.setPadding(0, 0, 0, 0);
-        button.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
-        return button;
-    }
-
     private void returnToCurrentWeek() {
         if (!weekNavigationController.returnToCurrentWeek()) {
             // 无变化路径与抽取前一致：仅刷新底栏「课表」返回图标态。
@@ -2383,13 +2400,19 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         openPdfPicker();
     }
 
+    /**
+     * 「···」操作菜单。定位交给 showAsDropDown，由系统按锚点的窗口坐标计算，
+     * 完全不手算状态栏高度：早先 showAtLocation + getLocationInWindow 基准不一致会漂到
+     * 锚点下方很远处；换成 Dialog 后又因窗口 inset 异步变化而上下跳一个状态栏高度。
+     */
     private void showActionPanel(View anchor) {
+        PopupWindow popup = new PopupWindow(this);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(6), dp(6), dp(6), dp(6));
-        panel.setBackground(dialogGlassBg(18, ACTION_PANEL_OPACITY_PERCENT));
+        // 菜单是浮层，用不透明卡片色：玻璃底取不到背景源，实测会整块透出下面的课表。
+        panel.setBackground(roundedBg(cardColorHex(), 18));
 
-        PopupWindow popup = new PopupWindow();
         panel.addView(popupMenuAction(getString(R.string.action_import_pdf), v -> {
             popup.dismiss();
             openPdfPicker();
@@ -2398,9 +2421,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             popup.dismiss();
             aiImportFlow.showImportDialog();
         }));
-        panel.addView(popupMenuAction(getString(R.string.action_import_file), v -> {
+        panel.addView(popupMenuAction(getString(R.string.action_import_link), v -> {
             popup.dismiss();
-            openSharedScheduleFilePicker();
+            showImportLinkDialog();
         }));
         panel.addView(popupMenuAction(getString(R.string.action_new_semester), v -> {
             popup.dismiss();
@@ -2412,7 +2435,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         }));
         panel.addView(popupMenuAction(getString(R.string.share_chooser_file), v -> {
             popup.dismiss();
-            shareScheduleFile();
+            shareScheduleLink();
         }));
         panel.addView(popupMenuAction(getString(R.string.export_dialog_title), v -> {
             popup.dismiss();
@@ -2422,32 +2445,20 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             popup.dismiss();
             showAcademicTimelineDialog();
         }));
-        popup.setContentView(glassDialogContent(
-                panel, 18, ACTION_PANEL_OPACITY_PERCENT));
+
+        popup.setContentView(panel);
         popup.setWidth(dp(224));
         popup.setHeight(LinearLayout.LayoutParams.WRAP_CONTENT);
         popup.setFocusable(true);
         popup.setOutsideTouchable(true);
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popup.setElevation(dp(8));
-        popup.setAnimationStyle(android.R.style.Animation_Dialog);
-        // 1.27.7：菜单锚定「···」按钮正下方（右缘与按钮对齐），不再固定在屏幕右上角。
-        showPopupAnchoredBelow(popup, anchor, dp(224));
+        showPopupAnchoredBelow(popup, anchor);
     }
 
-    /**
-     * 把弹出菜单显示在锚点视图正下方：右缘与锚点右缘对齐，
-     * 并夹紧在窗口左右安全边距内；y 取锚点底边 + 6dp 间隙。
-     */
-    private void showPopupAnchoredBelow(PopupWindow popup, View anchor, int popupWidth) {
-        int[] location = new int[2];
-        anchor.getLocationInWindow(location);
-        int y = location[1] + anchor.getHeight() + dp(6);
-        int x = Math.max(dp(8), Math.min(
-                location[0] + anchor.getWidth() - popupWidth,
-                getResources().getDisplayMetrics().widthPixels - dp(8) - popupWidth));
-        popup.showAtLocation(rootView == null ? anchor : rootView,
-                Gravity.TOP | Gravity.START, x, y);
+    /** 让系统把菜单锚定在按钮正下方、右缘与按钮右缘对齐，不再手算屏幕/窗口坐标。 */
+    private void showPopupAnchoredBelow(PopupWindow popup, View anchor) {
+        popup.showAsDropDown(anchor, 0, dp(6), Gravity.END);
     }
 
     private TextView popupMenuAction(String text, View.OnClickListener listener) {
@@ -2468,44 +2479,516 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return action;
     }
 
-    private void openSharedScheduleFilePicker() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType(ScheduleShareFile.MIME_TYPE);
-        try {
-            startActivityForResult(intent, PICK_SHARED_SCHEDULE_FILE);
-        } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, getString(R.string.import_no_file_picker), Toast.LENGTH_LONG).show();
+    /**
+     * 导入课表链接：粘贴对方的分享链接，解析后走与深链相同的确认流程。
+     * 旧的 .polaris 文件仍可通过系统「打开方式」导入，但不再占用菜单入口。
+     */
+    private void showImportLinkDialog() {
+        Dialog dialog = new Dialog(this);
+        FrameLayout root = new FrameLayout(this);
+        root.setOnClickListener(v -> dialog.dismiss());
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(16), dp(20), dp(14));
+        panel.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_DIALOG_SHEET));
+        panel.setOnClickListener(v -> { });
+
+        TextView title = new TextView(this);
+        title.setText(getString(R.string.import_link_title));
+        title.setTextColor(inkColor());
+        title.setTextSize(17);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        panel.addView(title);
+
+        TextView hint = new TextView(this);
+        hint.setText(getString(R.string.import_link_hint));
+        hint.setTextColor(mutedColor());
+        hint.setTextSize(12);
+        hint.setLineSpacing(dp(2), 1f);
+        hint.setPadding(0, dp(6), 0, dp(10));
+        panel.addView(hint);
+
+        EditText input = new EditText(this);
+        input.setHint(getString(R.string.import_link_field_hint));
+        input.setTextSize(12);
+        input.setTextColor(inkColor());
+        input.setHintTextColor(mutedColor());
+        input.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_SURFACE));
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        input.setMaxLines(4);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        String clipboardLink = readClipboardLink();
+        if (clipboardLink != null) {
+            input.setText(clipboardLink);
+            // 链接有五百多字符，光标放末尾会把开头滚出可视区，
+            // 屏幕上只剩一段载荷像乱码；从头显示才能看到 polaris:// 前缀。
+            input.setSelection(0);
+        }
+        panel.addView(input, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout primaryActions = new LinearLayout(this);
+        primaryActions.setOrientation(LinearLayout.HORIZONTAL);
+        primaryActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.import_link_scan), v -> {
+                    dialog.dismiss();
+                    startQrScan();
+                }), equalActionParams(0));
+        primaryActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.import_link_album), v -> {
+                    dialog.dismiss();
+                    openQrImagePicker();
+                }), equalActionParams(8));
+        panel.addView(primaryActions);
+
+        LinearLayout secondaryActions = new LinearLayout(this);
+        secondaryActions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams pasteParams = equalActionParams(0);
+        pasteParams.topMargin = dp(8);
+        secondaryActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.import_link_paste), v -> {
+                    String text = readClipboardLink();
+                    if (text == null) {
+                        Toast.makeText(this, getString(R.string.import_link_empty),
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    input.setText(text);
+                    input.setSelection(text.length());
+                    toastDone(getString(R.string.import_link_pasted));
+                }), pasteParams);
+        LinearLayout.LayoutParams confirmParams = equalActionParams(8);
+        confirmParams.topMargin = dp(8);
+        secondaryActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.import_link_confirm), v -> {
+                    String text = input.getText() == null
+                            ? "" : input.getText().toString().trim();
+                    if (text.isEmpty()) {
+                        Toast.makeText(this, getString(R.string.import_link_empty),
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    Uri uri;
+                    try {
+                        uri = Uri.parse(text);
+                    } catch (Exception exception) {
+                        Toast.makeText(this, getString(R.string.import_link_invalid),
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (!ScheduleShareCodec.isImportLink(uri)) {
+                        Toast.makeText(this, getString(R.string.import_link_invalid),
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    dialog.dismiss();
+                    startSharedScheduleImportFlow(uri);
+                }), confirmParams);
+        panel.addView(secondaryActions);
+
+        View content = appearanceDialogs.glassDialogContent(
+                panel, DesignTokens.RADIUS_DIALOG_SHEET);
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                Math.min(dp(340), screenWidth - dp(48)),
+                LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        root.addView(content, params);
+
+        dialog.setContentView(root);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(isDarkModeActive() ? 0.68f : 0.42f);
+            appearanceDialogs.makeDialogStill(window);
         }
     }
 
-    private void shareScheduleFile() {
+    /** 把二维码渲染成位图；链接过长或生成失败时返回 null。 */
+    private Bitmap buildQrBitmap(String link) {
+        QrCodeView view = new QrCodeView(this);
+        return view.setContent(link) ? view.renderToBitmap(720) : null;
+    }
+
+    /** 分享二维码图片：写到缓存目录后交给系统选择器，可发到任意应用。 */
+    private void shareQrImage(String link) {
+        Bitmap bitmap = buildQrBitmap(link);
+        if (bitmap == null) {
+            Toast.makeText(this, getString(R.string.share_link_qr_failed),
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            File directory = new File(getCacheDir(), ExportFileProvider.EXPORT_DIRECTORY);
+            if (!directory.exists() && !directory.mkdirs()) {
+                throw new IllegalStateException(getString(R.string.share_qr_save_failed));
+            }
+            File file = new File(directory, "Polaris课表二维码.png");
+            try (java.io.FileOutputStream output = new java.io.FileOutputStream(file, false)) {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
+            }
+            Uri uri = ExportFileProvider.uriForFile(this, file);
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType("image/png");
+            share.putExtra(Intent.EXTRA_STREAM, uri);
+            share.setClipData(ClipData.newUri(getContentResolver(),
+                    getString(R.string.share_link_label), uri));
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(share,
+                    getString(R.string.share_qr_chooser)));
+        } catch (Exception exception) {
+            Toast.makeText(this, getString(R.string.share_qr_save_failed),
+                    Toast.LENGTH_LONG).show();
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
+    /**
+     * 把二维码保存到系统相册。
+     * Android 10 起走 MediaStore 的 RELATIVE_PATH，不需要存储权限；
+     * 更低版本回退到 insertImage，需要 WRITE_EXTERNAL_STORAGE。
+     */
+    private void saveQrToGallery(String link) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            pendingGalleryQrLink = link;
+            requestPermissions(new String[]{
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_GALLERY);
+            return;
+        }
+        Bitmap bitmap = buildQrBitmap(link);
+        if (bitmap == null) {
+            Toast.makeText(this, getString(R.string.share_link_qr_failed),
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String fileName = "Polaris课表_" + System.currentTimeMillis() + ".png";
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                android.content.ContentValues values = new android.content.ContentValues();
+                values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName);
+                values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
+                values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,
+                        android.os.Environment.DIRECTORY_PICTURES + "/Polaris");
+                values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 1);
+                Uri uri = getContentResolver().insert(
+                        android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) {
+                    throw new IllegalStateException(getString(R.string.share_qr_save_failed));
+                }
+                try (java.io.OutputStream output =
+                             getContentResolver().openOutputStream(uri)) {
+                    if (output == null) {
+                        throw new IllegalStateException(getString(R.string.share_qr_save_failed));
+                    }
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
+                }
+                values.clear();
+                values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0);
+                getContentResolver().update(uri, values, null, null);
+            } else {
+                // 旧接口返回的是图片 URL 字符串，不是 Uri。
+                String url = android.provider.MediaStore.Images.Media.insertImage(
+                        getContentResolver(), bitmap, fileName, "Polaris 课表二维码");
+                if (url == null) {
+                    throw new IllegalStateException(getString(R.string.share_qr_save_failed));
+                }
+            }
+            toastDone(getString(R.string.share_qr_saved));
+        } catch (Exception exception) {
+            Toast.makeText(this, getString(R.string.share_qr_save_failed),
+                    Toast.LENGTH_LONG).show();
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
+    /** 弹窗底部按钮：三等分宽度，靠间距而不是边距区分。 */
+    private LinearLayout.LayoutParams equalActionParams(int leftMarginDp) {
+        LinearLayout.LayoutParams params =
+                new LinearLayout.LayoutParams(0, dp(46), 1f);
+        params.leftMargin = dp(leftMarginDp);
+        return params;
+    }
+
+    /** 读剪贴板中的 Polaris 链接；剪贴板里不是链接时返回 null。 */
+    private String readClipboardLink() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null || !clipboard.hasPrimaryClip()) {
+            return null;
+        }
+        ClipData clip = clipboard.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) {
+            return null;
+        }
+        CharSequence text = clip.getItemAt(0).coerceToText(this);
+        if (text == null) {
+            return null;
+        }
+        String value = text.toString().trim();
+        return value.startsWith("polaris://") ? value : null;
+    }
+
+    /** 打开扫码界面。zxing-android-embedded 要求 API 24+，更低的系统只保留粘贴。 */
+    private void startQrScan() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            Toast.makeText(this, getString(R.string.import_link_scan_unsupported),
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        IntentIntegrator integrator = new IntentIntegrator(this);
+        integrator.setCaptureActivity(PolarisScanActivity.class);
+        integrator.setDesiredBarcodeFormats(IntentIntegrator.QR_CODE);
+        integrator.setPrompt(getString(R.string.import_link_scan_prompt));
+        integrator.setBeepEnabled(false);
+        integrator.initiateScan();
+    }
+
+    /** 扫码得到的文本一律按链接校验，非 Polaris 链接不进入导入流程。 */
+    private void handleScannedLink(String contents) {
+        String text = contents == null ? "" : contents.trim();
+        if (text.isEmpty()) {
+            Toast.makeText(this, getString(R.string.import_link_scan_empty),
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Uri uri;
+        try {
+            uri = Uri.parse(text);
+        } catch (Exception exception) {
+            Toast.makeText(this, getString(R.string.import_link_invalid),
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!ScheduleShareCodec.isImportLink(uri)) {
+            Toast.makeText(this, getString(R.string.import_link_invalid),
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startSharedScheduleImportFlow(uri);
+    }
+
+    /** 从相册选一张含二维码的图片。 */
+    private void openQrImagePicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        try {
+            startActivityForResult(intent, PICK_QR_IMAGE);
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(this, getString(R.string.import_link_album_empty),
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 从图片识别二维码。先按长边缩到 800px 再解码：相册原图动辄四五千像素，
+     * 直接取整张像素会 OOM，而缩到这个尺寸后识别率不受影响。
+     */
+    private void decodeQrFromImage(Uri uri) {
+        Bitmap bitmap = null;
+        try {
+            bitmap = loadScaledBitmap(uri, 800);
+            if (bitmap == null) {
+                Toast.makeText(this, getString(R.string.import_link_album_empty),
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            int[] pixels = new int[width * height];
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+            BinaryBitmap binary = new BinaryBitmap(
+                    new HybridBinarizer(new RGBLuminanceSource(width, height, pixels)));
+            Result result = new MultiFormatReader().decode(binary);
+            handleScannedLink(result == null ? null : result.getText());
+        } catch (NotFoundException | IllegalArgumentException | OutOfMemoryError exception) {
+            Toast.makeText(this, getString(R.string.import_link_album_empty),
+                    Toast.LENGTH_SHORT).show();
+        } finally {
+            if (bitmap != null) {
+                bitmap.recycle();
+            }
+        }
+    }
+
+    private Bitmap loadScaledBitmap(Uri uri, int maxSide) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            BitmapFactory.decodeStream(stream, null, bounds);
+        } catch (Exception exception) {
+            return null;
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+        int sample = 1;
+        int longest = Math.max(bounds.outWidth, bounds.outHeight);
+        while (longest / sample > maxSide) {
+            sample *= 2;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            return BitmapFactory.decodeStream(stream, null, options);
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private void shareScheduleLink() {
         if (courses.isEmpty()) {
             Toast.makeText(this, getString(R.string.share_no_courses), Toast.LENGTH_SHORT).show();
             return;
         }
+        String link;
         try {
-            String link = ScheduleShareCodec.encodeLink(courses);
-            File directory = new File(getCacheDir(), ExportFileProvider.EXPORT_DIRECTORY);
-            if (!directory.exists() && !directory.mkdirs()) {
-                throw new IllegalStateException(getString(R.string.share_dir_failed));
-            }
-            File file = new File(directory, "Polaris课表" + ScheduleShareFile.EXTENSION);
-            try (FileOutputStream output = new FileOutputStream(file, false)) {
-                output.write(ScheduleShareFile.encode(link));
-            }
-            Uri uri = ExportFileProvider.uriForFile(this, file);
-            Intent share = new Intent(Intent.ACTION_SEND);
-            share.setType(ScheduleShareFile.MIME_TYPE);
-            share.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.share_file_subject, scheduleViewState.scheduleName));
-            share.putExtra(Intent.EXTRA_TEXT, getString(R.string.share_file_text));
-            share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.setClipData(ClipData.newRawUri(getString(R.string.share_clip_label), uri));
-            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(share, getString(R.string.share_chooser_file)));
+            link = ScheduleShareCodec.encodeLink(courses);
         } catch (Exception exception) {
-            Toast.makeText(this, getString(R.string.share_file_failed, exception.getMessage()),
+            Toast.makeText(this, getString(R.string.share_link_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
+            return;
+        }
+        showShareLinkDialog(link);
+    }
+
+    /** 分享链接弹窗：二维码 + 可复制的链接。链接已加密，不含课程明文。 */
+    private void showShareLinkDialog(String link) {
+        Dialog dialog = new Dialog(this);
+        FrameLayout root = new FrameLayout(this);
+        root.setOnClickListener(v -> dialog.dismiss());
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(16), dp(20), dp(14));
+        panel.setBackground(roundedBg(cardColorHex(), DesignTokens.RADIUS_DIALOG_SHEET));
+        panel.setOnClickListener(v -> { });
+
+        TextView title = new TextView(this);
+        title.setText(getString(R.string.share_link_title));
+        title.setTextColor(inkColor());
+        title.setTextSize(17);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        panel.addView(title);
+
+        QrCodeView qrCodeView = new QrCodeView(this);
+        boolean qrReady = qrCodeView.setContent(link);
+        if (qrReady) {
+            // 二维码放在白色圆角卡片里：屏幕上更有边界感，也贴合扫码时的视觉习惯。
+            FrameLayout qrCard = new FrameLayout(this);
+            qrCard.setBackground(roundedBg("#FFFFFF", DesignTokens.RADIUS_SURFACE));
+            int cardPadding = dp(10);
+            qrCard.setPadding(cardPadding, cardPadding, cardPadding, cardPadding);
+            int side = dp(198);
+            qrCard.addView(qrCodeView, new FrameLayout.LayoutParams(side, side));
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            cardParams.gravity = Gravity.CENTER_HORIZONTAL;
+            cardParams.topMargin = dp(14);
+            panel.addView(qrCard, cardParams);
+        }
+
+        TextView hint = new TextView(this);
+        hint.setText(getString(qrReady
+                ? R.string.share_link_hint : R.string.share_link_qr_failed));
+        hint.setTextColor(mutedColor());
+        hint.setTextSize(12);
+        hint.setLineSpacing(dp(2), 1f);
+        hint.setPadding(0, dp(10), 0, dp(6));
+        panel.addView(hint);
+
+        TextView linkView = new TextView(this);
+        linkView.setText(link);
+        linkView.setTextColor(mutedColor());
+        linkView.setTextSize(11);
+        linkView.setMaxLines(2);
+        linkView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        linkView.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_SURFACE));
+        linkView.setPadding(dp(10), dp(8), dp(10), dp(8));
+        linkView.setOnClickListener(v -> {
+            ClipboardManager clipboard =
+                    (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText(
+                        getString(R.string.share_link_label), link));
+            }
+            toastDone(getString(R.string.share_link_copied));
+        });
+        LinearLayout.LayoutParams linkParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        linkParams.topMargin = dp(10);
+        panel.addView(linkView, linkParams);
+
+        LinearLayout imageActions = new LinearLayout(this);
+        imageActions.setOrientation(LinearLayout.HORIZONTAL);
+        imageActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.share_qr_share), v -> {
+                    dialog.dismiss();
+                    shareQrImage(link);
+                }), equalActionParams(0));
+        imageActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.share_qr_save), v -> {
+                    dialog.dismiss();
+                    saveQrToGallery(link);
+                }), equalActionParams(8));
+        panel.addView(imageActions);
+
+        LinearLayout textActions = new LinearLayout(this);
+        textActions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams copyParams = equalActionParams(0);
+        copyParams.topMargin = dp(8);
+        textActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.share_link_copy), v -> {
+                    ClipboardManager clipboard =
+                            (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText(
+                                getString(R.string.share_link_label), link));
+                    }
+                    toastDone(getString(R.string.share_link_copied));
+                    dialog.dismiss();
+                }), copyParams);
+        LinearLayout.LayoutParams sendParams = equalActionParams(8);
+        sendParams.topMargin = dp(8);
+        textActions.addView(appearanceDialogs.dialogAction(
+                getString(R.string.share_link_send), v -> {
+                    Intent share = new Intent(Intent.ACTION_SEND);
+                    share.setType("text/plain");
+                    share.putExtra(Intent.EXTRA_TEXT, link);
+                    startActivity(Intent.createChooser(share,
+                            getString(R.string.share_link_send)));
+                    dialog.dismiss();
+                }), sendParams);
+        panel.addView(textActions);
+
+        View content = appearanceDialogs.glassDialogContent(
+                panel, DesignTokens.RADIUS_DIALOG_SHEET);
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                Math.min(dp(320), screenWidth - dp(56)),
+                LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        root.addView(content, params);
+
+        dialog.setContentView(root);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(isDarkModeActive() ? 0.68f : 0.42f);
+            appearanceDialogs.makeDialogStill(window);
         }
     }
 
@@ -2828,12 +3311,15 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     private ScheduleCalendarExporter.ExportContext calendarExportContext() {
-        return new ScheduleCalendarExporter.ExportContext(
-                scheduleViewState.scheduleName,
-                scheduleViewState.semesterName,
-                scheduleViewState.firstWeekDay,
-                scheduleViewState.semesterWeeks,
-                courseTimeSettings());
+        ScheduleCalendarExporter.ExportContext context =
+                new ScheduleCalendarExporter.ExportContext(
+                        scheduleViewState.scheduleName,
+                        scheduleViewState.semesterName,
+                        scheduleViewState.firstWeekDay,
+                        scheduleViewState.semesterWeeks,
+                        courseTimeSettings());
+        context.calendar = academicCalendar;
+        return context;
     }
 
     private File writeCalendarExport(byte[] bytes, String fileName) throws Exception {
@@ -3042,19 +3528,18 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return getString(R.string.delete_done_all);
     }
 
-    /** 周次右侧实践卡片背景（MINIMAL 与通用主题两套）。 */
+    /** 周次右侧实践卡片背景：主题只换配色，圆角保持同一几何。 */
     private GradientDrawable practiceTopBarBg() {
         GradientDrawable drawable = new GradientDrawable();
         if (PolarisVisualTheme.MINIMAL.equals(scheduleViewState.visualTheme)) {
             boolean dark = isDarkModeActive();
             drawable.setColor(dark ? color("#E620504D") : color("#F2DDF4F0"));
             drawable.setStroke(dp(1), dark ? color("#5B58CFC0") : color("#8044AFA2"));
-            drawable.setCornerRadius(dp(14));
-            return drawable;
+        } else {
+            drawable.setColor(PolarisVisualTheme.accentSurfaceColor(scheduleViewState.visualTheme, isDarkModeActive()));
+            drawable.setStroke(dp(1), PolarisVisualTheme.outlineColor(scheduleViewState.visualTheme, isDarkModeActive()));
         }
-        drawable.setColor(PolarisVisualTheme.accentSurfaceColor(scheduleViewState.visualTheme, isDarkModeActive()));
-        drawable.setStroke(dp(1), PolarisVisualTheme.outlineColor(scheduleViewState.visualTheme, isDarkModeActive()));
-        drawable.setCornerRadius(dp(18));
+        drawable.setCornerRadius(dp(DesignTokens.RADIUS_CARD));
         return drawable;
     }
 
@@ -3699,8 +4184,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         remindLabel.setTypeface(Typeface.DEFAULT_BOLD);
         remindRow.addView(remindLabel, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        final SwitchThumbView[] remindSwitch = {
-                new SwitchThumbView(this, remindEnabledValue[0], isDarkModeActive())};
+        final PolarisSwitchView[] remindSwitch = {
+                new PolarisSwitchView(this, remindEnabledValue[0], isDarkModeActive())};
         remindSwitch[0].setOnClickListener(v -> {
             remindEnabledValue[0] = !remindEnabledValue[0];
             remindSwitch[0].setChecked(remindEnabledValue[0]);
@@ -3829,11 +4314,14 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             return params;
         }
         if (isLandscapeTablet()) {
-            // 底部导航：固定宽度、水平居中，不横跨全屏。
+            // 底部导航归入右侧信息栏：与本周计划面板右对齐、同宽，落在面板下方
+            // 预留的 bottomContentInset 空白里。原先居中 240dp 会压在课表中部
+            // 第 5 节格子上，且放不下三个 tab。空间不足时至少保留 240dp。
+            int navWidth = Math.max(dp(DesignTokens.NAV_TABLET_WIDTH),
+                    Math.min(dp(DesignTokens.TABLET_PLAN_PANEL_WIDTH), rightPanelSpace()));
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                    dp(DesignTokens.NAV_TABLET_WIDTH), dp(navVisualHeight()),
-                    Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            params.setMargins(0, 0, 0, dp(DesignTokens.NAV_FLOATING_MARGIN) + bottomInset);
+                    navWidth, dp(navVisualHeight()), Gravity.BOTTOM | Gravity.END);
+            params.setMargins(0, 0, dp(12), dp(DesignTokens.NAV_FLOATING_MARGIN) + bottomInset);
             return params;
         }
         boolean tablet = WindowSizeClass.isTablet(getResources().getConfiguration());
@@ -4002,6 +4490,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             planPage.setVisibility(plan ? View.VISIBLE : View.GONE);
         }
         if (myPage != null) {
+            if (mine && myPageThemeDirty) {
+                rebuildMyPageKeepingScroll();
+            }
             myPage.setVisibility(mine ? View.VISIBLE : View.GONE);
         }
         if (settingsPage != null) {
@@ -4123,7 +4614,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         if (titleText.contains("安全")) {
             return "盾";
         }
-        if (titleText.contains("更多")) {
+        if (titleText.contains(SettingsRoute.MORE)) {
             return "···";
         }
         return "•";
@@ -4719,7 +5210,11 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     public void onVisualThemeClicked(View anchor) {
         appearanceDialogs.showChoiceDialog(anchor, getString(R.string.settings_row_visual_theme), PolarisVisualTheme.NAMES,
-                scheduleViewState.visualTheme, this::applyVisualTheme);
+                scheduleViewState.visualTheme, value -> {
+                    applyVisualTheme(value);
+                    // 就地换肤不重建页面，主题行的显示值需要单独回写。
+                    SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.visualTheme);
+                });
     }
 
     @Override
@@ -4729,7 +5224,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                     scheduleViewState.darkMode = value;
                     scheduleRepository.saveGlobalDarkMode(scheduleViewState.darkMode);
                     saveConfig();
-                    applyShellAppearance();
+                    applyShellAppearance(false);
                     refreshMyPageBehindSettings();
                     refreshPlanTheme();
                     renderSchedule();
@@ -4749,7 +5244,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
                         scheduleViewState.backgroundImageCrop = BackgroundImageCrop.full();
                         scheduleViewState.timetableBackground = "清爽蓝";
                         saveGlobalAppearance();
-                        applyShellAppearance();
+                        applyShellAppearance(false);
                         refreshPlanTheme();
                         renderSchedule();
                         SettingsPageBuilder.updateSettingValueRow(anchor, getString(R.string.settings_common_not_set));
@@ -4768,6 +5263,102 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
+    public String holidaySummary() {
+        int pending = 0;
+        for (AcademicCalendar.DayRule rule : academicCalendar.allRules()) {
+            if (rule.kind == AcademicCalendar.KIND_MAKEUP
+                    && rule.makeupWeekday == AcademicCalendar.WEEKDAY_UNSPECIFIED) {
+                pending++;
+            }
+        }
+        return pending > 0
+                ? getString(R.string.settings_holiday_summary, pending)
+                : getString(R.string.settings_holiday_summary_ok);
+    }
+
+    @Override
+    public void onHolidayClicked(View anchor) {
+        openHolidaySettings();
+    }
+
+    /** 「节假日与调休」页：列出内置安排中的补班日，逐个指定补哪一天的课。 */
+    private void openHolidaySettings() {
+        LinearLayout panel = settingsPagePanel(SettingsRoute.HOLIDAY);
+
+        TextView hint = new TextView(this);
+        hint.setText(getString(R.string.settings_holiday_hint));
+        hint.setTextColor(mutedColor());
+        hint.setTextSize(13);
+        hint.setLineSpacing(dp(2), 1f);
+        hint.setPadding(dp(20), dp(6), dp(20), dp(6));
+        panel.addView(hint);
+
+        panel.addView(sectionHeader(getString(R.string.settings_section_holiday_makeup)));
+        LinearLayout card = settingsGroup();
+        for (AcademicCalendar.DayRule rule : academicCalendar.allRules()) {
+            if (rule.kind != AcademicCalendar.KIND_MAKEUP) {
+                continue;
+            }
+            String label = rule.label.isEmpty() ? rule.date : rule.date + " " + rule.label;
+            String value = rule.makeupWeekday == AcademicCalendar.WEEKDAY_UNSPECIFIED
+                    ? getString(R.string.settings_holiday_unspecified)
+                    : getString(R.string.settings_holiday_makeup_value,
+                            WeekdayLabels.label(this, rule.makeupWeekday));
+            card.addView(settingValueRow(label, value,
+                    v -> showMakeupWeekdayPicker(rule.date)));
+        }
+        panel.addView(card);
+
+        LinearLayout resetCard = settingsGroup();
+        resetCard.addView(settingValueRow(getString(R.string.settings_holiday_reset), "",
+                v -> {
+                    scheduleRepository.saveGlobalHolidayOverrides("");
+                    reloadAcademicCalendar();
+                    refreshActiveSettingsPage();
+                }));
+        panel.addView(resetCard);
+
+        showSettingsPage(SettingsRoute.HOLIDAY, panel, SettingsRoute.GLOBAL);
+    }
+
+    private void showMakeupWeekdayPicker(String date) {
+        String[] names = new String[7];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = WeekdayLabels.label(this, i);
+        }
+        AcademicCalendar.DayRule rule = academicCalendar.ruleFor(date);
+        int current = rule == null ? AcademicCalendar.WEEKDAY_UNSPECIFIED : rule.makeupWeekday;
+        String currentLabel = current >= 0 && current < names.length
+                ? names[current] : getString(R.string.settings_holiday_unspecified);
+        appearanceDialogs.showChoiceDialog(getString(R.string.settings_row_holiday), names, currentLabel,
+                value -> {
+                    for (int i = 0; i < names.length; i++) {
+                        if (!names[i].equals(value)) {
+                            continue;
+                        }
+                        scheduleRepository.saveGlobalHolidayOverrides(
+                                AcademicCalendar.withOverride(
+                                        scheduleRepository.loadGlobalHolidayOverrides(),
+                                        date, "makeup", i));
+                        reloadAcademicCalendar();
+                        refreshActiveSettingsPage();
+                        return;
+                    }
+                });
+    }
+
+    /** 覆盖表变更后重新装载日历，并同步看板与今日概览。 */
+    private void reloadAcademicCalendar() {
+        academicCalendar = AcademicCalendar.load(this,
+                scheduleRepository.loadGlobalHolidayOverrides());
+        if (scheduleBoard != null) {
+            scheduleBoard.setAcademicCalendar(academicCalendar);
+        }
+        renderSchedule();
+        todayOverviewController.updateTodayOverview();
+    }
+
+    @Override
     public void onCollapseLunchChanged(boolean value) {
         scheduleViewState.collapseLunchBreak = value;
         saveGlobalAppearance();
@@ -4778,7 +5369,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     public void onShellBlurChanged(boolean value) {
         scheduleViewState.shellBarsBlurEnabled = value;
         saveGlobalAppearance();
-        applyShellAppearance();
+        applyShellAppearance(false);
     }
 
     @Override
@@ -4875,7 +5466,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         appearanceDialogs.showNumberDialog(getString(R.string.settings_row_header_opacity), 40, 100, scheduleViewState.timetableHeaderOpacity, value -> {
             scheduleViewState.timetableHeaderOpacity = Math.max(40, Math.min(100, value));
             saveGlobalAppearance();
-            applyShellAppearance();
+            applyShellAppearance(false);
             SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.timetableHeaderOpacity + "%");
         });
     }
@@ -4885,7 +5476,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         appearanceDialogs.showNumberDialog(getString(R.string.settings_row_nav_opacity), 40, 100, scheduleViewState.bottomNavOpacity, value -> {
             scheduleViewState.bottomNavOpacity = Math.max(40, Math.min(100, value));
             saveGlobalAppearance();
-            applyShellAppearance();
+            applyShellAppearance(false);
             SettingsPageBuilder.updateSettingValueRow(anchor, scheduleViewState.bottomNavOpacity + "%");
         });
     }
@@ -5700,18 +6291,6 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     }
 
     @Override
-    public void applyThemeElevation(View view, int elevationDp) {
-        view.setElevation(dp(elevationDp));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            int accent = PolarisVisualTheme.accentColor(scheduleViewState.visualTheme, isDarkModeActive());
-            view.setOutlineAmbientShadowColor(Color.argb(isDarkModeActive() ? 62 : 42,
-                    Color.red(accent), Color.green(accent), Color.blue(accent)));
-            view.setOutlineSpotShadowColor(Color.argb(isDarkModeActive() ? 88 : 58,
-                    Color.red(accent), Color.green(accent), Color.blue(accent)));
-        }
-    }
-
-    @Override
     // 纯按压反馈装饰（不消费触摸），点击由 OnClickListener 承接。
     @SuppressLint("ClickableViewAccessibility")
     public void attachCardPressFeedback(View view, int radius) {
@@ -5728,7 +6307,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         });
     }
 
-    // 同 transparentTopButton：纯按压反馈装饰，不消费触摸。
+    // 纯按压反馈装饰，不消费触摸；点击语义仍由 OnClickListener 承接。
     @SuppressLint("ClickableViewAccessibility")
     private void attachRowPressFeedback(View view) {
         view.setOnTouchListener((target, event) -> {
@@ -5777,9 +6356,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         return new SettingsPageBuilder(this).settingSwitchRow(this, label, checked, value -> setter.set(value));
     }
 
-    private SwitchThumbView switchView(boolean checked) {
-        SwitchThumbView view = new SwitchThumbView(this, checked, isDarkModeActive());
-        view.setTag(TAG_SWITCH_THUMB);
+    private PolarisSwitchView switchView(boolean checked) {
+        PolarisSwitchView view = new PolarisSwitchView(this, checked, isDarkModeActive());
+        view.setTag(ViewTags.SWITCH, ViewTags.MARK);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(52), dp(30));
         params.leftMargin = dp(14);
         view.setLayoutParams(params);
@@ -5941,7 +6520,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
     private void showCourseManagePage() {
         courseManageSelectionMode = false;
         courseManageSelectedIds.clear();
-        LinearLayout panel = settingsPagePanel("查看所有课程");
+        LinearLayout panel = settingsPagePanel(SettingsRoute.COURSES);
         courseManageStatsCard = settingsGroup();
         courseManageStatsText = new TextView(this);
         courseManageStatsText.setTextColor(mutedColor());
@@ -5957,7 +6536,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         courseManageListContainer.setOrientation(LinearLayout.VERTICAL);
         panel.addView(courseManageListContainer);
         refreshCourseManageList();
-        showSettingsPage("查看所有课程", panel, activeSettingsTitle);
+        showSettingsPage(SettingsRoute.COURSES, panel, activeSettingsTitle);
     }
 
     private void refreshCourseManageList() {
@@ -6553,6 +7132,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         if (contentHost == null || myPage == null) {
             return;
         }
+        myPageThemeDirty = false;
         contentHost.removeView(myPage);
         myPage = buildMyPage();
         int settingsIndex = settingsPage == null ? -1 : contentHost.indexOfChild(settingsPage);
@@ -6570,7 +7150,21 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         if (contentHost == null || myPage == null) {
             return;
         }
+        if (myPage.getVisibility() != View.VISIBLE) {
+            // 「我的」页当前不可见时只做标记，等切回该页再重建：
+            // 避免在设置页改主题时白白重建一整个页面，也避免滚动位置无从恢复。
+            myPageThemeDirty = true;
+            return;
+        }
+        rebuildMyPageKeepingScroll();
+    }
+
+    /** 按当前主题重建「我的」页，保留侧栏布局与滚动位置。 */
+    private void rebuildMyPageKeepingScroll() {
+        myPageThemeDirty = false;
         boolean settingsVisible = settingsPage != null && settingsPage.getVisibility() == View.VISIBLE;
+        // 「我的」页的颜色在构建时固化，换肤需要重建；但重建不能把滚动位置一起丢掉。
+        int previousScrollY = firstScrollY(myPage);
         contentHost.removeView(myPage);
         myPage = buildMyPage();
         FrameLayout.LayoutParams params;
@@ -6599,6 +7193,43 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
         myPage.setVisibility(showMyPage ? View.VISIBLE : View.GONE);
         applyMyPageMode(isLandscapeTablet() && tabletSettingsOpen);
+        restoreScrollY(myPage, previousScrollY);
+    }
+
+    /** 页面内第一个 ScrollView 的纵向位置：重建前后用它保持阅读位置。 */
+    private int firstScrollY(View root) {
+        ScrollView scrollView = firstScrollView(root);
+        return scrollView == null ? 0 : scrollView.getScrollY();
+    }
+
+    private ScrollView firstScrollView(View root) {
+        if (!(root instanceof ViewGroup)) {
+            return null;
+        }
+        ViewGroup group = (ViewGroup) root;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof ScrollView) {
+                return (ScrollView) child;
+            }
+            ScrollView nested = firstScrollView(child);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
+    /** 布局完成后再还原，直接设置会被新的内容高度 clamp 到 0。 */
+    private void restoreScrollY(View root, int scrollY) {
+        if (root == null || scrollY <= 0) {
+            return;
+        }
+        ScrollView scrollView = firstScrollView(root);
+        if (scrollView == null) {
+            return;
+        }
+        scrollView.post(() -> scrollView.scrollTo(0, scrollY));
     }
 
     private LinearLayout settingsPagePanel(String headingText) {
@@ -6751,6 +7382,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         settingsPage.clearAnimation();
         settingsPage.removeAllViews();
         com.polaris.timetable.databinding.FragmentSettingsBinding settingsBinding = com.polaris.timetable.databinding.FragmentSettingsBinding.inflate(getLayoutInflater());
+        settingsBinding.settingsRoot.setTag(ViewTags.SETTINGS_ROOT, ViewTags.MARK);
         settingsBinding.settingsRoot.setBackgroundColor(pageSurfaceColor());
         settingsPage.setBackgroundColor(pageSurfaceColor());
         settingsPage.setAlpha(1f);
@@ -6759,7 +7391,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         }
 
         LinearLayout fixedHeader = new LinearLayout(this);
-        fixedHeader.setTag(TAG_SETTINGS_HEADER);
+        fixedHeader.setTag(ViewTags.SETTINGS_HEADER, ViewTags.MARK);
         fixedHeader.setOrientation(LinearLayout.HORIZONTAL);
         fixedHeader.setGravity(Gravity.CENTER_VERTICAL);
         fixedHeader.setPadding(0, statusBarHeight() + dp(8), 0, dp(8));
@@ -6767,6 +7399,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
 
         // 返回键在左侧，左向箭头（‹）表示「点击回到我的页」；标题紧随其后。
         TextView back = new TextView(this);
+        back.setTag(ViewTags.SETTINGS_TITLE, ViewTags.MARK);
         back.setText("‹");
         back.setTextColor(inkColor());
         back.setTextSize(30);
@@ -6776,6 +7409,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         fixedHeader.addView(back, new LinearLayout.LayoutParams(dp(48), dp(54)));
 
         TextView heading = new TextView(this);
+        heading.setTag(ViewTags.SETTINGS_TITLE, ViewTags.MARK);
         heading.setText(headingText);
         heading.setTextColor(inkColor());
         heading.setTextSize(21);
@@ -6784,7 +7418,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         fixedHeader.addView(heading, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         ScrollView contentScroll = new ScrollView(this);
-        contentScroll.setTag(TAG_SETTINGS_SCROLL);
+        contentScroll.setTag(ViewTags.SETTINGS_SCROLL, ViewTags.MARK);
         contentScroll.setFillViewport(true);
         contentScroll.setBackgroundColor(pageSurfaceColor());
         contentScroll.addView(panel);
@@ -6792,6 +7426,15 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
         int headerHeight = statusBarHeight() + dp(70);
         scrollParams.topMargin = headerHeight;
+        if (isLandscapeTablet()) {
+            // 横屏底部导航浮在右侧设置面板之上：把内容区收到导航上方，
+            // 否则靠底的「课程提醒」等行会被胶囊盖住。面板自带的大段底部
+            // padding 在分栏里会与这里重复留白，改由容器统一避让。
+            scrollParams.bottomMargin = bottomContentInset()
+                    + dp(DesignTokens.NAV_FLOATING_MARGIN);
+            panel.setPadding(panel.getPaddingLeft(), panel.getPaddingTop(),
+                    panel.getPaddingRight(), dp(16));
+        }
         settingsBinding.settingsPageContainer.addView(contentScroll, scrollParams);
         settingsBinding.settingsPageContainer.addView(fixedHeader, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, headerHeight));
@@ -6900,14 +7543,16 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         int scrollY = currentSettingsScrollY();
         suppressSettingsPageAnimation = true;
         try {
-            if ("全局设置".equals(title)) {
+            if (SettingsRoute.GLOBAL.equals(title)) {
                 showGlobalSettings();
-            } else if ("课表设置".equals(title)) {
+            } else if (SettingsRoute.SCHEDULE.equals(title)) {
                 showScheduleSettings();
-            } else if ("查看所有课程".equals(title) || "管理已添加课程".equals(title)) {
+            } else if (SettingsRoute.COURSES.equals(title) || SettingsRoute.COURSES_MANAGE.equals(title)) {
                 showCourseManagePage();
-            } else if ("安全设置".equals(title)) {
+            } else if (SettingsRoute.SECURITY.equals(title)) {
                 showSecuritySettings();
+            } else if (SettingsRoute.HOLIDAY.equals(title)) {
+                openHolidaySettings();
             }
         } finally {
             suppressSettingsPageAnimation = false;
@@ -6939,21 +7584,34 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         refreshSettingsThemeRecursive(settingsPage);
     }
 
+    /**
+     * 就地换肤：按 keyed tag 识别节点类型并刷新固有色，不重建视图树。
+     * 用 {@link ViewTags} 的 id 作 key，节点类型互不覆盖，也不再依赖字符串约定。
+     */
     private void refreshSettingsThemeRecursive(View view) {
-        Object tag = view.getTag();
-        if (TAG_SETTINGS_GROUP.equals(tag)) {
-            view.setBackground(roundedBg(groupColorHex(), isMinimalVisualTheme() ? 18 : 22));
-        } else if (TAG_SECTION_HEADER.equals(tag) && view instanceof TextView) {
+        if (ViewTags.marked(view, ViewTags.SETTINGS_GROUP)) {
+            view.setBackground(roundedBg(groupColorHex(), DesignTokens.RADIUS_SURFACE));
+            // 分隔线同样是固有色：换肤时按当前主题重设，否则深浅切换后仍留旧色。
+            if (view instanceof LinearLayout) {
+                LinearLayout group = (LinearLayout) view;
+                int dividerInset = dp(20);
+                group.setDividerDrawable(new InsetDrawable(
+                        new ColorDrawable(dividerColor()), dividerInset, 0, dividerInset, 0));
+            }
+        } else if (ViewTags.marked(view, ViewTags.SECTION_HEADER) && view instanceof TextView) {
             ((TextView) view).setTextColor(mutedColor());
-        } else if (TAG_SETTING_LABEL.equals(tag) && view instanceof TextView) {
+        } else if (ViewTags.marked(view, ViewTags.SETTINGS_TITLE) && view instanceof TextView) {
             ((TextView) view).setTextColor(inkColor());
-        } else if (TAG_SETTING_VALUE.equals(tag) && view instanceof TextView) {
+        } else if (ViewTags.marked(view, ViewTags.SETTING_LABEL) && view instanceof TextView) {
+            ((TextView) view).setTextColor(inkColor());
+        } else if (ViewTags.marked(view, ViewTags.SETTING_VALUE) && view instanceof TextView) {
             ((TextView) view).setTextColor(mutedColor());
-        } else if (TAG_SWITCH_THUMB.equals(tag) && view instanceof SwitchThumbView) {
-            ((SwitchThumbView) view).setDark(isDarkModeActive());
-        } else if (TAG_SETTINGS_HEADER.equals(tag)) {
+        } else if (ViewTags.marked(view, ViewTags.SWITCH) && view instanceof PolarisSwitchView) {
+            ((PolarisSwitchView) view).setDark(isDarkModeActive());
+        } else if (ViewTags.marked(view, ViewTags.SETTINGS_HEADER)) {
             view.setBackgroundColor(settingsHeaderSurfaceColor());
-        } else if (TAG_SETTINGS_SCROLL.equals(tag)) {
+        } else if (ViewTags.marked(view, ViewTags.SETTINGS_ROOT)
+                || ViewTags.marked(view, ViewTags.SETTINGS_SCROLL)) {
             view.setBackgroundColor(pageSurfaceColor());
         }
         if (view instanceof ViewGroup) {
@@ -6994,11 +7652,11 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
                 previousSettingsTitle = "";
                 suppressSettingsPageAnimation = true;
                 try {
-                    if ("课表设置".equals(target)) { // 页面标题同时是路由标识,不资源化
+                    if (SettingsRoute.SCHEDULE.equals(target)) {
                         showScheduleSettings();
-                    } else if ("全局设置".equals(target)) {
+                    } else if (SettingsRoute.GLOBAL.equals(target)) {
                         showGlobalSettings();
-                    } else if ("安全设置".equals(target)) {
+                    } else if (SettingsRoute.SECURITY.equals(target)) {
                         showSecuritySettings();
                     } else {
                         switchTab(2);
@@ -7031,11 +7689,11 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             String target = previousSettingsTitle;
             previousSettingsTitle = "";
             suppressSettingsPageAnimation = true;
-            if ("课表设置".equals(target)) {
+            if (SettingsRoute.SCHEDULE.equals(target)) {
                 showScheduleSettings();
-            } else if ("全局设置".equals(target)) {
+            } else if (SettingsRoute.GLOBAL.equals(target)) {
                 showGlobalSettings();
-            } else if ("安全设置".equals(target)) {
+            } else if (SettingsRoute.SECURITY.equals(target)) {
                 showSecuritySettings();
             } else {
                 switchTab(2);
@@ -7048,6 +7706,9 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             return;
         }
         if (myPage != null) {
+            if (myPageThemeDirty) {
+                rebuildMyPageKeepingScroll();
+            }
             myPage.animate().cancel();
             myPage.setVisibility(View.VISIBLE);
             myPage.setAlpha(1f);
@@ -7222,26 +7883,41 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return new SettingsPageBuilder(this).buildAdvancedScheduleFrameSettings(this);
     }
 
+    /**
+     * 切换视觉主题：只改变配色与背景，不改动界面结构与用户设置。
+     *
+     * <p>历史实现有两条副作用：一是把深/浅色强制改成主题默认值，用户手动选择的
+     * 明暗会被覆盖；二是整页重建（{@code refreshActiveSettingsPage()}），设置页里
+     * 展开的「高级」分组与滚动位置随之丢失，表现为「一改主题整个结构都变了」。
+     * 现在改为就地换肤：设置页递归刷新颜色，我的页/计划页重建时保留滚动位置。
+     */
     private void applyVisualTheme(String value) {
         String nextTheme = PolarisVisualTheme.normalize(value);
         if (nextTheme.equals(scheduleViewState.visualTheme)) {
             return;
         }
         scheduleViewState.visualTheme = nextTheme;
-        if (!PolarisVisualTheme.MINIMAL.equals(scheduleViewState.visualTheme)) {
-            scheduleViewState.darkMode = PolarisVisualTheme.defaultDark(scheduleViewState.visualTheme) ? "深色" : "浅色";
-            scheduleRepository.saveGlobalDarkMode(scheduleViewState.darkMode);
-        }
         saveGlobalAppearance();
-        applyShellAppearance();
+        applyShellAppearance(false);
         refreshMyPageBehindSettings();
         refreshPlanTheme();
         renderSchedule();
-        refreshActiveSettingsPage();
+        refreshVisibleSettingsTheme();
         toastDone(getString(R.string.theme_switched_toast, scheduleViewState.visualTheme));
     }
 
     private void applyShellAppearance() {
+        applyShellAppearance(true);
+    }
+
+    /**
+     * 刷新壳层外观。
+     *
+     * @param geometryChanged 顶/底栏的几何是否变化（栏样式、导航高度/圆角、切换课表、旋转）。
+     *                        纯换色场景（主题、明暗、玻璃透明度、模糊开关、背景图）传 false，
+     *                        跳过顶栏 LayoutParams 重设与底栏重建，避免一次无谓的测量与视图替换。
+     */
+    private void applyShellAppearance(boolean geometryChanged) {
         if (getWindow() != null) {
             applyEdgeToEdgeWindow(getWindow());
             updateSystemBarAppearance(getWindow());
@@ -7260,14 +7936,16 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             updateGlassLayer(topPanelGlassLayer,
                     liquidGlassBg(scheduleViewState.timetableHeaderOpacity), topGlassRadius());
         }
-        applyTopPanelContentInsets();
-        if (topPanelContainer != null) {
-            // 顶/底栏样式（默认/常规）切换后同步通栏与页边距几何。
-            topPanelContainer.setLayoutParams(topPanelLayoutParams());
-            topPanelContainer.setElevation(0f);
-        }
-        if (bottomNavView != null) {
-            refreshBottomNavView();
+        if (geometryChanged) {
+            applyTopPanelContentInsets();
+            if (topPanelContainer != null) {
+                // 顶/底栏样式（默认/常规）切换后同步通栏与页边距几何。
+                topPanelContainer.setLayoutParams(topPanelLayoutParams());
+                topPanelContainer.setElevation(0f);
+            }
+            if (bottomNavView != null) {
+                refreshBottomNavView();
+            }
         }
         if (title != null) {
             title.setTextColor(inkColor());
@@ -7276,7 +7954,9 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
             subtitle.setTextColor(mutedColor());
         }
         if (overflowMenuButton != null) {
-            overflowMenuButton.setTextColor(inkColor());
+            overflowMenuButton.applyColors(inkColor(),
+                    PolarisVisualTheme.outlineColor(scheduleViewState.visualTheme, isDarkModeActive()),
+                    accentColor());
         }
         todayOverviewController.updateTodayOverview();
         updateConflictSummary();
@@ -7912,6 +8592,11 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return CourseTimeResolver.firstWeekStartMillis(scheduleViewState.firstWeekDay);
     }
 
+    @Override
+    public AcademicCalendar academicCalendar() {
+        return academicCalendar;
+    }
+
     private String todayText() {
         Calendar date = Calendar.getInstance();
         return date.get(Calendar.YEAR) + "/" + (date.get(Calendar.MONTH) + 1) + "/"
@@ -8035,7 +8720,7 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         return isDarkModeActive() ? color("#172033") : Color.WHITE;
     }
 
-    @Override
+    /** 极简主题判定：供本类配色分支使用（Builder 侧已统一几何，不再依赖它）。 */
     public boolean isMinimalVisualTheme() {
         return PolarisVisualTheme.MINIMAL.equals(
                 PolarisVisualTheme.normalize(scheduleViewState.visualTheme));
@@ -8337,56 +9022,4 @@ public GradientDrawable floatingPanelBg(int opacityPercent, int radius) {
         buildLayout();
         renderSchedule();
     }
-
-    private class SwitchThumbView extends View {
-    private boolean checked;
-    private boolean dark;
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-        SwitchThumbView(Context context, boolean checked, boolean dark) {
-            super(context);
-            this.checked = checked;
-            this.dark = dark;
-        }
-
-        void setChecked(boolean checked) {
-            if (this.checked == checked) {
-                return;
-            }
-            this.checked = checked;
-            invalidate();
-        }
-
-        void setDark(boolean dark) {
-            if (this.dark == dark) {
-                return;
-            }
-            this.dark = dark;
-            invalidate();
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            float width = getWidth();
-            float height = getHeight();
-            float radius = height / 2f;
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(checked ? color("#3E8BFF") : color(dark ? "#252B36" : "#D8DDE6"));
-            canvas.drawRoundRect(0f, 0f, width, height, radius, radius, paint);
-
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(dp(1));
-            paint.setColor(checked ? color("#63A4FF") : color(dark ? "#3B424D" : "#C9D0DA"));
-            float inset = getResources().getDisplayMetrics().density * 0.5f;
-            canvas.drawRoundRect(inset, inset, width - inset, height - inset, radius, radius, paint);
-
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.WHITE);
-            float thumbRadius = height / 2f - dp(4);
-            float centerX = checked ? width - radius : radius;
-            canvas.drawCircle(centerX, height / 2f, thumbRadius, paint);
-        }
-    }
 }
-

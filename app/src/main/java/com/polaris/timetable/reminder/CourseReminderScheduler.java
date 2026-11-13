@@ -15,6 +15,7 @@ import android.os.Build;
 
 import com.polaris.timetable.Course;
 import com.polaris.timetable.storage.ScheduleRepository;
+import com.polaris.timetable.time.AcademicCalendar;
 import com.polaris.timetable.time.CourseTimeResolver;
 
 import java.util.Calendar;
@@ -71,7 +72,8 @@ public final class CourseReminderScheduler {
                 config.semesterWeeks,
                 config.reminderMinutesBefore,
                 now,
-                CourseReminderPlanner.DEFAULT_MAX_REMINDERS);
+                CourseReminderPlanner.DEFAULT_MAX_REMINDERS,
+                AcademicCalendar.load(appContext, repository.loadGlobalHolidayOverrides()));
         AlarmManager alarmManager = (AlarmManager) appContext.getSystemService(
                 Context.ALARM_SERVICE);
         if (alarmManager == null) {

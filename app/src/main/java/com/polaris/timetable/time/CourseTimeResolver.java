@@ -42,7 +42,9 @@ public final class CourseTimeResolver {
         NEXT,
         FINISHED,
         NO_COURSES,
-        OUTSIDE_SEMESTER
+        OUTSIDE_SEMESTER,
+        /** 法定节假日：当天不排课，不显示「无课」。 */
+        HOLIDAY
     }
 
     public static final class Settings {
@@ -187,17 +189,32 @@ public final class CourseTimeResolver {
     public static TodayOverview resolveToday(List<Course> source, Settings settings,
                                               long firstWeekStartMillis, int semesterWeeks,
                                               Calendar now) {
+        return resolveToday(source, settings, firstWeekStartMillis, semesterWeeks, now, null);
+    }
+
+    /**
+     * 带学业日历的今日概览：放假当天返回 {@link TodayStatus#HOLIDAY}，
+     * 补班当天按「补的那一天」取课。
+     */
+    public static TodayOverview resolveToday(List<Course> source, Settings settings,
+                                              long firstWeekStartMillis, int semesterWeeks,
+                                              Calendar now, AcademicCalendar calendar) {
         Calendar current = now == null ? Calendar.getInstance() : (Calendar) now.clone();
         int week = weekForDate(firstWeekStartMillis, current);
         int day = mondayBasedDay(current);
         if (week < 1 || week > Math.max(1, semesterWeeks)) {
             return emptyOverview(TodayStatus.OUTSIDE_SEMESTER, week, day);
         }
+        int effectiveDay = calendar == null
+                ? day : calendar.effectiveWeekday(AcademicCalendar.dateKey(current), day);
+        if (effectiveDay == AcademicCalendar.WEEKDAY_UNSPECIFIED) {
+            return emptyOverview(TodayStatus.HOLIDAY, week, day);
+        }
 
         List<CourseWithTime> todayCourses = new ArrayList<>();
         if (source != null) {
             for (Course course : source) {
-                if (course == null || !course.hasScheduledTime() || course.day != day
+                if (course == null || !course.hasScheduledTime() || course.day != effectiveDay
                         || !isActiveInWeek(course, week)) {
                     continue;
                 }

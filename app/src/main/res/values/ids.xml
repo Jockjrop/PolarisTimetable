@@ -4,4 +4,17 @@
          以及设置无障碍遍历顺序。 -->
     <item name="plan_add_menu_icon" type="id" />
     <item name="plan_add_menu_label" type="id" />
+
+    <!-- 就地换肤用的 tag key。用 View.setTag(int, Object) 而非字符串 tag：
+         字符串 tag 只能有一个，且容易与固定顶栏等其他用途撞名
+         （1.27.16 前 section_header 与 settings_header 撞名曾导致章节标题被涂成底色块）。 -->
+    <item name="tag_settings_group" type="id" />
+    <item name="tag_section_header" type="id" />
+    <item name="tag_setting_label" type="id" />
+    <item name="tag_setting_value" type="id" />
+    <item name="tag_switch" type="id" />
+    <item name="tag_settings_header" type="id" />
+    <item name="tag_settings_root" type="id" />
+    <item name="tag_settings_title" type="id" />
+    <item name="tag_settings_scroll" type="id" />
 </resources>

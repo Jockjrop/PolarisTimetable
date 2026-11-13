@@ -23,6 +23,15 @@ final class ScheduleWidgetData {
 
     static List<ScheduleWidgetEntry> forDate(
             List<Course> source, ScheduleRepository.Config config, Calendar date, Calendar now) {
+        return forDate(source, config, date, now, null);
+    }
+
+    /**
+     * 带学业日历的今日课表：放假当天返回空列表，补班当天按补的星期取课。
+     */
+    static List<ScheduleWidgetEntry> forDate(
+            List<Course> source, ScheduleRepository.Config config, Calendar date, Calendar now,
+            com.polaris.timetable.time.AcademicCalendar calendar) {
         if (source == null || config == null || date == null) {
             return Collections.emptyList();
         }
@@ -31,6 +40,12 @@ final class ScheduleWidgetData {
             return Collections.emptyList();
         }
         int day = mondayBasedDay(date);
+        int effectiveDay = calendar == null ? day
+                : calendar.effectiveWeekday(
+                        com.polaris.timetable.time.AcademicCalendar.dateKey(date), day);
+        if (effectiveDay == com.polaris.timetable.time.AcademicCalendar.WEEKDAY_UNSPECIFIED) {
+            return Collections.emptyList();
+        }
         Map<String, Integer> courseColors = buildCourseColors(source);
         List<Course> matching = new ArrayList<>();
         for (Course course : source) {
@@ -41,7 +56,7 @@ final class ScheduleWidgetData {
                 if (config.showPracticeBanner) {
                     matching.add(course);
                 }
-            } else if (course.hasScheduledTime() && course.day == day
+            } else if (course.hasScheduledTime() && course.day == effectiveDay
                     && !hasEndedToday(course, config, date, now)) {
                 matching.add(course);
             }

@@ -15,7 +15,7 @@ import com.polaris.timetable.ui.dialog.GlassDialogFactory;
 
 /**
  * 底部导航视图:手机竖屏为课表/计划/我的三 tab 悬浮条,
- * 横屏平板为课表/我的两 tab 居中限宽条。
+ * 横屏平板同样保留三个 tab,由宿主的布局参数对齐到右侧信息栏底部。
  * 外观与状态全部经 {@link Host} 按需读取,视图自身不持有可变配置。
  */
 public class BottomNavView extends LinearLayout {
@@ -117,8 +117,10 @@ public class BottomNavView extends LinearLayout {
     private void buildTabletBar() {
         setPadding(0, 0, 0, host.navRegularStyle() ? host.navBottomInset() : 0);
         scheduleNav = navItem(0);
+        planNav = navItem(1);
         myNav = navItem(2);
         scheduleNav.setPadding(0, 0, 0, 0);
+        planNav.setPadding(0, 0, 0, 0);
         myNav.setPadding(0, 0, 0, 0);
         FrameLayout container = new FrameLayout(getContext());
         container.addView(glassLayer(), new FrameLayout.LayoutParams(
@@ -128,6 +130,7 @@ public class BottomNavView extends LinearLayout {
         row.setGravity(Gravity.CENTER);
         row.setPadding(dp(10), 0, dp(10), 0);
         row.addView(scheduleNav);
+        row.addView(planNav);
         row.addView(myNav);
         container.addView(row, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));

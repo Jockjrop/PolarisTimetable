@@ -58,7 +58,9 @@ public final class ScheduleWidgetService extends RemoteViewsService {
             Calendar target = (Calendar) now.clone();
             target.add(Calendar.DATE, dayOffset);
             entries = ScheduleWidgetData.forDate(
-                    repository.loadCourseView(scheduleId), config, target, now);
+                    repository.loadCourseView(scheduleId), config, target, now,
+                    com.polaris.timetable.time.AcademicCalendar.load(
+                            context, repository.loadGlobalHolidayOverrides()));
         }
 
         @Override
@@ -117,7 +119,8 @@ public final class ScheduleWidgetService extends RemoteViewsService {
     /**
      * 整周课表网格工厂：每行一个节次（时间列 + 天列格子），行数=节次数，
      * ListView 天然支持在小组件内上下滑动。格子底图经 setColorFilter 染色
-     * 呈现课程色圆角块；课程首段展示课名和地点，跨节中段/末段只延续色块。
+     * 呈现课程色圆角块；课名、老师、地点由数据层按连续课程块分配到各节次段，
+     * 连堂课下方原本空白的色块也用于显示文字。
      */
     private static final class WeekGridFactory implements RemoteViewsFactory {
         private static final int[] CELL_IDS = {
@@ -179,7 +182,9 @@ public final class ScheduleWidgetService extends RemoteViewsService {
                     repository.loadCourseView(scheduleId),
                     repository.loadConfig(scheduleId),
                     Calendar.getInstance(),
-                    ScheduleWidgetConfigActivity.widgetDayCount(context, appWidgetId));
+                    ScheduleWidgetConfigActivity.widgetDayCount(context, appWidgetId),
+                    com.polaris.timetable.time.AcademicCalendar.load(
+                            context, repository.loadGlobalHolidayOverrides()));
         }
 
         @Override
@@ -222,14 +227,13 @@ public final class ScheduleWidgetService extends RemoteViewsService {
                 views.setViewVisibility(CELL_BG_IDS[day], View.VISIBLE);
                 views.setImageViewResource(CELL_BG_IDS[day], cellBackgroundResource(cell));
                 views.setInt(CELL_BG_IDS[day], "setColorFilter", cell.color);
-                boolean showLocation = cell.startOfCourse && cell.location.length() > 0;
-                views.setTextViewText(CELL_TEXT_IDS[day],
-                        showLocation ? cell.text + " @" + cell.location : cell.text);
+                views.setTextViewText(CELL_TEXT_IDS[day], cell.displayText);
                 views.setTextColor(CELL_TEXT_IDS[day], Color.WHITE);
                 views.setContentDescription(CELL_IDS[day], cell.courseName.length() == 0 ? ""
                         : ScheduleWidgetWeekData.DAY_NAMES[day] + " 第" + row.section + "节 "
                                 + cell.courseName
-                                + (cell.location.length() > 0 ? " " + cell.location : ""));
+                                + (cell.teacher.length() > 0 ? " " + cell.teacher : "")
+                                + (cell.location.length() > 0 ? " @" + cell.location : ""));
             }
             views.setOnClickFillInIntent(R.id.widget_week_row, new Intent());
             return views;
