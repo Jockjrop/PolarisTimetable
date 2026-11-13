@@ -27,7 +27,12 @@ jobs:
           java-version: 17
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # 显式只装 platform-tools：v3 的默认值含 `tools`，该包已被 Google 移除，
+          # 会让 sdkmanager 以 exit 1 失败（2026-11-13 CI 实测）。
+          packages: platform-tools
+          accept-android-sdk-licenses: true
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -76,7 +81,12 @@ jobs:
           java-version: 17
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # 显式只装 platform-tools：v3 的默认值含 `tools`，该包已被 Google 移除，
+          # 会让 sdkmanager 以 exit 1 失败（2026-11-13 CI 实测）。
+          packages: platform-tools
+          accept-android-sdk-licenses: true
 
       # ubuntu-24.04 runner 镜像的默认用户不在 kvm 组内，导致 /dev/kvm 不可用，
       # 模拟器退化为纯软件模拟（API 35 x86_64 起不来，instrumentation 进程崩溃、
@@ -175,7 +185,12 @@ jobs:
           java-version: 17
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # 显式只装 platform-tools：v3 的默认值含 `tools`，该包已被 Google 移除，
+          # 会让 sdkmanager 以 exit 1 失败（2026-11-13 CI 实测）。
+          packages: platform-tools
+          accept-android-sdk-licenses: true
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -545,7 +560,12 @@ jobs:
           ref: main
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # 显式只装 platform-tools：v3 的默认值含 `tools`，该包已被 Google 移除，
+          # 会让 sdkmanager 以 exit 1 失败（2026-11-13 CI 实测）。
+          packages: platform-tools
+          accept-android-sdk-licenses: true
 
       - name: Set up JDK 17 for APK verification
         uses: actions/setup-java@v4
