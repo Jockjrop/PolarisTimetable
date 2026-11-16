@@ -27,8 +27,12 @@ import java.util.Map;
  */
 public final class QrCodeView extends View {
 
-    /** 编码分辨率；实际绘制按控件尺寸缩放，与扫描无关。 */
-    private static final int ENCODE_SIZE = 640;
+    /**
+     * 编码尺寸下限。传 1 让 ZXing 直接返回模块级矩阵（如 37×37），
+     * 绘制时再按控件尺寸缩放；若传 640 会得到 640×640 的像素级矩阵，
+     * drawMatrix 每帧要画约 20 万次 drawRect，Android 16 上会导致 ANR。
+     */
+    private static final int MODULE_ENCODE_SIZE = 1;
     /** QR 规范要求的静默区宽度（模块数）。 */
     private static final int QUIET_MODULES = 4;
     private static final int FOREGROUND = Color.rgb(16, 20, 26);
@@ -63,7 +67,7 @@ public final class QrCodeView extends View {
             hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
             hints.put(EncodeHintType.MARGIN, 0);
             matrix = new QRCodeWriter().encode(content, BarcodeFormat.QR_CODE,
-                    ENCODE_SIZE, ENCODE_SIZE, hints);
+                    MODULE_ENCODE_SIZE, MODULE_ENCODE_SIZE, hints);
             invalidate();
             return true;
         } catch (WriterException | IllegalArgumentException exception) {

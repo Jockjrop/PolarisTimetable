@@ -91,6 +91,7 @@ import com.polaris.timetable.importer.ImportReviewSummary;
 import com.polaris.timetable.importer.PdfImportReviewFlow;
 import com.polaris.timetable.importer.ai.AiImportFlow;
 import com.polaris.timetable.export.ExportFileProvider;
+import com.polaris.timetable.diagnostics.CrashRecorder;
 import com.polaris.timetable.diagnostics.DiagnosticsBundleBuilder;
 import com.polaris.timetable.export.ScheduleCalendarExporter;
 import com.polaris.timetable.export.ScheduleImageExporter;
@@ -477,6 +478,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CrashRecorder.install(this);
+        CrashRecorder.trace("MainActivity.onCreate version=" + appVersionName());
         todayOverviewController.ensureCollapseDeadline();
         applyEdgeToEdgeWindow(getWindow());
         scheduleRepository = new ScheduleRepository(this);
@@ -2849,19 +2852,26 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             Toast.makeText(this, getString(R.string.share_no_courses), Toast.LENGTH_SHORT).show();
             return;
         }
+        CrashRecorder.trace("share.tap courses=" + courses.size());
         String link;
+        long encodeStart = System.currentTimeMillis();
         try {
             link = ScheduleShareCodec.encodeLink(courses);
         } catch (Exception exception) {
+            CrashRecorder.trace("share.encode.failed " + exception.getClass().getSimpleName()
+                    + " " + exception.getMessage());
             Toast.makeText(this, getString(R.string.share_link_failed, exception.getMessage()),
                     Toast.LENGTH_LONG).show();
             return;
         }
+        CrashRecorder.trace("share.encode.done len=" + link.length()
+                + " cost=" + (System.currentTimeMillis() - encodeStart) + "ms");
         showShareLinkDialog(link);
     }
 
     /** 分享链接弹窗：二维码 + 可复制的链接。链接已加密，不含课程明文。 */
     private void showShareLinkDialog(String link) {
+        CrashRecorder.trace("share.dialog.build.start");
         Dialog dialog = new Dialog(this);
         FrameLayout root = new FrameLayout(this);
         root.setOnClickListener(v -> dialog.dismiss());
@@ -2881,6 +2891,7 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
 
         QrCodeView qrCodeView = new QrCodeView(this);
         boolean qrReady = qrCodeView.setContent(link);
+        CrashRecorder.trace("share.dialog.qr=" + qrReady);
         if (qrReady) {
             // 二维码放在白色圆角卡片里：屏幕上更有边界感，也贴合扫码时的视觉习惯。
             FrameLayout qrCard = new FrameLayout(this);
@@ -2980,7 +2991,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
         root.addView(content, params);
 
         dialog.setContentView(root);
+        CrashRecorder.trace("share.dialog.show.start");
         dialog.show();
+        CrashRecorder.trace("share.dialog.show.done");
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -2990,6 +3003,8 @@ public class MainActivity extends AppCompatActivity implements BottomNavView.Hos
             window.setDimAmount(isDarkModeActive() ? 0.68f : 0.42f);
             appearanceDialogs.makeDialogStill(window);
         }
+        CrashRecorder.trace("share.dialog.window.configured");
+        root.postDelayed(() -> CrashRecorder.trace("share.dialog.alive.500ms"), 500);
     }
 
     private void exportScheduleBackup() {
@@ -6480,11 +6495,17 @@ private GradientDrawable dialogGlassBg(int radius, int opacityPercent) {
         DiagnosticsBundleBuilder.Section parse = new DiagnosticsBundleBuilder.Section("最近解析诊断")
                 .putRawBody(lastParseDiagnosticsText.length() == 0
                         ? "无导入记录" : lastParseDiagnosticsText);
+        DiagnosticsBundleBuilder.Section crash = new DiagnosticsBundleBuilder.Section("未捕获异常记录")
+                .putRawBody(CrashRecorder.readCrash(this));
+        DiagnosticsBundleBuilder.Section trace = new DiagnosticsBundleBuilder.Section("关键流程跟踪")
+                .putRawBody(CrashRecorder.readTrace(this));
         java.util.ArrayList<DiagnosticsBundleBuilder.Section> sections = new java.util.ArrayList<>();
         sections.add(app);
         sections.add(schedule);
         sections.add(reminder);
         sections.add(parse);
+        sections.add(crash);
+        sections.add(trace);
         return DiagnosticsBundleBuilder.build(stamp, sections);
     }
 
